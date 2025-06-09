@@ -1,0 +1,6 @@
+# Data Extraction
+beautifulsoup4
+requests
+
+# General
+python-dotenv
