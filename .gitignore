@@ -4,3 +4,4 @@ venv/
 data/raw/*
 data/processed/*
 data/external/*
+tests.py

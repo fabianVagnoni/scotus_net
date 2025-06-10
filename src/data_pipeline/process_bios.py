@@ -158,7 +158,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--output",
         "-o", 
-        default="data/processed",
+        default="data/processed/bios",
         help="Directory to save processed biographies"
     )
     

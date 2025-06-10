@@ -1,6 +1,8 @@
 # Data Extraction
 beautifulsoup4
 requests
+pandas
+numpy
 
 # General
 python-dotenv
