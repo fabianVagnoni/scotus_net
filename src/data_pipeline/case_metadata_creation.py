@@ -217,7 +217,7 @@ def main():
     parser.add_argument(
         "--output", 
         "-o",
-        default="data/processed/case_descriptions",
+        default="data/processed/case_metadata",
         help="Directory to save individual case description files"
     )
     
