@@ -16,14 +16,15 @@ NAME_CORRECTIONS = {
     # Add more as we discover them
 }
 
-def correct_wikipedia_url(name: str, original_url: str) -> str:
+def correct_wikipedia_url(name: str, original_url: str, verbose: bool = False) -> str:
     """
     Correct common Wikipedia URL mismatches between table names and actual article titles.
     """
     if name in NAME_CORRECTIONS:
         corrected_title = NAME_CORRECTIONS[name]
         corrected_url = f"https://en.wikipedia.org/wiki/{corrected_title}"
-        print(f"    [CORRECTED] {name}: {original_url} -> {corrected_url}")
+        if verbose:
+            print(f"    [CORRECTED] {name}: {original_url} -> {corrected_url}")
         return corrected_url
     return original_url
 
@@ -216,7 +217,7 @@ def main(input_json: str, output_dir: str, verbose: bool = True, quiet: bool = F
             print(f"[PROCESSING] {name}...")
         
         # Try to correct known URL mismatches
-        corrected_url = correct_wikipedia_url(name, url)
+        corrected_url = correct_wikipedia_url(name, url, verbose=verbose)
         
         # Validate URL exists
         if not validate_wikipedia_url(corrected_url):

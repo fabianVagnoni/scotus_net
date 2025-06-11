@@ -9,12 +9,13 @@ for Supreme Court cases and justice biographies FROM SCRATCH.
 Pipeline Steps:
 1. Scrape Justice Metadata (Wikipedia → data/raw/justices.json)
 2. Scrape Justice Biographies (Wikipedia → data/raw/bios/)
-3. Process Cases Metadata (CSV processing → data/processed/cases_metadata.csv)
-4. Scrape Case Descriptions (Justia + AI filtering → data/raw/case_descriptions_ai_filtered/)
-5. Process Justice Biographies (metadata enrichment → data/processed/bios/)
-6. Create Case Metadata Descriptions (→ data/processed/case_metadata/)
-7. Create Complete Case Descriptions (→ data/processed/case_descriptions/)
-8. Build Final Case Dataset (→ data/processed/case_dataset.json)
+3. Download SCDB Data (Supreme Court Database → data/raw/SCDB_2024_01_justiceCentered_Vote.csv)
+4. Process Cases Metadata (CSV processing → data/processed/cases_metadata.csv)
+5. Scrape Case Descriptions (Justia + AI filtering → data/raw/case_descriptions_ai_filtered/)
+6. Process Justice Biographies (metadata enrichment → data/processed/bios/)
+7. Create Case Metadata Descriptions (→ data/processed/case_metadata/)
+8. Create Complete Case Descriptions (→ data/processed/case_descriptions/)
+9. Build Final Case Dataset (→ data/processed/case_dataset.json)
 
 Usage:
     python main.py                    # Run full pipeline from scratch
@@ -81,7 +82,7 @@ def print_step(step_num: int, total_steps: int, description: str):
     print("-" * 60)
 
 def run_script(script_path: str, args: List[str] = None, description: str = ""):
-    """Run a Python script with optional arguments - SIMPLE and FAST."""
+    """Run a Python script with optional arguments - SIMPLE and FAST with clean output."""
     if args is None:
         args = []
     
@@ -91,9 +92,31 @@ def run_script(script_path: str, args: List[str] = None, description: str = ""):
     start_time = time.time()
     
     try:
-        # Just run it directly - no fancy monitoring or output capturing
-        result = subprocess.run(cmd, check=True)
+        # Run with output capture to prevent interference with progress bars
+        result = subprocess.run(
+            cmd, 
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1
+        )
         elapsed = time.time() - start_time
+        
+        # Only show output if there's an error or in verbose mode
+        if result.stdout.strip():
+            # Filter out known harmless output
+            output_lines = result.stdout.strip().split('\n')
+            filtered_lines = []
+            for line in output_lines:
+                # Skip common progress indicators and corrected URLs
+                if not any(skip in line for skip in ['[CORRECTED]', 'Progress:', '%|']):
+                    filtered_lines.append(line)
+            
+            if filtered_lines:
+                print("📄 Script output:")
+                for line in filtered_lines[-10:]:  # Show last 10 lines only
+                    print(f"   {line}")
         
         print(f"✅ Completed in {elapsed:.1f}s")
         return True
@@ -102,6 +125,13 @@ def run_script(script_path: str, args: List[str] = None, description: str = ""):
         elapsed = time.time() - start_time
         print(f"❌ Failed after {elapsed:.1f}s")
         print(f"Return code: {e.returncode}")
+        
+        # Show error output
+        if hasattr(e, 'output') and e.output:
+            print("Error output:")
+            for line in e.output.strip().split('\n')[-5:]:  # Last 5 lines
+                print(f"   {line}")
+        
         return False
         
     except Exception as e:
@@ -170,7 +200,7 @@ def create_directories():
 
 def step_scrape_justices(output_file: str = "data/raw/justices.json"):
     """Step 1: Scrape justice metadata from Wikipedia."""
-    print_step(1, 8, "Scraping Justice Metadata from Wikipedia")
+    print_step(1, 9, "Scraping Justice Metadata from Wikipedia")
     
     args = ["--quiet", "--output", output_file]
     
@@ -180,7 +210,7 @@ def step_scrape_justices(output_file: str = "data/raw/justices.json"):
 def step_scrape_bios(justices_file: str = "data/raw/justices.json",
                     output_dir: str = "data/raw/bios"):
     """Step 2: Scrape justice biographies from Wikipedia."""
-    print_step(2, 8, "Scraping Justice Biographies from Wikipedia")
+    print_step(2, 9, "Scraping Justice Biographies from Wikipedia")
     
     args = [
         "--quiet",
@@ -191,10 +221,22 @@ def step_scrape_bios(justices_file: str = "data/raw/justices.json",
     return run_script("src/data_pipeline/scraper_bios.py", args,
                      "Scraping justice biographies from Wikipedia")
 
+def step_download_scdb_data(output_file: str = "data/raw/SCDB_2024_01_justiceCentered_Vote.csv"):
+    """Step 3: Download SCDB Justice-Centered Vote data."""
+    print_step(3, 9, "Downloading SCDB Justice-Centered Vote Data")
+    
+    args = [
+        "--quiet",
+        "--output", output_file
+    ]
+    
+    return run_script("src/data_pipeline/scraper_scdb.py", args,
+                     "Downloading Supreme Court Database justice vote data")
+
 def step_process_cases_metadata(input_file: str = "data/raw/SCDB_2024_01_justiceCentered_Vote.csv",
                                output_file: str = "data/processed/cases_metadata.csv"):
-    """Step 3: Process raw cases metadata CSV."""
-    print_step(3, 8, "Processing Cases Metadata")
+    """Step 4: Process raw cases metadata CSV."""
+    print_step(4, 9, "Processing Cases Metadata")
     
     args = [
         "--quiet",
@@ -208,8 +250,8 @@ def step_process_cases_metadata(input_file: str = "data/raw/SCDB_2024_01_justice
 def step_scrape_case_descriptions(metadata_file: str = "data/processed/cases_metadata.csv",
                                  output_dir: str = "data/raw/case_descriptions_ai_filtered",
                                  limit: int = None):
-    """Step 4: Scrape case descriptions with AI filtering."""
-    print_step(4, 8, "Scraping Case Descriptions with AI Filtering")
+    """Step 5: Scrape case descriptions with AI filtering."""
+    print_step(5, 9, "Scraping Case Descriptions with AI Filtering")
     
     args = [
         "--quiet",
@@ -228,8 +270,8 @@ def step_scrape_case_descriptions(metadata_file: str = "data/processed/cases_met
 def step_process_bios(justices_metadata: str = "data/raw/justices.json",
                      input_dir: str = "data/raw/bios",
                      output_dir: str = "data/processed/bios"):
-    """Step 5: Process justice biographies."""
-    print_step(5, 8, "Processing Justice Biographies")
+    """Step 6: Process justice biographies."""
+    print_step(6, 9, "Processing Justice Biographies")
     
     args = [
         "--quiet",
@@ -243,8 +285,8 @@ def step_process_bios(justices_metadata: str = "data/raw/justices.json",
 
 def step_create_case_metadata(input_file: str = "data/processed/cases_metadata.csv",
                              output_dir: str = "data/processed/case_metadata"):
-    """Step 6: Create case metadata descriptions."""
-    print_step(6, 8, "Creating Case Metadata Descriptions")
+    """Step 7: Create case metadata descriptions."""
+    print_step(7, 9, "Creating Case Metadata Descriptions")
     
     args = [
         "--quiet",
@@ -258,8 +300,8 @@ def step_create_case_metadata(input_file: str = "data/processed/cases_metadata.c
 def step_create_case_descriptions(metadata_file: str = "data/processed/cases_metadata.csv",
                                  descriptions_dir: str = "data/raw/case_descriptions_ai_filtered",
                                  output_dir: str = "data/processed/case_descriptions"):
-    """Step 7: Create complete case descriptions."""
-    print_step(7, 8, "Creating Complete Case Descriptions")
+    """Step 8: Create complete case descriptions."""
+    print_step(8, 9, "Creating Complete Case Descriptions")
     
     args = [
         "--quiet",
@@ -276,8 +318,8 @@ def step_build_final_dataset(csv_file: str = "data/processed/cases_metadata.csv"
                            case_descriptions_dir: str = "data/processed/case_descriptions",
                            bios_dir: str = "data/processed/bios",
                            output_file: str = "data/processed/case_dataset.json"):
-    """Step 8: Build final case dataset."""
-    print_step(8, 8, "Building Final Case Dataset")
+    """Step 9: Build final case dataset."""
+    print_step(9, 9, "Building Final Case Dataset")
     
     args = [
         "--quiet",
@@ -304,16 +346,17 @@ def run_full_pipeline(from_step: int = 1, quick_mode: bool = False):
     # Create all necessary directories
     create_directories()
     
-    # Define all 8 pipeline steps
+    # Define all 9 pipeline steps
     all_steps = [
         (1, "Scrape Justice Metadata", step_scrape_justices),
         (2, "Scrape Justice Biographies", step_scrape_bios),
-        (3, "Process Cases Metadata", step_process_cases_metadata),
-        (4, "Scrape Case Descriptions", lambda: step_scrape_case_descriptions(limit=10 if quick_mode else None)),
-        (5, "Process Justice Biographies", step_process_bios),
-        (6, "Create Case Metadata", step_create_case_metadata),
-        (7, "Create Case Descriptions", step_create_case_descriptions),
-        (8, "Build Final Dataset", step_build_final_dataset)
+        (3, "Download SCDB Data", step_download_scdb_data),
+        (4, "Process Cases Metadata", step_process_cases_metadata),
+        (5, "Scrape Case Descriptions", lambda: step_scrape_case_descriptions(limit=10 if quick_mode else None)),
+        (6, "Process Justice Biographies", step_process_bios),
+        (7, "Create Case Metadata", step_create_case_metadata),
+        (8, "Create Case Descriptions", step_create_case_descriptions),
+        (9, "Build Final Dataset", step_build_final_dataset)
     ]
     
     # Filter steps based on from_step parameter
@@ -329,7 +372,7 @@ def run_full_pipeline(from_step: int = 1, quick_mode: bool = False):
         completed_steps = 0
         
         for step_num, step_name, step_func in active_steps:
-            pbar.set_description(f"🔄 Step {step_num}/8: {step_name}")
+            pbar.set_description(f"🔄 Step {step_num}/9: {step_name}")
             
             try:
                 success = step_func()
@@ -341,7 +384,7 @@ def run_full_pipeline(from_step: int = 1, quick_mode: bool = False):
                 
                 completed_steps += 1
                 pbar.update(1)
-                pbar.set_description(f"✅ Step {step_num}/8 Complete")
+                pbar.set_description(f"✅ Step {step_num}/9 Complete")
                 
             except Exception as e:
                 pbar.set_description(f"❌ Error at Step {step_num}")
@@ -394,6 +437,7 @@ def run_single_step(step: str):
     step_mapping = {
         "scrape-justices": step_scrape_justices,
         "scrape-bios": step_scrape_bios,
+        "download-scdb": step_download_scdb_data,
         "process-cases": step_process_cases_metadata,
         "scrape-cases": step_scrape_case_descriptions,
         "process-bios": step_process_bios,
@@ -425,12 +469,13 @@ Examples:
 Complete Pipeline Steps:
   1. scrape-justices   - Scrape justice metadata from Wikipedia
   2. scrape-bios      - Scrape justice biographies from Wikipedia
-  3. process-cases    - Process cases metadata CSV
-  4. scrape-cases     - Scrape case descriptions with AI filtering
-  5. process-bios     - Process justice biographies with metadata
-  6. case-metadata    - Create case metadata descriptions
-  7. case-descriptions - Create complete case descriptions
-  8. dataset          - Build final JSON dataset
+  3. download-scdb    - Download SCDB justice vote data
+  4. process-cases    - Process cases metadata CSV
+  5. scrape-cases     - Scrape case descriptions with AI filtering
+  6. process-bios     - Process justice biographies with metadata
+  7. case-metadata    - Create case metadata descriptions
+  8. case-descriptions - Create complete case descriptions
+  9. dataset          - Build final JSON dataset
 
 Requirements:
   - Python packages: tqdm (pip install tqdm)
@@ -440,7 +485,7 @@ Requirements:
     
     parser.add_argument(
         "--step",
-        choices=["scrape-justices", "scrape-bios", "process-cases", "scrape-cases", 
+        choices=["scrape-justices", "scrape-bios", "download-scdb", "process-cases", "scrape-cases", 
                 "process-bios", "case-metadata", "case-descriptions", "dataset"],
         help="Run a single pipeline step only"
     )
@@ -448,9 +493,9 @@ Requirements:
     parser.add_argument(
         "--from-step",
         type=int,
-        choices=range(1, 9),
+        choices=range(1, 10),
         default=1,
-        help="Start pipeline from specific step (1-8)"
+        help="Start pipeline from specific step (1-9)"
     )
     
     parser.add_argument(
