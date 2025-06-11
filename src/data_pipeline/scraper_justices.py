@@ -7,6 +7,32 @@ import os
 from dotenv import load_dotenv
 import json
 import argparse
+import sys
+
+# Add src to path for utils import - handle different calling contexts
+script_dir = os.path.dirname(os.path.abspath(__file__))
+src_dir = os.path.join(os.path.dirname(script_dir))
+if src_dir not in sys.path:
+    sys.path.insert(0, src_dir)
+
+try:
+    from utils.progress import tqdm, HAS_TQDM
+except ImportError:
+    # Fallback if utils not available
+    try:
+        from tqdm import tqdm
+        HAS_TQDM = True
+    except ImportError:
+        HAS_TQDM = False
+        class tqdm:
+            def __init__(self, total=None, desc="", disable=False, **kwargs):
+                if not disable: print(f"🔄 {desc}")
+            def update(self, n=1): pass
+            def set_description(self, desc): pass
+            def close(self): pass
+            def __enter__(self): return self
+            def __exit__(self, *args): self.close()
+
 load_dotenv()
 
 def parse_date(s):
@@ -160,8 +186,15 @@ if __name__ == "__main__":
     args = parser.parse_args()
     
     verbose = args.verbose and not args.quiet
+    show_progress = args.quiet or not args.verbose  # Show progress bar in quiet mode or normal mode
     
-    justices = get_justices(verbose=verbose)
+    # Simple progress indication for this fast operation
+    if show_progress:
+        with tqdm(total=1, desc="Scraping justice metadata", disable=args.quiet and not HAS_TQDM) as pbar:
+            justices = get_justices(verbose=verbose)
+            pbar.update(1)
+    else:
+        justices = get_justices(verbose=verbose)
     
     if not args.quiet:
         print(f"Found {len(justices)} justices")

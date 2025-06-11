@@ -3,6 +3,11 @@ import pandas as pd
 import numpy as np
 import argparse
 import os
+import sys
+
+# Add src to path for utils import
+sys.path.append('src')
+from utils.progress import tqdm, HAS_TQDM
 
 def process_cases_metadata(input_file: str, output_file: str, verbose: bool = True, quiet: bool = False):
     """
@@ -50,59 +55,68 @@ def process_cases_metadata(input_file: str, output_file: str, verbose: bool = Tr
     
     case_stats = []
     
-    for case_id, case_group in df_filtered.groupby('caseIssuesId'):
-        # Get case metadata (should be the same for all justices in the case)
-        case_info = case_group.iloc[0].copy()
+    # Get unique cases for progress tracking
+    unique_cases = df_filtered['caseIssuesId'].unique()
+    disable_tqdm = quiet and not HAS_TQDM
+    
+    with tqdm(total=len(unique_cases), desc="Processing cases", disable=disable_tqdm,
+              unit="case", leave=True) as pbar:
         
-        # Count votes
-        vote_counts = case_group['vote'].value_counts()
-        total_justices = len(case_group)
-        
-        # Compute percentages (vote codes: 1=majority/in favor, 2=dissent/against, 8=recused/absent)
-        in_favor_count = vote_counts.get(1.0, 0)  # majority votes
-        against_count = vote_counts.get(2.0, 0)   # dissent votes  
-        absent_count = vote_counts.get(8.0, 0)    # recused/absent votes
-        other_count = sum(vote_counts.get(k, 0) for k in vote_counts if k not in [1.0, 2.0, 8.0])
-        total_votes = in_favor_count + against_count + absent_count + other_count
-        
-        # Calculate percentages out of 9 justices (typical Supreme Court size)
-        if total_votes == 0:
-            pct_in_favor = pct_against = pct_absent = pct_other = 0.0
-            if verbose:
-                print(f"Case {case_id} has no votes")
-        else:
-            pct_in_favor = in_favor_count / total_votes
-            pct_against = against_count / total_votes
-            pct_absent = absent_count / total_votes
-            pct_other = other_count / total_votes
+        for case_id in unique_cases:
+            case_group = df_filtered[df_filtered['caseIssuesId'] == case_id]
+            # Get case metadata (should be the same for all justices in the case)
+            case_info = case_group.iloc[0].copy()
+            
+            # Count votes
+            vote_counts = case_group['vote'].value_counts()
+            total_justices = len(case_group)
+            
+            # Compute percentages (vote codes: 1=majority/in favor, 2=dissent/against, 8=recused/absent)
+            in_favor_count = vote_counts.get(1.0, 0)  # majority votes
+            against_count = vote_counts.get(2.0, 0)   # dissent votes  
+            absent_count = vote_counts.get(8.0, 0)    # recused/absent votes
+            other_count = sum(vote_counts.get(k, 0) for k in vote_counts if k not in [1.0, 2.0, 8.0])
+            total_votes = in_favor_count + against_count + absent_count + other_count
+            
+            # Calculate percentages out of 9 justices (typical Supreme Court size)
+            if total_votes == 0:
+                pct_in_favor = pct_against = pct_absent = pct_other = 0.0
+                if verbose:
+                    print(f"Case {case_id} has no votes")
+            else:
+                pct_in_favor = in_favor_count / total_votes
+                pct_against = against_count / total_votes
+                pct_absent = absent_count / total_votes
+                pct_other = other_count / total_votes
 
-        # Create result record
-        case_result = {
-            'caseIssuesId': case_id,
-            'usCite': case_info['usCite'],
-            'chief': case_info['chief'], 
-            'caseName': case_info['caseName'],
-            'petitioner': case_info['petitioner'],
-            'petitionerState': case_info['petitionerState'],
-            'respondentState': case_info['respondentState'],
-            'caseOrigin': case_info['caseOrigin'],
-            'caseOriginState': case_info['caseOriginState'],
-            'issueArea': case_info['issueArea'],
-            'lawType': case_info['lawType'],
-            'total_justices_voting': total_justices,
-            'votes_in_favor': in_favor_count,
-            'votes_against': against_count, 
-            'votes_absent': absent_count,
-            'votes_other': other_count,
-            'pct_in_favor': pct_in_favor,
-            'pct_against': pct_against,
-            'pct_absent': pct_absent,
-            'pct_other': pct_other,
-            # Also include individual justice votes as a reference
-            'justice_votes': '; '.join([f"{row['justiceName']}:{row['vote']}" for _, row in case_group.iterrows()])
-        }
-        
-        case_stats.append(case_result)
+            # Create result record
+            case_result = {
+                'caseIssuesId': case_id,
+                'usCite': case_info['usCite'],
+                'chief': case_info['chief'], 
+                'caseName': case_info['caseName'],
+                'petitioner': case_info['petitioner'],
+                'petitionerState': case_info['petitionerState'],
+                'respondentState': case_info['respondentState'],
+                'caseOrigin': case_info['caseOrigin'],
+                'caseOriginState': case_info['caseOriginState'],
+                'issueArea': case_info['issueArea'],
+                'lawType': case_info['lawType'],
+                'total_justices_voting': total_justices,
+                'votes_in_favor': in_favor_count,
+                'votes_against': against_count, 
+                'votes_absent': absent_count,
+                'votes_other': other_count,
+                'pct_in_favor': pct_in_favor,
+                'pct_against': pct_against,
+                'pct_absent': pct_absent,
+                'pct_other': pct_other,
+                # Also include individual justice votes as a reference
+                'justice_votes': '; '.join([f"{row['justiceName']}:{row['vote']}" for _, row in case_group.iterrows()])
+            }
+            
+            case_stats.append(case_result)
+            pbar.update(1)
     
     # Convert to DataFrame
     result_df = pd.DataFrame(case_stats)

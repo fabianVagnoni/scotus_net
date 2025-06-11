@@ -33,39 +33,6 @@ import time
 from pathlib import Path
 from typing import List, Optional
 
-try:
-    from tqdm import tqdm
-    HAS_TQDM = True
-except ImportError:
-    HAS_TQDM = False
-    print("⚠️  tqdm not installed. Install with: pip install tqdm")
-    
-    # Fallback progress bar class
-    class tqdm:
-        def __init__(self, total=None, desc="", unit="", **kwargs):
-            self.total = total
-            self.desc = desc
-            self.n = 0
-            print(f"🔄 {desc}")
-        
-        def update(self, n=1):
-            self.n += n
-            if self.total:
-                percent = (self.n / self.total) * 100
-                print(f"   Progress: {self.n}/{self.total} ({percent:.1f}%)")
-            
-        def set_description(self, desc):
-            self.desc = desc
-            
-        def close(self):
-            pass
-            
-        def __enter__(self):
-            return self
-            
-        def __exit__(self, *args):
-            self.close()
-
 # Add src to path for imports
 sys.path.append('src/data_pipeline')
 
@@ -82,7 +49,7 @@ def print_step(step_num: int, total_steps: int, description: str):
     print("-" * 60)
 
 def run_script(script_path: str, args: List[str] = None, description: str = ""):
-    """Run a Python script with optional arguments - SIMPLE and FAST with clean output."""
+    """Run a Python script with optional arguments - allows real-time progress bar display."""
     if args is None:
         args = []
     
@@ -92,31 +59,9 @@ def run_script(script_path: str, args: List[str] = None, description: str = ""):
     start_time = time.time()
     
     try:
-        # Run with output capture to prevent interference with progress bars
-        result = subprocess.run(
-            cmd, 
-            check=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            bufsize=1
-        )
+        # Don't capture output so tqdm progress bars can display in real-time
+        result = subprocess.run(cmd, check=True)
         elapsed = time.time() - start_time
-        
-        # Only show output if there's an error or in verbose mode
-        if result.stdout.strip():
-            # Filter out known harmless output
-            output_lines = result.stdout.strip().split('\n')
-            filtered_lines = []
-            for line in output_lines:
-                # Skip common progress indicators and corrected URLs
-                if not any(skip in line for skip in ['[CORRECTED]', 'Progress:', '%|']):
-                    filtered_lines.append(line)
-            
-            if filtered_lines:
-                print("📄 Script output:")
-                for line in filtered_lines[-10:]:  # Show last 10 lines only
-                    print(f"   {line}")
         
         print(f"✅ Completed in {elapsed:.1f}s")
         return True
@@ -125,13 +70,6 @@ def run_script(script_path: str, args: List[str] = None, description: str = ""):
         elapsed = time.time() - start_time
         print(f"❌ Failed after {elapsed:.1f}s")
         print(f"Return code: {e.returncode}")
-        
-        # Show error output
-        if hasattr(e, 'output') and e.output:
-            print("Error output:")
-            for line in e.output.strip().split('\n')[-5:]:  # Last 5 lines
-                print(f"   {line}")
-        
         return False
         
     except Exception as e:
@@ -366,37 +304,29 @@ def run_full_pipeline(from_step: int = 1, quick_mode: bool = False):
     if from_step > 1:
         print(f"\n⏭️  Starting from step {from_step}, skipping {from_step-1} initial steps")
     
-    # Simple pipeline progress bar
-    with tqdm(total=total_steps, desc="🚀 Pipeline Progress", unit="step") as pbar:
-        
-        completed_steps = 0
-        
-        for step_num, step_name, step_func in active_steps:
-            pbar.set_description(f"🔄 Step {step_num}/9: {step_name}")
+    print(f"\n🚀 Executing {total_steps} pipeline steps...")
+    
+    completed_steps = 0
+    
+    for step_num, step_name, step_func in active_steps:
+        try:
+            success = step_func()
             
-            try:
-                success = step_func()
-                
-                if not success:
-                    pbar.set_description(f"❌ Failed at Step {step_num}")
-                    print(f"\n❌ Step {step_num} ({step_name}) failed. Stopping pipeline.")
-                    return False
-                
-                completed_steps += 1
-                pbar.update(1)
-                pbar.set_description(f"✅ Step {step_num}/9 Complete")
-                
-            except Exception as e:
-                pbar.set_description(f"❌ Error at Step {step_num}")
-                print(f"\n❌ Step {step_num} ({step_name}) failed with error: {e}")
+            if not success:
+                print(f"\n❌ Step {step_num} ({step_name}) failed. Stopping pipeline.")
                 return False
-        
-        pbar.set_description("🎉 All Steps Completed!")
+            
+            completed_steps += 1
+            print(f"✅ Step {step_num}/9 completed successfully\n")
+            
+        except Exception as e:
+            print(f"\n❌ Step {step_num} ({step_name}) failed with error: {e}")
+            return False
     
     # Pipeline completion
     total_time = time.time() - start_time
     
-    print_header("�� PIPELINE COMPLETED SUCCESSFULLY!", "=")
+    print_header("🎉 PIPELINE COMPLETED SUCCESSFULLY!", "=")
     print(f"⏱️  Total execution time: {total_time:.1f} seconds ({total_time/60:.1f} minutes)")
     print(f"🏁 Completed {completed_steps}/{total_steps} steps successfully")
     

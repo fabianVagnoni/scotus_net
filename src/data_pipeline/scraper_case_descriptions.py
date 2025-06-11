@@ -10,6 +10,38 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 import google.generativeai as genai
 from dotenv import load_dotenv
+import sys
+
+# Add src to path for utils import - handle different calling contexts
+script_dir = os.path.dirname(os.path.abspath(__file__))
+src_dir = os.path.join(os.path.dirname(script_dir))
+if src_dir not in sys.path:
+    sys.path.insert(0, src_dir)
+
+try:
+    from utils.progress import tqdm, HAS_TQDM
+except ImportError:
+    # Fallback if utils not available
+    try:
+        from tqdm import tqdm
+        HAS_TQDM = True
+    except ImportError:
+        HAS_TQDM = False
+        class tqdm:
+            def __init__(self, iterable=None, total=None, desc="", disable=False, **kwargs):
+                self.iterable = iterable or []
+                if not disable: print(f"🔄 {desc}")
+            def update(self, n=1): pass
+            def set_description(self, desc): pass
+            def close(self): pass
+            def __enter__(self): return self
+            def __exit__(self, *args): self.close()
+            def __iter__(self):
+                for item in self.iterable:
+                    yield item
+                    self.update(1)
+            @staticmethod
+            def write(text): print(text)
 
 # Load environment variables
 load_dotenv()
@@ -229,88 +261,107 @@ def process_case_descriptions(input_file: str, output_dir: str, limit: int = Non
     no_content = 0
     api_failed = 0
     
-    for idx, row in unique_citations.iterrows():
-        case_id = row['caseIssuesId']
-        us_cite = row['usCite'] 
-        case_name = row['caseName']
+    # Set up progress bar
+    disable_tqdm = quiet and not HAS_TQDM
+    
+    with tqdm(total=len(unique_citations), desc="Processing cases", disable=disable_tqdm,
+              unit="case", leave=True) as pbar:
         
-        if verbose:
-            print(f"[{idx + 1:,}/{len(unique_citations):,}] Processing: {case_name} ({us_cite})")
-        
-        try:
-            # Convert citation to URL
-            url = citation_to_url(us_cite)
-            if not url:
+        for idx, row in unique_citations.iterrows():
+            case_id = row['caseIssuesId']
+            us_cite = row['usCite'] 
+            case_name = row['caseName']
+            
+            # Update progress bar description
+            pbar.set_description(f"Processing {case_name[:30]}...")
+            
+            if verbose:
+                tqdm.write(f"[{idx + 1:,}/{len(unique_citations):,}] Processing: {case_name} ({us_cite})")
+            
+            try:
+                # Convert citation to URL
+                url = citation_to_url(us_cite)
+                if not url:
+                    if verbose:
+                        tqdm.write(f"  [SKIP] Could not create URL for citation: {us_cite}")
+                    failed += 1
+                    pbar.update(1)
+                    continue
+                
                 if verbose:
-                    print(f"  [SKIP] Could not create URL for citation: {us_cite}")
+                    tqdm.write(f"  [FETCHING] {url}")
+                
+                # Scrape full case description
+                raw_description = scrape_full_case_description(url)
+                
+                if not raw_description:
+                    if verbose:
+                        tqdm.write(f"  [WARNING] No content retrieved from website")
+                    no_content += 1
+                    pbar.update(1)
+                    continue
+                
+                if len(raw_description) < 500:
+                    if verbose:
+                        tqdm.write(f"  [WARNING] Content too short ({len(raw_description)} chars)")
+                    no_content += 1
+                    pbar.update(1)
+                    continue
+                
+                if verbose:
+                    tqdm.write(f"  [RAW] Retrieved {len(raw_description):,} characters")
+                    tqdm.write(f"  [GEMINI] Filtering content with AI...")
+                
+                # Filter content with Gemini API
+                filtered_description = filter_content_with_gemini(model, case_name, us_cite, raw_description)
+                
+                if not filtered_description:
+                    if verbose:
+                        tqdm.write(f"  [ERROR] Gemini API filtering failed")
+                    api_failed += 1
+                    pbar.update(1)
+                    continue
+                
+                if len(filtered_description) < 50:
+                    if verbose:
+                        tqdm.write(f"  [WARNING] Filtered content too short ({len(filtered_description)} chars)")
+                    api_failed += 1
+                    pbar.update(1)
+                    continue
+                
+                # Create filename
+                filename = sanitize_filename(us_cite)
+                filepath = os.path.join(output_dir, filename)
+                
+                # Save filtered description
+                with open(filepath, 'w', encoding='utf-8') as f:
+                    f.write(f"Case: {case_name}\n")
+                    f.write(f"Citation: {us_cite}\n")
+                    f.write(f"Case ID: {case_id}\n")
+                    f.write(f"Source: {url}\n")
+                    f.write(f"Note: Content filtered by Gemini 2.0 Flash to exclude post-decision information\n")
+                    f.write(f"Raw length: {len(raw_description):,} chars, Filtered length: {len(filtered_description):,} chars\n")
+                    f.write(f"{'='*80}\n\n")
+                    f.write(filtered_description)
+                
+                successful += 1
+                word_count = len(filtered_description.split())
+                if verbose:
+                    tqdm.write(f"  [SUCCESS] Saved {filename} ({word_count:,} words, AI-filtered)")
+                
+                # Update progress with success count in description
+                pbar.set_description(f"Processed {successful}/{len(unique_citations)} cases")
+                
+                # Rate limiting - be respectful to both APIs
+                time.sleep(2)  # 2 second delay between requests (Gemini API + Justia)
+                
+            except Exception as e:
+                if verbose:
+                    tqdm.write(f"  [ERROR] Failed to process {case_name}: {e}")
                 failed += 1
-                continue
             
-            if verbose:
-                print(f"  [FETCHING] {url}")
-            
-            # Scrape full case description
-            raw_description = scrape_full_case_description(url)
-            
-            if not raw_description:
-                if verbose:
-                    print(f"  [WARNING] No content retrieved from website")
-                no_content += 1
-                continue
-            
-            if len(raw_description) < 500:
-                if verbose:
-                    print(f"  [WARNING] Content too short ({len(raw_description)} chars)")
-                no_content += 1
-                continue
-            
-            if verbose:
-                print(f"  [RAW] Retrieved {len(raw_description):,} characters")
-                print(f"  [GEMINI] Filtering content with AI...")
-            
-            # Filter content with Gemini API
-            filtered_description = filter_content_with_gemini(model, case_name, us_cite, raw_description)
-            
-            if not filtered_description:
-                if verbose:
-                    print(f"  [ERROR] Gemini API filtering failed")
-                api_failed += 1
-                continue
-            
-            if len(filtered_description) < 50:
-                if verbose:
-                    print(f"  [WARNING] Filtered content too short ({len(filtered_description)} chars)")
-                api_failed += 1
-                continue
-            
-            # Create filename
-            filename = sanitize_filename(us_cite)
-            filepath = os.path.join(output_dir, filename)
-            
-            # Save filtered description
-            with open(filepath, 'w', encoding='utf-8') as f:
-                f.write(f"Case: {case_name}\n")
-                f.write(f"Citation: {us_cite}\n")
-                f.write(f"Case ID: {case_id}\n")
-                f.write(f"Source: {url}\n")
-                f.write(f"Note: Content filtered by Gemini 2.0 Flash to exclude post-decision information\n")
-                f.write(f"Raw length: {len(raw_description):,} chars, Filtered length: {len(filtered_description):,} chars\n")
-                f.write(f"{'='*80}\n\n")
-                f.write(filtered_description)
-            
-            successful += 1
-            word_count = len(filtered_description.split())
-            if verbose:
-                print(f"  [SUCCESS] Saved {filename} ({word_count:,} words, AI-filtered)")
-            
-            # Rate limiting - be respectful to both APIs
-            time.sleep(2)  # 2 second delay between requests (Gemini API + Justia)
-            
-        except Exception as e:
-            if verbose:
-                print(f"  [ERROR] Failed to process {case_name}: {e}")
-            failed += 1
-            continue
+            # Always update progress bar
+            pbar.update(1)
     
     if not quiet:
         print(f"Successfully processed {successful}/{len(unique_citations)} cases ({successful/len(unique_citations)*100:.1f}% success rate)")

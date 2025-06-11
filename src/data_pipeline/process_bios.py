@@ -5,6 +5,11 @@ import json
 import argparse
 from pathlib import Path
 from typing import Dict, Optional
+import sys
+
+# Add src to path for utils import
+sys.path.append('src')
+from utils.progress import tqdm, HAS_TQDM
 
 def load_justices_metadata(metadata_file: str) -> Dict:
     """
@@ -314,43 +319,52 @@ def main(input_dir: str, output_dir: str, metadata_file: str = None, verbose: bo
         'total_reduction_words': 0,
     }
     
-    for bio_file in sorted(bio_files):
-        justice_name = bio_file.stem  # filename without extension
-        output_file = output_path / bio_file.name
+    # Set up progress bar
+    disable_tqdm = quiet and not HAS_TQDM
+    
+    with tqdm(bio_files, desc="Processing biographies", disable=disable_tqdm,
+              unit="bio", leave=True) as pbar:
         
-        try:
-            stats = process_biography(str(bio_file), str(output_file), justices_metadata)
+        for bio_file in pbar:
+            justice_name = bio_file.stem  # filename without extension
+            output_file = output_path / bio_file.name
             
-            # Create status indicator based on what was removed
-            status_parts = []
-            if stats['intro_removed']:
-                status_parts.append("INTRO")
-            if stats['scotus_truncated']:
-                status_parts.append("SCOTUS")
+            # Update progress bar description
+            pbar.set_description(f"Processing {justice_name}")
             
-            if status_parts:
-                status = "REMOVED " + "+".join(status_parts)
-            else:
-                status = "KEPT FULL"
-            
-            reduction_pct = (stats['reduction_words'] / stats['original_words'] * 100) if stats['original_words'] > 0 else 0
-            
-            if verbose:
-                print(f"[{status:15}] {justice_name}")
-                print(f"                {stats['original_words']} → {stats['processed_words']} words "
-                      f"(-{stats['reduction_words']}, -{reduction_pct:.1f}%)")
-            
-            # Update totals
-            total_stats['processed'] += 1
-            if stats['truncated']:
-                total_stats['truncated'] += 1
-            total_stats['total_original_words'] += stats['original_words']
-            total_stats['total_processed_words'] += stats['processed_words']
-            total_stats['total_reduction_words'] += stats['reduction_words']
-            
-        except Exception as e:
-            if verbose:
-                print(f"[ERROR          ] {justice_name}: {e}")
+            try:
+                stats = process_biography(str(bio_file), str(output_file), justices_metadata)
+                
+                # Create status indicator based on what was removed
+                status_parts = []
+                if stats['intro_removed']:
+                    status_parts.append("INTRO")
+                if stats['scotus_truncated']:
+                    status_parts.append("SCOTUS")
+                
+                if status_parts:
+                    status = "REMOVED " + "+".join(status_parts)
+                else:
+                    status = "KEPT FULL"
+                
+                reduction_pct = (stats['reduction_words'] / stats['original_words'] * 100) if stats['original_words'] > 0 else 0
+                
+                if verbose:
+                    tqdm.write(f"[{status:15}] {justice_name}")
+                    tqdm.write(f"                {stats['original_words']} → {stats['processed_words']} words "
+                              f"(-{stats['reduction_words']}, -{reduction_pct:.1f}%)")
+                
+                # Update totals
+                total_stats['processed'] += 1
+                if stats['truncated']:
+                    total_stats['truncated'] += 1
+                total_stats['total_original_words'] += stats['original_words']
+                total_stats['total_processed_words'] += stats['processed_words']
+                total_stats['total_reduction_words'] += stats['reduction_words']
+                
+            except Exception as e:
+                if verbose:
+                    tqdm.write(f"[ERROR          ] {justice_name}: {e}")
     
     if not quiet:
         print(f"Processed {total_stats['processed']} biographies ({total_stats['truncated']} truncated)")

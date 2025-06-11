@@ -14,6 +14,11 @@ import os
 import requests
 import argparse
 from pathlib import Path
+import sys
+
+# Add src to path for utils import
+sys.path.append('src')
+from utils.progress import tqdm, HAS_TQDM
 
 def download_scdb_data(output_file: str = "data/raw/SCDB_2024_01_justiceCentered_Vote.csv", verbose: bool = True, quiet: bool = False):
     """
@@ -54,15 +59,16 @@ def download_scdb_data(output_file: str = "data/raw/SCDB_2024_01_justiceCentered
         if verbose:
             print(f"Downloading {total_size / (1024*1024):.1f} MB...")
         
-        with open(zip_path, 'wb') as f:
-            downloaded = 0
-            for chunk in response.iter_content(chunk_size=8192):
-                if chunk:
-                    f.write(chunk)
-                    downloaded += len(chunk)
-                    if verbose and total_size > 0:
-                        percent = (downloaded / total_size) * 100
-                        print(f"Progress: {percent:.1f}%", end='\r')
+        disable_tqdm = quiet and not HAS_TQDM
+        
+        with tqdm(total=total_size, desc="Downloading SCDB", disable=disable_tqdm,
+                  unit="B", unit_scale=True, leave=True) as pbar:
+            
+            with open(zip_path, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    if chunk:
+                        f.write(chunk)
+                        pbar.update(len(chunk))
         
         if verbose:
             print(f"\nDownload complete: {zip_path}")

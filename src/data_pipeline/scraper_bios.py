@@ -5,6 +5,38 @@ import json
 import requests
 from bs4 import BeautifulSoup
 import argparse
+import sys
+
+# Add src to path for utils import - handle different calling contexts
+script_dir = os.path.dirname(os.path.abspath(__file__))
+src_dir = os.path.join(os.path.dirname(script_dir))
+if src_dir not in sys.path:
+    sys.path.insert(0, src_dir)
+
+try:
+    from utils.progress import tqdm, HAS_TQDM
+except ImportError:
+    # Fallback if utils not available
+    try:
+        from tqdm import tqdm
+        HAS_TQDM = True
+    except ImportError:
+        HAS_TQDM = False
+        class tqdm:
+            def __init__(self, iterable=None, total=None, desc="", disable=False, **kwargs):
+                self.iterable = iterable or []
+                if not disable: print(f"🔄 {desc}")
+            def update(self, n=1): pass
+            def set_description(self, desc): pass
+            def close(self): pass
+            def __enter__(self): return self
+            def __exit__(self, *args): self.close()
+            def __iter__(self):
+                for item in self.iterable:
+                    yield item
+                    self.update(1)
+            @staticmethod
+            def write(text): print(text)
 
 # Common name corrections for Wikipedia URLs
 NAME_CORRECTIONS = {
@@ -205,51 +237,62 @@ def main(input_json: str, output_dir: str, verbose: bool = True, quiet: bool = F
     if not quiet:
         print(f"Processing {total} justice biographies...")
 
-    for name, info in justices.items():
-        url = info.get("url")
-        if not url:
-            if verbose:
-                print(f"[SKIP] {name}: no URL")
-            failed += 1
-            continue
-
-        if verbose:
-            print(f"[PROCESSING] {name}...")
+    # Set up progress bar - show in quiet mode and normal mode, hide only if verbose
+    disable_tqdm = quiet and not HAS_TQDM
+    
+    justice_items = list(justices.items())
+    
+    with tqdm(justice_items, desc="Scraping biographies", disable=disable_tqdm, 
+              unit="biography", leave=True) as pbar:
         
-        # Try to correct known URL mismatches
-        corrected_url = correct_wikipedia_url(name, url, verbose=verbose)
-        
-        # Validate URL exists
-        if not validate_wikipedia_url(corrected_url):
-            if verbose:
-                print(f"[ERROR] {name}: URL not accessible - {corrected_url}")
-            failed += 1
-            continue
-            
-        try:
-            bio_text = fetch_biography(corrected_url)
-            if not bio_text:
+        for name, info in pbar:
+            url = info.get("url")
+            if not url:
                 if verbose:
-                    print(f"[WARN] {name}: no biography extracted from {corrected_url}")
+                    tqdm.write(f"[SKIP] {name}: no URL")
                 failed += 1
                 continue
 
-            filename = slugify(name) + ".txt"
-            path = os.path.join(output_dir, filename)
-            with open(path, "w", encoding="utf-8") as out:
-                out.write(bio_text)
+            if verbose:
+                tqdm.write(f"[PROCESSING] {name}...")
             
-            # Show some stats about the extracted content
-            word_count = len(bio_text.split())
-            char_count = len(bio_text)
-            if verbose:
-                print(f"[OK]   {name} → {filename} ({word_count} words, {char_count} chars)")
-            successful += 1
+            # Update progress bar description
+            pbar.set_description(f"Scraping {name}")
+            
+            # Try to correct known URL mismatches
+            corrected_url = correct_wikipedia_url(name, url, verbose=verbose)
+            
+            # Validate URL exists
+            if not validate_wikipedia_url(corrected_url):
+                if verbose:
+                    tqdm.write(f"[ERROR] {name}: URL not accessible - {corrected_url}")
+                failed += 1
+                continue
+                
+            try:
+                bio_text = fetch_biography(corrected_url)
+                if not bio_text:
+                    if verbose:
+                        tqdm.write(f"[WARN] {name}: no biography extracted from {corrected_url}")
+                    failed += 1
+                    continue
 
-        except Exception as e:
-            if verbose:
-                print(f"[ERROR] {name}: {e}")
-            failed += 1
+                filename = slugify(name) + ".txt"
+                path = os.path.join(output_dir, filename)
+                with open(path, "w", encoding="utf-8") as out:
+                    out.write(bio_text)
+                
+                # Show some stats about the extracted content
+                word_count = len(bio_text.split())
+                char_count = len(bio_text)
+                if verbose:
+                    tqdm.write(f"[OK]   {name} → {filename} ({word_count} words, {char_count} chars)")
+                successful += 1
+
+            except Exception as e:
+                if verbose:
+                    tqdm.write(f"[ERROR] {name}: {e}")
+                failed += 1
 
     if not quiet:
         print(f"Successfully scraped {successful}/{total} biographies ({successful/total*100:.1f}% success rate)")
