@@ -184,13 +184,13 @@ def fetch_biography(url: str) -> str:
         # Fallback: try to get ANY text content
         fallback_text = content.get_text(strip=True)
         if fallback_text and len(fallback_text) > 100:
-            print(f"    [DEBUG] Using fallback text extraction")
+            # Only show debug in verbose mode - for now just use fallback silently
             fallback_text = re.sub(r'\s+', ' ', fallback_text)
             return fallback_text[:10000]
     
     return final_text
 
-def main(input_json: str, output_dir: str):
+def main(input_json: str, output_dir: str, verbose: bool = True, quiet: bool = False):
     # load the justices dict
     with open(input_json, "r", encoding="utf-8") as f:
         justices = json.load(f)
@@ -201,28 +201,35 @@ def main(input_json: str, output_dir: str):
     failed = 0
     total = len(justices)
 
+    if not quiet:
+        print(f"Processing {total} justice biographies...")
+
     for name, info in justices.items():
         url = info.get("url")
         if not url:
-            print(f"[SKIP] {name}: no URL")
+            if verbose:
+                print(f"[SKIP] {name}: no URL")
             failed += 1
             continue
 
-        print(f"[PROCESSING] {name}...")
+        if verbose:
+            print(f"[PROCESSING] {name}...")
         
         # Try to correct known URL mismatches
         corrected_url = correct_wikipedia_url(name, url)
         
         # Validate URL exists
         if not validate_wikipedia_url(corrected_url):
-            print(f"[ERROR] {name}: URL not accessible - {corrected_url}")
+            if verbose:
+                print(f"[ERROR] {name}: URL not accessible - {corrected_url}")
             failed += 1
             continue
             
         try:
             bio_text = fetch_biography(corrected_url)
             if not bio_text:
-                print(f"[WARN] {name}: no biography extracted from {corrected_url}")
+                if verbose:
+                    print(f"[WARN] {name}: no biography extracted from {corrected_url}")
                 failed += 1
                 continue
 
@@ -234,18 +241,24 @@ def main(input_json: str, output_dir: str):
             # Show some stats about the extracted content
             word_count = len(bio_text.split())
             char_count = len(bio_text)
-            print(f"[OK]   {name} → {filename} ({word_count} words, {char_count} chars)")
+            if verbose:
+                print(f"[OK]   {name} → {filename} ({word_count} words, {char_count} chars)")
             successful += 1
 
         except Exception as e:
-            print(f"[ERROR] {name}: {e}")
+            if verbose:
+                print(f"[ERROR] {name}: {e}")
             failed += 1
 
-    print(f"\n=== SUMMARY ===")
-    print(f"Total justices: {total}")
-    print(f"Successful: {successful}")
-    print(f"Failed: {failed}")
-    print(f"Success rate: {successful/total*100:.1f}%")
+    if not quiet:
+        print(f"Successfully scraped {successful}/{total} biographies ({successful/total*100:.1f}% success rate)")
+    
+    if verbose:
+        print(f"\n=== DETAILED SUMMARY ===")
+        print(f"Total justices: {total}")
+        print(f"Successful: {successful}")
+        print(f"Failed: {failed}")
+        print(f"Success rate: {successful/total*100:.1f}%")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
@@ -263,6 +276,10 @@ if __name__ == "__main__":
         default="data/raw/bios",
         help="Directory in which to save .txt files",
     )
+    parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose output")
+    parser.add_argument("--quiet", "-q", action="store_true", help="Minimize output")
+    
     args = parser.parse_args()
 
-    main(args.input, args.output)
+    verbose = args.verbose and not args.quiet
+    main(args.input, args.output, verbose=verbose, quiet=args.quiet)

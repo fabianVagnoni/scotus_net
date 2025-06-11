@@ -203,13 +203,14 @@ def parse_justice_votes(justice_votes_str: str) -> List[str]:
     return justice_names
 
 def build_dataset(csv_file: str, case_metadata_dir: str, case_descriptions_dir: str, 
-                 bios_dir: str, output_file: str):
+                 bios_dir: str, output_file: str, verbose: bool = True, quiet: bool = False):
     """
     Build the JSON dataset from the CSV file and associated directories.
     """
     dataset = {}
     
-    print(f"Reading CSV file: {csv_file}")
+    if verbose:
+        print(f"Reading CSV file: {csv_file}")
     with open(csv_file, 'r', encoding='utf-8') as f:
         reader = csv.DictReader(f)
         
@@ -250,27 +251,30 @@ def build_dataset(csv_file: str, case_metadata_dir: str, case_descriptions_dir: 
             ]
             
             processed_cases += 1
-            if processed_cases % 1000 == 0:
+            if processed_cases % 1000 == 0 and verbose:
                 print(f"Processed {processed_cases} cases...")
     
-    print(f"Total cases processed: {processed_cases}")
-    print(f"Unique cases in dataset: {len(dataset)}")
+    if not quiet:
+        print(f"Built dataset with {len(dataset)} unique cases")
     
     # Save the dataset
-    print(f"Saving dataset to: {output_file}")
+    if verbose:
+        print(f"Saving dataset to: {output_file}")
     with open(output_file, 'w', encoding='utf-8') as f:
         json.dump(dataset, f, indent=2, ensure_ascii=False)
     
-    print("Dataset creation complete!")
+    if not quiet:
+        print("Dataset creation complete!")
     
     # Print some statistics
-    cases_with_descriptions = sum(1 for entry in dataset.values() if entry[1] is not None)
-    cases_with_metadata = sum(1 for case_id, entry in dataset.items() 
-                             if get_case_metadata_path(case_id, case_metadata_dir) is not None)
-    
-    print(f"\nStatistics:")
-    print(f"  Cases with descriptions: {cases_with_descriptions}/{len(dataset)} ({cases_with_descriptions/len(dataset)*100:.1f}%)")
-    print(f"  Cases with metadata: {cases_with_metadata}/{len(dataset)} ({cases_with_metadata/len(dataset)*100:.1f}%)")
+    if verbose:
+        cases_with_descriptions = sum(1 for entry in dataset.values() if entry[1] is not None)
+        cases_with_metadata = sum(1 for case_id, entry in dataset.items() 
+                                 if get_case_metadata_path(case_id, case_metadata_dir) is not None)
+        
+        print(f"\nStatistics:")
+        print(f"  Cases with descriptions: {cases_with_descriptions}/{len(dataset)} ({cases_with_descriptions/len(dataset)*100:.1f}%)")
+        print(f"  Cases with metadata: {cases_with_metadata}/{len(dataset)} ({cases_with_metadata/len(dataset)*100:.1f}%)")
 
 def main():
     parser = argparse.ArgumentParser(
@@ -303,7 +307,12 @@ def main():
         help="Output JSON file path"
     )
     
+    parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose output")
+    parser.add_argument("--quiet", "-q", action="store_true", help="Minimize output")
+    
     args = parser.parse_args()
+    
+    verbose = args.verbose and not args.quiet
     
     # Verify input files/directories exist
     if not os.path.exists(args.csv):
@@ -321,7 +330,7 @@ def main():
     os.makedirs(os.path.dirname(args.output), exist_ok=True)
     
     build_dataset(args.csv, args.case_metadata_dir, args.case_descriptions_dir, 
-                 args.bios_dir, args.output)
+                 args.bios_dir, args.output, verbose=verbose, quiet=args.quiet)
 
 if __name__ == "__main__":
     main() 

@@ -114,26 +114,30 @@ This Supreme Court case was decided under Chief Justice {chief_justice}. The pet
     
     return summary
 
-def create_case_descriptions(metadata_file: str, descriptions_dir: str, output_dir: str):
+def create_case_descriptions(metadata_file: str, descriptions_dir: str, output_dir: str, verbose: bool = True, quiet: bool = False):
     """
     Create complete case descriptions by combining metadata with AI-filtered descriptions.
     """
-    print(f"🚀 Creating complete case descriptions...")
-    print(f"📊 Metadata file: {metadata_file}")
-    print(f"📁 Descriptions directory: {descriptions_dir}")
-    print(f"💾 Output directory: {output_dir}")
+    if verbose:
+        print(f"🚀 Creating complete case descriptions...")
+        print(f"📊 Metadata file: {metadata_file}")
+        print(f"📁 Descriptions directory: {descriptions_dir}")
+        print(f"💾 Output directory: {output_dir}")
     
     # Load case metadata
-    print(f"\n📊 Loading case metadata...")
+    if verbose:
+        print(f"\n📊 Loading case metadata...")
     try:
         df = pd.read_csv(metadata_file)
-        print(f"✅ Loaded {len(df)} cases from metadata")
+        if verbose:
+            print(f"✅ Loaded {len(df)} cases from metadata")
     except Exception as e:
         print(f"❌ Error loading metadata: {e}")
         return 0
     
     # Load case descriptions
-    print(f"\n📖 Loading case descriptions...")
+    if verbose:
+        print(f"\n📖 Loading case descriptions...")
     descriptions = load_case_descriptions(descriptions_dir)
     
     if not descriptions:
@@ -142,14 +146,16 @@ def create_case_descriptions(metadata_file: str, descriptions_dir: str, output_d
     
     # Create output directory
     os.makedirs(output_dir, exist_ok=True)
-    print(f"📁 Created output directory: {output_dir}")
+    if verbose:
+        print(f"📁 Created output directory: {output_dir}")
     
     # Process each case
     successful = 0
     missing_descriptions = 0
     errors = 0
     
-    print(f"\n🔄 Processing cases...")
+    if not quiet:
+        print(f"Processing {len(df)} cases...")
     
     for idx, row in df.iterrows():
         case_id = row.get('caseIssuesId')
@@ -157,7 +163,8 @@ def create_case_descriptions(metadata_file: str, descriptions_dir: str, output_d
         case_name = row.get('caseName', 'Unknown Case')
         
         if pd.isna(case_id):
-            print(f"⚠️  [{idx+1}] Missing case ID for: {case_name}")
+            if verbose:
+                print(f"⚠️  [{idx+1}] Missing case ID for: {case_name}")
             errors += 1
             continue
         
@@ -185,34 +192,39 @@ def create_case_descriptions(metadata_file: str, descriptions_dir: str, output_d
                 successful += 1
                 word_count = len(complete_summary.split())
                 
-                if idx % 10 == 0 or successful <= 5:  # Show first few and every 10th
+                if (idx % 10 == 0 or successful <= 5) and verbose:  # Show first few and every 10th
                     print(f"✅ [{successful:,}] {case_name} -> {filename} ({word_count:,} words)")
                 
             except Exception as e:
-                print(f"❌ Error saving {case_name}: {e}")
+                if verbose:
+                    print(f"❌ Error saving {case_name}: {e}")
                 errors += 1
                 continue
                 
         else:
             missing_descriptions += 1
-            if missing_descriptions <= 5:  # Show first few missing
+            if missing_descriptions <= 5 and verbose:  # Show first few missing
                 print(f"⚠️  [{idx+1}] No description found for: {case_name} (ID: {case_id})")
     
-    # Summary report
-    print(f"\n{'='*60}")
-    print(f"📋 PROCESSING SUMMARY")
-    print(f"{'='*60}")
-    print(f"Total cases in metadata: {len(df):,}")
-    print(f"Available descriptions: {len(descriptions):,}")
-    print(f"Successfully processed: {successful:,}")
-    print(f"Missing descriptions: {missing_descriptions:,}")
-    print(f"Errors: {errors:,}")
-    print(f"Success rate: {successful/len(df)*100:.1f}%")
-    print(f"Output directory: {output_dir}")
+    if not quiet:
+        print(f"Created {successful}/{len(df)} complete case descriptions ({successful/len(df)*100:.1f}% success rate)")
     
-    if missing_descriptions > 0:
-        print(f"\n💡 To get more descriptions, run the AI scraper on missing cases:")
-        print(f"   python src/data_pipeline/scraper_case_descriptions.py --limit {missing_descriptions}")
+    # Summary report
+    if verbose:
+        print(f"\n{'='*60}")
+        print(f"📋 DETAILED PROCESSING SUMMARY")
+        print(f"{'='*60}")
+        print(f"Total cases in metadata: {len(df):,}")
+        print(f"Available descriptions: {len(descriptions):,}")
+        print(f"Successfully processed: {successful:,}")
+        print(f"Missing descriptions: {missing_descriptions:,}")
+        print(f"Errors: {errors:,}")
+        print(f"Success rate: {successful/len(df)*100:.1f}%")
+        print(f"Output directory: {output_dir}")
+        
+        if missing_descriptions > 0:
+            print(f"\n💡 To get more descriptions, run the AI scraper on missing cases:")
+            print(f"   python src/data_pipeline/scraper_case_descriptions.py --limit {missing_descriptions}")
     
     return successful
 
@@ -239,18 +251,25 @@ def main():
         help="Output directory for complete case descriptions"
     )
     
+    parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose output")
+    parser.add_argument("--quiet", "-q", action="store_true", help="Minimize output")
+    
     args = parser.parse_args()
+    
+    verbose = args.verbose and not args.quiet
     
     success_count = create_case_descriptions(
         args.metadata,
         args.descriptions, 
-        args.output
+        args.output,
+        verbose=verbose,
+        quiet=args.quiet
     )
     
-    if success_count > 0:
-        print(f"\n🎉 Successfully created {success_count:,} complete case descriptions!")
-    else:
-        print(f"\n❌ No case descriptions were created. Check your input files.")
+    if success_count > 0 and not args.quiet:
+        print(f"🎉 Successfully created {success_count:,} complete case descriptions!")
+    elif success_count == 0:
+        print(f"❌ No case descriptions were created. Check your input files.")
 
 if __name__ == "__main__":
     main() 

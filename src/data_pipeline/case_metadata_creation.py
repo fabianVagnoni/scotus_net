@@ -140,13 +140,15 @@ def sanitize_filename(case_id: str) -> str:
     filename = re.sub(r'[^\w\-.]', '_', case_id)
     return filename + ".txt"
 
-def process_case_descriptions(input_file: str, output_dir: str):
+def process_case_descriptions(input_file: str, output_dir: str, verbose: bool = True, quiet: bool = False):
     """Process cases metadata and create individual text files for each case description."""
     
-    print(f"Loading cases metadata from {input_file}...")
+    if verbose:
+        print(f"Loading cases metadata from {input_file}...")
     df = pd.read_csv(input_file)
     
-    print(f"Processing {len(df):,} cases...")
+    if not quiet:
+        print(f"Processing {len(df):,} cases...")
     
     # Create output directory
     os.makedirs(output_dir, exist_ok=True)
@@ -171,36 +173,42 @@ def process_case_descriptions(input_file: str, output_dir: str):
             successful += 1
             
             # Keep first 2 descriptions for sample output
-            if len(sample_descriptions) < 2:
+            if len(sample_descriptions) < 2 and verbose:
                 sample_descriptions.append({
                     'caseName': row.get('caseName', ''),
                     'filename': filename,
                     'description': description
                 })
             
-            if (idx + 1) % 1000 == 0:
+            if (idx + 1) % 1000 == 0 and verbose:
                 print(f"  Processed {idx + 1:,} cases...")
                 
         except Exception as e:
-            print(f"Error processing case {row.get('caseIssuesId', 'unknown')}: {e}")
+            if verbose:
+                print(f"Error processing case {row.get('caseIssuesId', 'unknown')}: {e}")
             failed += 1
             continue
     
-    print(f"\n=== SUMMARY ===")
-    print(f"Total cases: {len(df):,}")
-    print(f"Successful: {successful:,}")
-    print(f"Failed: {failed}")
-    print(f"Success rate: {successful/len(df)*100:.1f}%")
-    print(f"Case descriptions saved to directory: {output_dir}")
+    if not quiet:
+        print(f"Created {successful}/{len(df)} case metadata descriptions ({successful/len(df)*100:.1f}% success rate)")
     
-    # Show sample descriptions
-    print("\nSample case descriptions:")
-    print("=" * 100)
-    for i, sample in enumerate(sample_descriptions):
-        print(f"\n{i+1}. {sample['caseName']} → {sample['filename']}")
-        print("-" * 80)
-        print(sample['description'])
-        print()
+    if verbose:
+        print(f"\n=== DETAILED SUMMARY ===")
+        print(f"Total cases: {len(df):,}")
+        print(f"Successful: {successful:,}")
+        print(f"Failed: {failed}")
+        print(f"Success rate: {successful/len(df)*100:.1f}%")
+        print(f"Case descriptions saved to directory: {output_dir}")
+        
+        # Show sample descriptions
+        if sample_descriptions:
+            print("\nSample case descriptions:")
+            print("=" * 100)
+            for i, sample in enumerate(sample_descriptions):
+                print(f"\n{i+1}. {sample['caseName']} → {sample['filename']}")
+                print("-" * 80)
+                print(sample['description'])
+                print()
     
     return successful
 
@@ -221,8 +229,13 @@ def main():
         help="Directory to save individual case description files"
     )
     
+    parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose output")
+    parser.add_argument("--quiet", "-q", action="store_true", help="Minimize output")
+    
     args = parser.parse_args()
-    process_case_descriptions(args.input, args.output)
+    
+    verbose = args.verbose and not args.quiet
+    process_case_descriptions(args.input, args.output, verbose=verbose, quiet=args.quiet)
 
 if __name__ == "__main__":
     main() 

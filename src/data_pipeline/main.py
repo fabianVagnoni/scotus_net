@@ -172,8 +172,7 @@ def step_scrape_justices(output_file: str = "data/raw/justices.json"):
     """Step 1: Scrape justice metadata from Wikipedia."""
     print_step(1, 8, "Scraping Justice Metadata from Wikipedia")
     
-    # No arguments needed - script uses defaults
-    args = []
+    args = ["--quiet", "--output", output_file]
     
     return run_script("src/data_pipeline/scraper_justices.py", args,
                      "Scraping justice information from Wikipedia")
@@ -184,6 +183,7 @@ def step_scrape_bios(justices_file: str = "data/raw/justices.json",
     print_step(2, 8, "Scraping Justice Biographies from Wikipedia")
     
     args = [
+        "--quiet",
         "--input", justices_file,
         "--output", output_dir
     ]
@@ -197,6 +197,7 @@ def step_process_cases_metadata(input_file: str = "data/raw/SCDB_2024_01_justice
     print_step(3, 8, "Processing Cases Metadata")
     
     args = [
+        "--quiet",
         "--input", input_file,
         "--output", output_file
     ]
@@ -211,6 +212,7 @@ def step_scrape_case_descriptions(metadata_file: str = "data/processed/cases_met
     print_step(4, 8, "Scraping Case Descriptions with AI Filtering")
     
     args = [
+        "--quiet",
         "--input", metadata_file,
         "--output", output_dir
     ]
@@ -230,6 +232,7 @@ def step_process_bios(justices_metadata: str = "data/raw/justices.json",
     print_step(5, 8, "Processing Justice Biographies")
     
     args = [
+        "--quiet",
         "--input", input_dir,
         "--output", output_dir,
         "--metadata", justices_metadata
@@ -244,6 +247,7 @@ def step_create_case_metadata(input_file: str = "data/processed/cases_metadata.c
     print_step(6, 8, "Creating Case Metadata Descriptions")
     
     args = [
+        "--quiet",
         "--input", input_file,
         "--output", output_dir
     ]
@@ -258,6 +262,7 @@ def step_create_case_descriptions(metadata_file: str = "data/processed/cases_met
     print_step(7, 8, "Creating Complete Case Descriptions")
     
     args = [
+        "--quiet",
         "--metadata", metadata_file,
         "--descriptions", descriptions_dir,
         "--output", output_dir
@@ -275,6 +280,7 @@ def step_build_final_dataset(csv_file: str = "data/processed/cases_metadata.csv"
     print_step(8, 8, "Building Final Case Dataset")
     
     args = [
+        "--quiet",
         "--csv", csv_file,
         "--case-metadata-dir", case_metadata_dir,
         "--case-descriptions-dir", case_descriptions_dir,

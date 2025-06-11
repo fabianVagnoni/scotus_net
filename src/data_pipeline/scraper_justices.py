@@ -6,6 +6,7 @@ from dateutil.relativedelta import relativedelta
 import os
 from dotenv import load_dotenv
 import json
+import argparse
 load_dotenv()
 
 def parse_date(s):
@@ -17,7 +18,7 @@ def parse_date(s):
             continue
     return None
 
-def get_justices():
+def get_justices(verbose=True):
     wiki_url = os.getenv("JUSTICES_LIST_URL", "https://en.wikipedia.org/wiki/List_of_justices_of_the_Supreme_Court_of_the_United_States")
     resp = requests.get(wiki_url)
     resp.raise_for_status()
@@ -28,17 +29,19 @@ def get_justices():
     
     # If not found, try alternative approaches
     if table is None:
-        print("Could not find table with class 'wikitable sortable'")
+        if verbose:
+            print("Could not find table with class 'wikitable sortable'")
         # Try finding any wikitable
         table = soup.find("table", {"class": "wikitable"})
         if table is None:
-            print("Could not find any wikitable")
-            # List all tables for debugging
-            all_tables = soup.find_all("table")
-            print(f"Found {len(all_tables)} tables total")
-            for i, t in enumerate(all_tables[:5]):  # Show first 5
-                classes = t.get("class", [])
-                print(f"  Table {i}: classes = {classes}")
+            if verbose:
+                print("Could not find any wikitable")
+                # List all tables for debugging
+                all_tables = soup.find_all("table")
+                print(f"Found {len(all_tables)} tables total")
+                for i, t in enumerate(all_tables[:5]):  # Show first 5
+                    classes = t.get("class", [])
+                    print(f"  Table {i}: classes = {classes}")
             return []
     
     rows = table.find_all("tr")[1:]  # skip header
@@ -61,7 +64,7 @@ def get_justices():
             link = "https://en.wikipedia.org" + a["href"]
             
             # Debug: Print the first few URLs to check for issues
-            if len(justices) < 10:
+            if len(justices) < 10 and verbose:
                 print(f"DEBUG: {name} -> {link}")
             
             # Extract birth/death years from the small tag in the name cell
@@ -143,34 +146,53 @@ def get_justices():
             }
             
         except Exception as e:
-            print(f"Error processing row: {e}")
+            if verbose:
+                print(f"Error processing row: {e}")
             continue
 
     return justices
 
 if __name__ == "__main__":
-    justices = get_justices()
-    print(f"Found {len(justices)} justices:")
-    print("=" * 80)
-
+    parser = argparse.ArgumentParser(description="Scrape Supreme Court justices metadata from Wikipedia")
+    parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose output")
+    parser.add_argument("--quiet", "-q", action="store_true", help="Minimize output")
+    parser.add_argument("--output", "-o", default="data/raw/justices.json", help="Output JSON file")
+    args = parser.parse_args()
+    
+    verbose = args.verbose and not args.quiet
+    
+    justices = get_justices(verbose=verbose)
+    
+    if not args.quiet:
+        print(f"Found {len(justices)} justices")
+    
+    # Create output directory if needed
+    os.makedirs(os.path.dirname(args.output), exist_ok=True)
+    
     # Save justices to a JSON file
-    with open("data/raw/justices.json", "w") as f:
+    with open(args.output, "w") as f:
         json.dump(justices, f)
     
-    # Print sample of justices
-    i = 0
-    for name, justice in justices.items():
-        print(f"{name}:")
-        print(f"  URL:              {justice['url']}")
-        print(f"  State:            {justice['state']}")
-        print(f"  Position:         {justice['position']}")
-        print(f"  Nominated by:     {justice['nominated_by']}")
-        print(f"  Appointment Date: {justice['appointment_date']}")
-        print(f"  Tenure Start:     {justice['tenure_start']}")
-        print(f"  Tenure End:       {justice['tenure_end']} ({justice['tenure_status']})")
-        print(f"  Tenure Length:    {justice['tenure_length']}")
-        print(f"  Replaced:         {justice['replaced']}")
-        print("-" * 80)
-        i += 1
-        if i > 10:
-            break
+    if not args.quiet:
+        print(f"Justice metadata saved to: {args.output}")
+    
+    # Print sample of justices only if verbose
+    if verbose:
+        print("=" * 80)
+        print("Sample justices:")
+        i = 0
+        for name, justice in justices.items():
+            print(f"{name}:")
+            print(f"  URL:              {justice['url']}")
+            print(f"  State:            {justice['state']}")
+            print(f"  Position:         {justice['position']}")
+            print(f"  Nominated by:     {justice['nominated_by']}")
+            print(f"  Appointment Date: {justice['appointment_date']}")
+            print(f"  Tenure Start:     {justice['tenure_start']}")
+            print(f"  Tenure End:       {justice['tenure_end']} ({justice['tenure_status']})")
+            print(f"  Tenure Length:    {justice['tenure_length']}")
+            print(f"  Replaced:         {justice['replaced']}")
+            print("-" * 80)
+            i += 1
+            if i > 10:
+                break

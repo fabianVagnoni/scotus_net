@@ -4,15 +4,17 @@ import numpy as np
 import argparse
 import os
 
-def process_cases_metadata(input_file: str, output_file: str):
+def process_cases_metadata(input_file: str, output_file: str, verbose: bool = True, quiet: bool = False):
     """
     Process SCDB case metadata to extract key information and compute voting percentages.
     """
-    print(f"Loading data from {input_file}...")
+    if verbose:
+        print(f"Loading data from {input_file}...")
     df = pd.read_csv(input_file)
     
-    print(f"Original data shape: {df.shape}")
-    print(f"Total records: {len(df):,}")
+    if verbose:
+        print(f"Original data shape: {df.shape}")
+        print(f"Total records: {len(df):,}")
     
     # Keep only the required columns
     required_columns = [
@@ -39,10 +41,12 @@ def process_cases_metadata(input_file: str, output_file: str):
     
     # Filter to required columns
     df_filtered = df[required_columns].copy()
-    print(f"Filtered data shape: {df_filtered.shape}")
+    if verbose:
+        print(f"Filtered data shape: {df_filtered.shape}")
     
     # Group by case and compute voting statistics
-    print("Computing voting percentages by case...")
+    if not quiet:
+        print("Computing voting percentages by case...")
     
     case_stats = []
     
@@ -64,7 +68,8 @@ def process_cases_metadata(input_file: str, output_file: str):
         # Calculate percentages out of 9 justices (typical Supreme Court size)
         if total_votes == 0:
             pct_in_favor = pct_against = pct_absent = pct_other = 0.0
-            print(f"Case {case_id} has no votes")
+            if verbose:
+                print(f"Case {case_id} has no votes")
         else:
             pct_in_favor = in_favor_count / total_votes
             pct_against = against_count / total_votes
@@ -102,36 +107,42 @@ def process_cases_metadata(input_file: str, output_file: str):
     # Convert to DataFrame
     result_df = pd.DataFrame(case_stats)
     
-    print(f"Processed {len(result_df):,} unique cases")
-    print(f"Sample voting percentages:")
-    print(f"  Average % in favor: {result_df['pct_in_favor'].mean():.3f}")
-    print(f"  Average % against: {result_df['pct_against'].mean():.3f}")
-    print(f"  Average % absent: {result_df['pct_absent'].mean():.3f}")
+    if not quiet:
+        print(f"Processed {len(result_df):,} unique cases")
     
-    # Display some sample cases
-    print("\nSample processed cases:")
-    print("="*100)
-    sample_cases = result_df.head(3)
-    for _, case in sample_cases.iterrows():
-        print(f"Case: {case['caseName']}")
-        print(f"  ID: {case['caseIssuesId']}")
-        print(f"  Citation: {case['usCite']}")
-        print(f"  Chief: {case['chief']}")
-        print(f"  Votes: {case['votes_in_favor']} in favor, {case['votes_against']} against, {case['votes_absent']} absent")
-        print(f"  Percentages: {case['pct_in_favor']:.1%} in favor, {case['pct_against']:.1%} against, {case['pct_absent']:.1%} absent")
-        print("-"*80)
+    if verbose:
+        print(f"Sample voting percentages:")
+        print(f"  Average % in favor: {result_df['pct_in_favor'].mean():.3f}")
+        print(f"  Average % against: {result_df['pct_against'].mean():.3f}")
+        print(f"  Average % absent: {result_df['pct_absent'].mean():.3f}")
+        
+        # Display some sample cases
+        print("\nSample processed cases:")
+        print("="*100)
+        sample_cases = result_df.head(3)
+        for _, case in sample_cases.iterrows():
+            print(f"Case: {case['caseName']}")
+            print(f"  ID: {case['caseIssuesId']}")
+            print(f"  Citation: {case['usCite']}")
+            print(f"  Chief: {case['chief']}")
+            print(f"  Votes: {case['votes_in_favor']} in favor, {case['votes_against']} against, {case['votes_absent']} absent")
+            print(f"  Percentages: {case['pct_in_favor']:.1%} in favor, {case['pct_against']:.1%} against, {case['pct_absent']:.1%} absent")
+            print("-"*80)
     
     # Save processed data
     os.makedirs(os.path.dirname(output_file), exist_ok=True)
     result_df.to_csv(output_file, index=False)
-    print(f"\nProcessed data saved to: {output_file}")
+    
+    if not quiet:
+        print(f"Cases metadata saved to: {output_file}")
     
     # Additional statistics
-    print(f"\nDataset Statistics:")
-    print(f"  Date range: {result_df['caseIssuesId'].str[:4].min()} - {result_df['caseIssuesId'].str[:4].max()}")
-    print(f"  Unique chiefs: {result_df['chief'].nunique()}")
-    print(f"  Cases with unanimous decisions (100% in favor): {(result_df['pct_in_favor'] == 1.0).sum()}")
-    print(f"  Cases with no abstentions: {(result_df['pct_absent'] == 0.0).sum()}")
+    if verbose:
+        print(f"\nDataset Statistics:")
+        print(f"  Date range: {result_df['caseIssuesId'].str[:4].min()} - {result_df['caseIssuesId'].str[:4].max()}")
+        print(f"  Unique chiefs: {result_df['chief'].nunique()}")
+        print(f"  Cases with unanimous decisions (100% in favor): {(result_df['pct_in_favor'] == 1.0).sum()}")
+        print(f"  Cases with no abstentions: {(result_df['pct_absent'] == 0.0).sum()}")
     
     return result_df
 
@@ -152,8 +163,13 @@ def main():
         help="Path to save processed cases metadata"
     )
     
+    parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose output")
+    parser.add_argument("--quiet", "-q", action="store_true", help="Minimize output")
+    
     args = parser.parse_args()
-    process_cases_metadata(args.input, args.output)
+    
+    verbose = args.verbose and not args.quiet
+    process_cases_metadata(args.input, args.output, verbose=verbose, quiet=args.quiet)
 
 if __name__ == "__main__":
     main()

@@ -267,7 +267,7 @@ def process_biography(input_path: str, output_path: str, justices_metadata: Dict
         'reduction_chars': original_chars - processed_chars,
     }
 
-def main(input_dir: str, output_dir: str, metadata_file: str = None):
+def main(input_dir: str, output_dir: str, metadata_file: str = None, verbose: bool = True, quiet: bool = False):
     """
     Process all biography files in the input directory.
     """
@@ -281,13 +281,17 @@ def main(input_dir: str, output_dir: str, metadata_file: str = None):
     # Load justices metadata if provided
     justices_metadata = {}
     if metadata_file and os.path.exists(metadata_file):
-        print(f"Loading justices metadata from {metadata_file}...")
+        if verbose:
+            print(f"Loading justices metadata from {metadata_file}...")
         justices_metadata = load_justices_metadata(metadata_file)
-        print(f"Loaded metadata for {len(justices_metadata)} justices")
+        if verbose:
+            print(f"Loaded metadata for {len(justices_metadata)} justices")
     elif metadata_file:
-        print(f"Warning: Metadata file not found: {metadata_file}")
+        if verbose:
+            print(f"Warning: Metadata file not found: {metadata_file}")
     else:
-        print("No metadata file provided - processing without enrichment")
+        if verbose:
+            print("No metadata file provided - processing without enrichment")
     
     # Get all .txt files in the input directory
     bio_files = list(input_path.glob("*.txt"))
@@ -296,8 +300,11 @@ def main(input_dir: str, output_dir: str, metadata_file: str = None):
         print(f"No .txt files found in '{input_dir}'")
         return
     
-    print(f"Processing {len(bio_files)} biography files...")
-    print("=" * 80)
+    if not quiet:
+        print(f"Processing {len(bio_files)} biography files...")
+    
+    if verbose:
+        print("=" * 80)
     
     total_stats = {
         'processed': 0,
@@ -328,9 +335,10 @@ def main(input_dir: str, output_dir: str, metadata_file: str = None):
             
             reduction_pct = (stats['reduction_words'] / stats['original_words'] * 100) if stats['original_words'] > 0 else 0
             
-            print(f"[{status:15}] {justice_name}")
-            print(f"                {stats['original_words']} → {stats['processed_words']} words "
-                  f"(-{stats['reduction_words']}, -{reduction_pct:.1f}%)")
+            if verbose:
+                print(f"[{status:15}] {justice_name}")
+                print(f"                {stats['original_words']} → {stats['processed_words']} words "
+                      f"(-{stats['reduction_words']}, -{reduction_pct:.1f}%)")
             
             # Update totals
             total_stats['processed'] += 1
@@ -341,18 +349,23 @@ def main(input_dir: str, output_dir: str, metadata_file: str = None):
             total_stats['total_reduction_words'] += stats['reduction_words']
             
         except Exception as e:
-            print(f"[ERROR          ] {justice_name}: {e}")
+            if verbose:
+                print(f"[ERROR          ] {justice_name}: {e}")
     
-    print("=" * 80)
-    print(f"SUMMARY:")
-    print(f"  Files processed: {total_stats['processed']}")
-    print(f"  Files truncated: {total_stats['truncated']}")
-    print(f"  Files kept full: {total_stats['processed'] - total_stats['truncated']}")
+    if not quiet:
+        print(f"Processed {total_stats['processed']} biographies ({total_stats['truncated']} truncated)")
     
-    if total_stats['total_original_words'] > 0:
-        overall_reduction = (total_stats['total_reduction_words'] / total_stats['total_original_words'] * 100)
-        print(f"  Total words: {total_stats['total_original_words']:,} → {total_stats['total_processed_words']:,}")
-        print(f"  Overall reduction: {total_stats['total_reduction_words']:,} words ({overall_reduction:.1f}%)")
+    if verbose:
+        print("=" * 80)
+        print(f"DETAILED SUMMARY:")
+        print(f"  Files processed: {total_stats['processed']}")
+        print(f"  Files truncated: {total_stats['truncated']}")
+        print(f"  Files kept full: {total_stats['processed'] - total_stats['truncated']}")
+        
+        if total_stats['total_original_words'] > 0:
+            overall_reduction = (total_stats['total_reduction_words'] / total_stats['total_original_words'] * 100)
+            print(f"  Total words: {total_stats['total_original_words']:,} → {total_stats['total_processed_words']:,}")
+            print(f"  Overall reduction: {total_stats['total_reduction_words']:,} words ({overall_reduction:.1f}%)")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
@@ -377,5 +390,10 @@ if __name__ == "__main__":
         help="Path to justices metadata JSON file"
     )
     
+    parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose output")
+    parser.add_argument("--quiet", "-q", action="store_true", help="Minimize output")
+    
     args = parser.parse_args()
-    main(args.input, args.output, args.metadata) 
+    
+    verbose = args.verbose and not args.quiet
+    main(args.input, args.output, args.metadata, verbose=verbose, quiet=args.quiet) 

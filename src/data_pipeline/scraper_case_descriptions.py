@@ -193,11 +193,12 @@ def scrape_full_case_description(url: str) -> str:
         print(f"  [ERROR] Scraping failed: {e}")
         return ""
 
-def process_case_descriptions(input_file: str, output_dir: str, limit: int = None):
+def process_case_descriptions(input_file: str, output_dir: str, limit: int = None, verbose: bool = True, quiet: bool = False):
     """
     Process cases metadata and scrape descriptions, using Gemini API for content filtering.
     """
-    print(f"Loading cases metadata from {input_file}...")
+    if verbose:
+        print(f"Loading cases metadata from {input_file}...")
     df = pd.read_csv(input_file)
     
     # Get unique citations to avoid duplicates
@@ -205,14 +206,17 @@ def process_case_descriptions(input_file: str, output_dir: str, limit: int = Non
     
     if limit:
         unique_citations = unique_citations.head(limit)
-        print(f"Limiting to first {limit} cases for testing...")
+        if verbose:
+            print(f"Limiting to first {limit} cases for testing...")
     
-    print(f"Processing {len(unique_citations):,} unique cases with Gemini API filtering...")
+    if not quiet:
+        print(f"Processing {len(unique_citations):,} unique cases with AI filtering...")
     
     # Setup Gemini API
     try:
         model = setup_gemini_api()
-        print("✅ Gemini API configured successfully")
+        if verbose:
+            print("✅ Gemini API configured successfully")
     except Exception as e:
         print(f"❌ Failed to setup Gemini API: {e}")
         return 0
@@ -230,44 +234,52 @@ def process_case_descriptions(input_file: str, output_dir: str, limit: int = Non
         us_cite = row['usCite'] 
         case_name = row['caseName']
         
-        print(f"[{idx + 1:,}/{len(unique_citations):,}] Processing: {case_name} ({us_cite})")
+        if verbose:
+            print(f"[{idx + 1:,}/{len(unique_citations):,}] Processing: {case_name} ({us_cite})")
         
         try:
             # Convert citation to URL
             url = citation_to_url(us_cite)
             if not url:
-                print(f"  [SKIP] Could not create URL for citation: {us_cite}")
+                if verbose:
+                    print(f"  [SKIP] Could not create URL for citation: {us_cite}")
                 failed += 1
                 continue
             
-            print(f"  [FETCHING] {url}")
+            if verbose:
+                print(f"  [FETCHING] {url}")
             
             # Scrape full case description
             raw_description = scrape_full_case_description(url)
             
             if not raw_description:
-                print(f"  [WARNING] No content retrieved from website")
+                if verbose:
+                    print(f"  [WARNING] No content retrieved from website")
                 no_content += 1
                 continue
             
             if len(raw_description) < 500:
-                print(f"  [WARNING] Content too short ({len(raw_description)} chars)")
+                if verbose:
+                    print(f"  [WARNING] Content too short ({len(raw_description)} chars)")
                 no_content += 1
                 continue
             
-            print(f"  [RAW] Retrieved {len(raw_description):,} characters")
-            print(f"  [GEMINI] Filtering content with AI...")
+            if verbose:
+                print(f"  [RAW] Retrieved {len(raw_description):,} characters")
+                print(f"  [GEMINI] Filtering content with AI...")
             
             # Filter content with Gemini API
             filtered_description = filter_content_with_gemini(model, case_name, us_cite, raw_description)
             
             if not filtered_description:
-                print(f"  [ERROR] Gemini API filtering failed")
+                if verbose:
+                    print(f"  [ERROR] Gemini API filtering failed")
                 api_failed += 1
                 continue
             
             if len(filtered_description) < 50:
-                print(f"  [WARNING] Filtered content too short ({len(filtered_description)} chars)")
+                if verbose:
+                    print(f"  [WARNING] Filtered content too short ({len(filtered_description)} chars)")
                 api_failed += 1
                 continue
             
@@ -288,25 +300,31 @@ def process_case_descriptions(input_file: str, output_dir: str, limit: int = Non
             
             successful += 1
             word_count = len(filtered_description.split())
-            print(f"  [SUCCESS] Saved {filename} ({word_count:,} words, AI-filtered)")
+            if verbose:
+                print(f"  [SUCCESS] Saved {filename} ({word_count:,} words, AI-filtered)")
             
             # Rate limiting - be respectful to both APIs
             time.sleep(2)  # 2 second delay between requests (Gemini API + Justia)
             
         except Exception as e:
-            print(f"  [ERROR] Failed to process {case_name}: {e}")
+            if verbose:
+                print(f"  [ERROR] Failed to process {case_name}: {e}")
             failed += 1
             continue
     
-    print(f"\n=== SUMMARY ===")
-    print(f"Total cases processed: {len(unique_citations):,}")
-    print(f"Successful (AI-filtered): {successful:,}")
-    print(f"Failed (scraping): {failed:,}")
-    print(f"No content: {no_content:,}")
-    print(f"API filtering failed: {api_failed:,}")
-    print(f"Overall success rate: {successful/len(unique_citations)*100:.1f}%")
-    print(f"Case descriptions saved to: {output_dir}")
-    print(f"NOTE: All content has been filtered by Gemini 2.0 Flash AI to remove post-decision information")
+    if not quiet:
+        print(f"Successfully processed {successful}/{len(unique_citations)} cases ({successful/len(unique_citations)*100:.1f}% success rate)")
+    
+    if verbose:
+        print(f"\n=== DETAILED SUMMARY ===")
+        print(f"Total cases processed: {len(unique_citations):,}")
+        print(f"Successful (AI-filtered): {successful:,}")
+        print(f"Failed (scraping): {failed:,}")
+        print(f"No content: {no_content:,}")
+        print(f"API filtering failed: {api_failed:,}")
+        print(f"Overall success rate: {successful/len(unique_citations)*100:.1f}%")
+        print(f"Case descriptions saved to: {output_dir}")
+        print(f"NOTE: All content has been filtered by Gemini 2.0 Flash AI to remove post-decision information")
     
     return successful
 
@@ -333,8 +351,13 @@ def main():
         help="Limit number of cases to process (for testing)"
     )
     
+    parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose output")
+    parser.add_argument("--quiet", "-q", action="store_true", help="Minimize output")
+    
     args = parser.parse_args()
-    process_case_descriptions(args.input, args.output, args.limit)
+    
+    verbose = args.verbose and not args.quiet
+    process_case_descriptions(args.input, args.output, args.limit, verbose=verbose, quiet=args.quiet)
 
 if __name__ == "__main__":
     main() 
