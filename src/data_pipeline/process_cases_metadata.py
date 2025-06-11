@@ -58,12 +58,19 @@ def process_cases_metadata(input_file: str, output_file: str):
         in_favor_count = vote_counts.get(1.0, 0)  # majority votes
         against_count = vote_counts.get(2.0, 0)   # dissent votes  
         absent_count = vote_counts.get(8.0, 0)    # recused/absent votes
+        other_count = sum(vote_counts.get(k, 0) for k in vote_counts if k not in [1.0, 2.0, 8.0])
+        total_votes = in_favor_count + against_count + absent_count + other_count
         
         # Calculate percentages out of 9 justices (typical Supreme Court size)
-        pct_in_favor = in_favor_count / 9.0
-        pct_against = against_count / 9.0
-        pct_absent = absent_count / 9.0
-        
+        if total_votes == 0:
+            pct_in_favor = pct_against = pct_absent = pct_other = 0.0
+            print(f"Case {case_id} has no votes")
+        else:
+            pct_in_favor = in_favor_count / total_votes
+            pct_against = against_count / total_votes
+            pct_absent = absent_count / total_votes
+            pct_other = other_count / total_votes
+
         # Create result record
         case_result = {
             'caseIssuesId': case_id,
@@ -81,9 +88,11 @@ def process_cases_metadata(input_file: str, output_file: str):
             'votes_in_favor': in_favor_count,
             'votes_against': against_count, 
             'votes_absent': absent_count,
+            'votes_other': other_count,
             'pct_in_favor': pct_in_favor,
             'pct_against': pct_against,
             'pct_absent': pct_absent,
+            'pct_other': pct_other,
             # Also include individual justice votes as a reference
             'justice_votes': '; '.join([f"{row['justiceName']}:{row['vote']}" for _, row in case_group.iterrows()])
         }

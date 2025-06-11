@@ -323,7 +323,7 @@ def main():
     parser.add_argument(
         "--output",
         "-o", 
-        default="data/external/case_descriptions_ai_filtered",
+        default="data/raw/case_descriptions_ai_filtered",
         help="Directory to save AI-filtered case descriptions"
     )
     parser.add_argument(
