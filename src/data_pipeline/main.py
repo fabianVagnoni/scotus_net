@@ -60,17 +60,23 @@ def run_script(script_path: str, args: List[str] = None, description: str = ""):
     
     try:
         # Don't capture output so tqdm progress bars can display in real-time
-        result = subprocess.run(cmd, check=True)
+        result = subprocess.run(cmd, check=False)  # Don't raise exception on non-zero exit
         elapsed = time.time() - start_time
         
-        print(f"✅ Completed in {elapsed:.1f}s")
-        return True
-        
-    except subprocess.CalledProcessError as e:
-        elapsed = time.time() - start_time
-        print(f"❌ Failed after {elapsed:.1f}s")
-        print(f"Return code: {e.returncode}")
-        return False
+        if result.returncode == 0:
+            print(f"✅ Completed in {elapsed:.1f}s")
+            return True
+        elif result.returncode == 2:
+            # Special handling for API quota/rate limit interruption
+            print(f"⚠️  Interrupted due to API limits after {elapsed:.1f}s")
+            print(f"🛑 PIPELINE INTERRUPTED: API quota/rate limit exceeded")
+            print(f"💡 The scraper has been stopped to respect API limits.")
+            print(f"🔄 To resume processing later, run the same command - it will automatically continue from where it left off")
+            return "interrupted"  # Special return value to indicate interruption
+        else:
+            print(f"❌ Failed after {elapsed:.1f}s")
+            print(f"Return code: {result.returncode}")
+            return False
         
     except Exception as e:
         elapsed = time.time() - start_time
@@ -99,7 +105,22 @@ def check_data_status():
         if os.path.exists(path):
             if os.path.isdir(path):
                 count = len([f for f in os.listdir(path) if f.endswith('.txt')])
-                print(f"✅ Found: {description} ({count} files)")
+                
+                # Special handling for case descriptions to show completion percentage
+                if "case_descriptions_ai_filtered" in path:
+                    expected_total = get_expected_case_count()
+                    if expected_total > 0:
+                        completion_pct = (count / expected_total) * 100
+                        missing_count = expected_total - count
+                        if missing_count <= 150:
+                            status = "✅ Complete"
+                        else:
+                            status = "🔄 Incomplete"
+                        print(f"{status}: {description} ({count}/{expected_total} files, {completion_pct:.1f}% complete)")
+                    else:
+                        print(f"✅ Found: {description} ({count} files)")
+                else:
+                    print(f"✅ Found: {description} ({count} files)")
                 existing_data.append((path, description, count))
             else:
                 size_mb = os.path.getsize(path) / (1024 * 1024)
@@ -115,6 +136,167 @@ def check_data_status():
         print(f"\n🚀 Starting completely from scratch - will collect all data")
     
     return len(existing_data), len(missing_data)
+
+def determine_pipeline_start_step():
+    """Determine the optimal starting step based on existing data."""
+    # Define step dependencies with more precise requirements
+    step_requirements = [
+        (1, [], "Scrape Justice Metadata"),  # Step 1: No requirements (start from scratch)
+        (2, [("data/raw/justices.json", "file")], "Scrape Justice Biographies"),  # Step 2: Needs justice metadata file
+        (3, [], "Download SCDB Data"),  # Step 3: Independent download
+        (4, [("data/raw/SCDB_2024_01_justiceCentered_Vote.csv", "file")], "Process Cases Metadata"),  # Step 4: Needs SCDB data file
+        (5, [("data/processed/cases_metadata.csv", "file")], "Scrape Case Descriptions"),  # Step 5: Needs processed cases file
+        (6, [("data/raw/justices.json", "file"), ("data/raw/bios/", "dir_with_files")], "Process Justice Biographies"),  # Step 6: Needs justice metadata and raw bios
+        (7, [("data/processed/cases_metadata.csv", "file")], "Create Case Metadata"),  # Step 7: Needs processed cases file
+        (8, [("data/processed/cases_metadata.csv", "file"), ("data/raw/case_descriptions_ai_filtered/", "dir_with_files_complete")], "Create Complete Case Descriptions"),  # Step 8: Needs processed cases AND complete AI descriptions
+        (9, [("data/processed/cases_metadata.csv", "file"), ("data/processed/case_metadata/", "dir_with_files"), ("data/processed/case_descriptions/", "dir_with_files"), ("data/processed/bios/", "dir_with_files")], "Build Final Dataset")  # Step 9: Needs all processed data
+    ]
+    
+    # Check which steps can be started (have all requirements)
+    possible_steps = []
+    
+    for step_num, requirements, description in step_requirements:
+        can_start = True
+        missing_reqs = []
+        
+        for req_path, req_type in requirements:
+            if not os.path.exists(req_path):
+                can_start = False
+                missing_reqs.append(f"{req_path} (missing)")
+            elif req_type == "file":
+                # For files, just check existence (already checked above)
+                pass
+            elif req_type == "dir_with_files":
+                # For directories, check if they have txt files (our standard output format)
+                if os.path.isdir(req_path):
+                    txt_files = [f for f in os.listdir(req_path) if f.endswith('.txt')]
+                    if len(txt_files) == 0:
+                        can_start = False
+                        missing_reqs.append(f"{req_path} (empty - 0 files)")
+                else:
+                    can_start = False
+                    missing_reqs.append(f"{req_path} (not a directory)")
+            elif req_type == "dir_with_files_complete":
+                # For case descriptions, check if processing is actually complete
+                if os.path.isdir(req_path):
+                    txt_files = [f for f in os.listdir(req_path) if f.endswith('.txt')]
+                    file_count = len(txt_files)
+                    
+                    # Get expected total from source CSV
+                    expected_total = get_expected_case_count()
+                    
+                    if file_count == 0:
+                        can_start = False
+                        missing_reqs.append(f"{req_path} (empty - 0 files)")
+                    elif expected_total > 0 and (expected_total - file_count) > 150:
+                        # Allow up to 150 missing files, but beyond that consider incomplete
+                        can_start = False
+                        missing_reqs.append(f"{req_path} (incomplete - {file_count}/{expected_total} files, {expected_total - file_count} missing)")
+                    # If within 150 files of expected total, consider complete
+                else:
+                    can_start = False
+                    missing_reqs.append(f"{req_path} (not a directory)")
+        
+        if can_start:
+            possible_steps.append((step_num, description))
+        # Don't break here - we want to check all steps to find the right starting point
+        
+    if not possible_steps:
+        return 1, "No existing data found"
+    
+    # Return the highest step number that can be started
+    highest_step = max(possible_steps, key=lambda x: x[0])
+    
+    # Special logic: If we can't start step 8 because case descriptions are incomplete,
+    # but we can start step 5, then start from step 5
+    can_start_step_8 = any(step[0] == 8 for step in possible_steps)
+    can_start_step_5 = any(step[0] == 5 for step in possible_steps)
+    
+    if not can_start_step_8 and can_start_step_5:
+        # Check if the issue is incomplete AI-filtered case descriptions
+        case_desc_dir = "data/raw/case_descriptions_ai_filtered/"
+        if os.path.exists(case_desc_dir):
+            txt_files = [f for f in os.listdir(case_desc_dir) if f.endswith('.txt')]
+            file_count = len(txt_files)
+            expected_total = get_expected_case_count()
+            
+            if file_count == 0:
+                return 5, "AI-filtered case descriptions directory is empty - need to run scraper"
+            elif expected_total > 0 and (expected_total - file_count) > 150:
+                return 5, f"AI-filtered case descriptions incomplete ({file_count}/{expected_total} files) - need to resume scraper"
+    
+    return highest_step[0], f"Can continue from: {highest_step[1]}"
+
+def get_expected_case_count() -> int:
+    """Get the expected number of unique cases from the source CSV files."""
+    try:
+        # First try the processed cases metadata
+        if os.path.exists("data/processed/cases_metadata.csv"):
+            import pandas as pd
+            df = pd.read_csv("data/processed/cases_metadata.csv")
+            unique_count = df['usCite'].nunique()
+            return unique_count
+        
+        # Fallback to raw SCDB data
+        elif os.path.exists("data/raw/SCDB_2024_01_justiceCentered_Vote.csv"):
+            import pandas as pd
+            df = pd.read_csv("data/raw/SCDB_2024_01_justiceCentered_Vote.csv")
+            # Get unique citations (same logic as in scraper)
+            unique_citations = df[['caseIssuesId', 'usCite', 'caseName']].drop_duplicates(subset=['usCite'])
+            return len(unique_citations)
+        
+        return 0
+        
+    except Exception as e:
+        print(f"Warning: Could not determine expected case count: {e}")
+        return 0
+
+def interactive_pipeline_start():
+    """Check existing data and ask user whether to start from scratch or continue."""
+    print_header("🔍 CHECKING EXISTING DATA STATUS")
+    
+    # Check what data exists
+    existing_count, missing_count = check_data_status()
+    
+    if existing_count == 0:
+        print("\n🚀 No existing data found. Starting pipeline from scratch.")
+        return 1
+    
+    # Determine the optimal starting step
+    suggested_start_step, reason = determine_pipeline_start_step()
+    
+    print(f"\n💡 PIPELINE RECOMMENDATION:")
+    print(f"   📍 Suggested starting step: {suggested_start_step}")
+    print(f"   🔍 Reason: {reason}")
+    
+    # Ask user what they want to do
+    print(f"\n❓ WHAT WOULD YOU LIKE TO DO?")
+    print(f"   1️⃣  Continue from step {suggested_start_step} (use existing data)")
+    print(f"   2️⃣  Start from scratch (overwrite existing data)")
+    print(f"   3️⃣  Exit (cancel pipeline)")
+    
+    while True:
+        try:
+            choice = input(f"\n👉 Enter your choice (1/2/3): ").strip()
+            
+            if choice == "1":
+                print(f"✅ Continuing from step {suggested_start_step} using existing data")
+                return suggested_start_step
+            elif choice == "2":
+                print("✅ Starting from scratch - will overwrite existing data")
+                return 1
+            elif choice == "3":
+                print("👋 Pipeline cancelled by user")
+                return None
+            else:
+                print("❌ Invalid choice. Please enter 1, 2, or 3.")
+                
+        except KeyboardInterrupt:
+            print("\n\n👋 Pipeline cancelled by user")
+            return None
+        except EOFError:
+            print("\n\n👋 Pipeline cancelled by user")
+            return None
 
 def create_directories():
     """Create necessary directories for the entire pipeline."""
@@ -189,19 +371,20 @@ def step_scrape_case_descriptions(metadata_file: str = "data/processed/cases_met
                                  output_dir: str = "data/raw/case_descriptions_ai_filtered",
                                  limit: int = None):
     """Step 5: Scrape case descriptions with AI filtering."""
-    print_step(5, 9, "Scraping Case Descriptions with AI Filtering")
+    print_step(5, 9, "Scraping Case Descriptions with AI Filtering (Resume-enabled)")
     
     args = [
         "--quiet",
         "--input", metadata_file,
-        "--output", output_dir
+        "--output", output_dir,
+        "--resume"  # Enable resume functionality by default
     ]
     
     if limit:
         args.extend(["--limit", str(limit)])
     
     return run_script("src/data_pipeline/scraper_case_descriptions.py", args,
-                     "Scraping case descriptions from Justia with Gemini AI filtering")
+                     "Scraping case descriptions from Justia with Gemini AI filtering (resume-enabled)")
 
 # PROCESSING STEPS (Data Processing)
 
@@ -271,15 +454,28 @@ def step_build_final_dataset(csv_file: str = "data/processed/cases_metadata.csv"
     return run_script("src/data_pipeline/build_case_dataset.py", args,
                      "Building JSON dataset with file paths and voting data")
 
-def run_full_pipeline(from_step: int = 1, quick_mode: bool = False):
+def run_full_pipeline(from_step: int = 1, quick_mode: bool = False, interactive: bool = True):
     """Run the complete data processing pipeline from scratch or from a specific step."""
     print_header("🚀 SCOTUS AI DATA PIPELINE", "=")
-    print("Starting complete data processing pipeline from scratch...")
     
     start_time = time.time()
     
-    # Check current data status (informational)
-    existing_count, missing_count = check_data_status()
+    # If interactive mode and no specific from_step provided, check existing data
+    if interactive and from_step == 1:
+        determined_step = interactive_pipeline_start()
+        if determined_step is None:
+            print("Pipeline cancelled by user.")
+            return False
+        from_step = determined_step
+    elif not interactive:
+        # Non-interactive mode: just show data status
+        print("Running in non-interactive mode...")
+        existing_count, missing_count = check_data_status()
+    
+    if from_step == 1:
+        print("Starting complete data processing pipeline from scratch...")
+    else:
+        print(f"Starting pipeline from step {from_step}...")
     
     # Create all necessary directories
     create_directories()
@@ -312,7 +508,14 @@ def run_full_pipeline(from_step: int = 1, quick_mode: bool = False):
         try:
             success = step_func()
             
-            if not success:
+            if success == "interrupted":
+                # Special handling for API quota interruption
+                print(f"\n🛑 PIPELINE INTERRUPTED at Step {step_num} ({step_name})")
+                print(f"⚠️  The process was stopped due to API quota/rate limits.")
+                print(f"📊 Progress: Completed {completed_steps}/{total_steps} steps before interruption")
+                print(f"🔄 To resume the pipeline later, run the same command - it will automatically continue from where it left off")
+                return "interrupted"
+            elif not success:
                 print(f"\n❌ Step {step_num} ({step_name}) failed. Stopping pipeline.")
                 return False
             
@@ -389,8 +592,9 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python main.py                     # Run full pipeline from scratch
-  python main.py --from-step 5       # Start from step 5 (process biographies)
+  python main.py                     # Interactive mode - check existing data and ask user
+  python main.py --non-interactive   # Run full pipeline from scratch (no prompts)
+  python main.py --from-step 5       # Start from step 5 (skip interactive check)
   python main.py --step scrape-bios  # Run only biography scraping
   python main.py --step dataset      # Run only final dataset creation
   python main.py --quick             # Quick mode (reduced processing)
@@ -408,8 +612,8 @@ Complete Pipeline Steps:
   9. dataset          - Build final JSON dataset
 
 Requirements:
-  - Python packages: tqdm (pip install tqdm)
-  - Environment: GEMMA_KEY for AI filtering (in .env file)
+  - Python packages: tqdm, openai (pip install tqdm openai)
+  - Environment: OPENAI_API_KEY for AI filtering (in .env file)
 """
     )
     
@@ -440,6 +644,12 @@ Requirements:
         help="Only check data status, don't run pipeline"
     )
     
+    parser.add_argument(
+        "--non-interactive",
+        action="store_true",
+        help="Run in non-interactive mode (don't prompt user for choices)"
+    )
+    
     args = parser.parse_args()
     
     # Handle check mode
@@ -452,9 +662,15 @@ Requirements:
         return run_single_step(args.step)
     
     # Handle full pipeline mode
-    success = run_full_pipeline(from_step=args.from_step, quick_mode=args.quick)
+    interactive_mode = not args.non_interactive
+    success = run_full_pipeline(from_step=args.from_step, quick_mode=args.quick, interactive=interactive_mode)
     
-    if not success:
+    if success == "interrupted":
+        print_header("⚠️  PIPELINE INTERRUPTED", "!")
+        print("The pipeline was stopped due to API quota/rate limits.")
+        print("Run the same command later to resume processing from where it left off.")
+        sys.exit(2)  # Exit code 2 for interruption
+    elif not success:
         print_header("❌ PIPELINE FAILED", "!")
         print("Check the error messages above and fix any issues.")
         sys.exit(1)

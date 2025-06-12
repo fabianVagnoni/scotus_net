@@ -80,7 +80,7 @@ def setup_gemini_api():
         raise ValueError("GEMMA_KEY not found in environment variables. Please add it to your .env file.")
     
     genai.configure(api_key=api_key)
-    model = genai.GenerativeModel('gemini-2.0-flash-exp')
+    model = genai.GenerativeModel('gemini-2.0-flash-lite-001')
     return model
 
 def create_filter_prompt(case_name: str, citation: str) -> str:
@@ -146,8 +146,14 @@ def filter_content_with_gemini(model, case_name: str, citation: str, raw_content
             return ""
             
     except Exception as e:
-        print(f"  [ERROR] Gemini API call failed: {e}")
-        return ""
+        error_msg = str(e)
+        # Check if this is a quota/rate limit error that should stop processing
+        if should_stop_on_api_error(error_msg):
+            # Re-raise quota errors so they can be caught by the main loop
+            raise e
+        else:
+            print(f"  [ERROR] Gemini API call failed: {e}")
+            return ""
 
 def scrape_full_case_description(url: str) -> str:
     """
@@ -225,16 +231,110 @@ def scrape_full_case_description(url: str) -> str:
         print(f"  [ERROR] Scraping failed: {e}")
         return ""
 
-def process_case_descriptions(input_file: str, output_dir: str, limit: int = None, verbose: bool = True, quiet: bool = False):
+def find_resume_point(input_file: str, output_dir: str, verbose: bool = True) -> int:
+    """
+    Find where to resume processing by checking existing files in output directory.
+    Returns the index in the unique citations list where processing should resume.
+    """
+    if not os.path.exists(output_dir):
+        if verbose:
+            print("🚀 Output directory doesn't exist - starting from beginning")
+        return 0
+    
+    # Get all existing processed files
+    existing_files = set()
+    if os.path.isdir(output_dir):
+        for filename in os.listdir(output_dir):
+            if filename.endswith('.txt'):
+                # Extract citation from filename (reverse of sanitize_filename)
+                citation = filename.replace('.txt', '').replace('_', ' ')
+                existing_files.add(citation)
+    
+    if not existing_files:
+        if verbose:
+            print("🚀 No existing processed files - starting from beginning")
+        return 0
+    
+    # Load the input CSV to find the resume point
+    df = pd.read_csv(input_file)
+    unique_citations = df[['caseIssuesId', 'usCite', 'caseName']].drop_duplicates(subset=['usCite']).reset_index(drop=True)
+    
+    # Find the last processed case index in the unique citations list
+    last_processed_idx = -1
+    processed_count = 0
+    
+    for sequential_idx, (_, row) in enumerate(unique_citations.iterrows()):
+        us_cite = row['usCite']
+        
+        # Skip rows with NaN/null citations
+        if pd.isna(us_cite) or not us_cite:
+            continue
+            
+        # Convert to string to handle any remaining type issues
+        us_cite = str(us_cite)
+        sanitized_cite = sanitize_filename(us_cite).replace('.txt', '')
+        
+        # Check if this case was already processed
+        citation_variations = [
+            sanitized_cite,
+            us_cite,
+            us_cite.replace(' ', '_'),
+            re.sub(r'[^\w\s.-]', '', us_cite).replace(' ', '_')
+        ]
+        
+        if any(var in existing_files for var in citation_variations):
+            last_processed_idx = sequential_idx  # Use sequential index, not original DataFrame index
+            processed_count += 1
+    
+    if last_processed_idx >= 0:
+        resume_idx = last_processed_idx + 1
+        remaining_cases = len(unique_citations) - resume_idx
+        if verbose:
+            print(f"📄 Found {processed_count} existing processed files")
+            print(f"🔄 Resuming from case #{resume_idx + 1} of {len(unique_citations)} (skipping {resume_idx} already processed)")
+            print(f"📊 Remaining cases to process: {remaining_cases}")
+        return resume_idx
+    else:
+        if verbose:
+            print("🚀 No matching processed files found - starting from beginning")
+        return 0
+
+def should_stop_on_api_error(error_msg: str) -> bool:
+    """
+    Determine if we should stop processing based on the API error message.
+    Returns True for quota/rate limit errors that require waiting.
+    """
+    error_lower = str(error_msg).lower()
+    stop_indicators = [
+        'quota',
+        'rate limit',
+        'too many requests',
+        'resource_exhausted',
+        'exceeded your current quota',
+        'daily limit exceeded',
+        'monthly limit exceeded'
+    ]
+    
+    return any(indicator in error_lower for indicator in stop_indicators)
+
+def process_case_descriptions(input_file: str, output_dir: str, limit: int = None, verbose: bool = True, quiet: bool = False, resume: bool = True):
     """
     Process cases metadata and scrape descriptions, using Gemini API for content filtering.
+    Supports resuming from where it left off after API quota/rate limit errors.
     """
     if verbose:
         print(f"Loading cases metadata from {input_file}...")
     df = pd.read_csv(input_file)
     
     # Get unique citations to avoid duplicates
-    unique_citations = df[['caseIssuesId', 'usCite', 'caseName']].drop_duplicates(subset=['usCite'])
+    unique_citations = df[['caseIssuesId', 'usCite', 'caseName']].drop_duplicates(subset=['usCite']).reset_index(drop=True)
+    
+    # Find resume point if requested
+    start_idx = 0
+    if resume:
+        start_idx = find_resume_point(input_file, output_dir, verbose)
+        if start_idx > 0:
+            unique_citations = unique_citations.iloc[start_idx:].reset_index(drop=True)
     
     if limit:
         unique_citations = unique_citations.head(limit)
@@ -242,7 +342,10 @@ def process_case_descriptions(input_file: str, output_dir: str, limit: int = Non
             print(f"Limiting to first {limit} cases for testing...")
     
     if not quiet:
-        print(f"Processing {len(unique_citations):,} unique cases with AI filtering...")
+        if start_idx > 0:
+            print(f"Resuming processing of {len(unique_citations):,} remaining cases with AI filtering...")
+        else:
+            print(f"Processing {len(unique_citations):,} unique cases with AI filtering...")
     
     # Setup Gemini API
     try:
@@ -260,6 +363,7 @@ def process_case_descriptions(input_file: str, output_dir: str, limit: int = Non
     failed = 0
     no_content = 0
     api_failed = 0
+    quota_exceeded = False
     
     # Set up progress bar
     disable_tqdm = quiet and not HAS_TQDM
@@ -276,7 +380,8 @@ def process_case_descriptions(input_file: str, output_dir: str, limit: int = Non
             pbar.set_description(f"Processing {case_name[:30]}...")
             
             if verbose:
-                tqdm.write(f"[{idx + 1:,}/{len(unique_citations):,}] Processing: {case_name} ({us_cite})")
+                actual_idx = start_idx + idx + 1
+                tqdm.write(f"[{actual_idx:,}] Processing: {case_name} ({us_cite})")
             
             try:
                 # Convert citation to URL
@@ -356,28 +461,54 @@ def process_case_descriptions(input_file: str, output_dir: str, limit: int = Non
                 time.sleep(2)  # 2 second delay between requests (Gemini API + Justia)
                 
             except Exception as e:
+                error_msg = str(e)
                 if verbose:
-                    tqdm.write(f"  [ERROR] Failed to process {case_name}: {e}")
-                failed += 1
+                    tqdm.write(f"  [ERROR] Failed to process {case_name}: {error_msg}")
+                
+                # Check if this is a quota/rate limit error that should stop processing
+                if should_stop_on_api_error(error_msg):
+                    quota_exceeded = True
+                    tqdm.write(f"\n🛑 API QUOTA/RATE LIMIT EXCEEDED")
+                    tqdm.write(f"Error: {error_msg}")
+                    tqdm.write(f"💡 Processing stopped to respect API limits.")
+                    tqdm.write(f"📊 Progress: {successful} cases successfully processed")
+                    tqdm.write(f"🔄 To resume later, run the same command - it will automatically continue from where it left off")
+                    break
+                else:
+                    failed += 1
             
             # Always update progress bar
             pbar.update(1)
     
     if not quiet:
-        print(f"Successfully processed {successful}/{len(unique_citations)} cases ({successful/len(unique_citations)*100:.1f}% success rate)")
+        if quota_exceeded:
+            print(f"\n⚠️  Processing stopped due to API limits after {successful}/{len(unique_citations)} cases")
+        else:
+            print(f"Successfully processed {successful}/{len(unique_citations)} cases ({successful/len(unique_citations)*100:.1f}% success rate)")
     
     if verbose:
         print(f"\n=== DETAILED SUMMARY ===")
-        print(f"Total cases processed: {len(unique_citations):,}")
+        print(f"Total cases in batch: {len(unique_citations):,}")
         print(f"Successful (AI-filtered): {successful:,}")
         print(f"Failed (scraping): {failed:,}")
         print(f"No content: {no_content:,}")
         print(f"API filtering failed: {api_failed:,}")
-        print(f"Overall success rate: {successful/len(unique_citations)*100:.1f}%")
+        if len(unique_citations) > 0:
+            print(f"Batch success rate: {successful/len(unique_citations)*100:.1f}%")
         print(f"Case descriptions saved to: {output_dir}")
-        print(f"NOTE: All content has been filtered by Gemini 2.0 Flash AI to remove post-decision information")
+        if quota_exceeded:
+            print(f"⚠️  STOPPED: API quota/rate limit exceeded")
+            print(f"🔄 RESUME: Run the same command later to continue processing")
+        else:
+            print(f"NOTE: All content has been filtered by Gemini 2.0 Flash AI to remove post-decision information")
     
-    return successful
+    # Return appropriate status code
+    if quota_exceeded:
+        return -1  # Interrupted due to API limits
+    elif successful == 0:
+        return 0   # No successful processing
+    else:
+        return successful  # Number of successful cases
 
 def main():
     parser = argparse.ArgumentParser(
@@ -401,14 +532,40 @@ def main():
         type=int,
         help="Limit number of cases to process (for testing)"
     )
+    parser.add_argument(
+        "--resume",
+        "-r",
+        action="store_true",
+        default=True,
+        help="Resume from where processing left off (default: True)"
+    )
+    parser.add_argument(
+        "--no-resume",
+        action="store_true",
+        help="Start from beginning, ignoring existing files"
+    )
     
     parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose output")
     parser.add_argument("--quiet", "-q", action="store_true", help="Minimize output")
     
     args = parser.parse_args()
     
+    # Handle resume logic
+    resume = args.resume and not args.no_resume
+    
     verbose = args.verbose and not args.quiet
-    process_case_descriptions(args.input, args.output, args.limit, verbose=verbose, quiet=args.quiet)
+    result = process_case_descriptions(args.input, args.output, args.limit, verbose=verbose, quiet=args.quiet, resume=resume)
+    
+    # Check if processing was interrupted due to API limits
+    if result == -1:
+        # API quota/rate limit exceeded - exit with code 2 to indicate interruption
+        sys.exit(2)
+    elif result == 0:
+        # No cases processed successfully - exit with code 1 to indicate failure
+        sys.exit(1)
+    else:
+        # Success - exit with code 0
+        sys.exit(0)
 
 if __name__ == "__main__":
     main() 
