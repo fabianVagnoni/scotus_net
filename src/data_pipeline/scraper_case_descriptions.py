@@ -80,7 +80,7 @@ def setup_gemini_api():
         raise ValueError("GEMMA_KEY not found in environment variables. Please add it to your .env file.")
     
     genai.configure(api_key=api_key)
-    model = genai.GenerativeModel('gemini-2.0-flash-lite-001')
+    model = genai.GenerativeModel('gemini-2.0-flash')
     return model
 
 def create_filter_prompt(case_name: str, citation: str) -> str:
@@ -231,73 +231,17 @@ def scrape_full_case_description(url: str) -> str:
         print(f"  [ERROR] Scraping failed: {e}")
         return ""
 
-def find_resume_point(input_file: str, output_dir: str, verbose: bool = True) -> int:
+def get_existing_files(output_dir: str) -> set:
     """
-    Find where to resume processing by checking existing files in output directory.
-    Returns the index in the unique citations list where processing should resume.
+    Get a set of existing processed filenames from the output directory.
+    Returns a set of filenames (without path) for quick lookup.
     """
-    if not os.path.exists(output_dir):
-        if verbose:
-            print("🚀 Output directory doesn't exist - starting from beginning")
-        return 0
-    
-    # Get all existing processed files
     existing_files = set()
-    if os.path.isdir(output_dir):
+    if os.path.exists(output_dir) and os.path.isdir(output_dir):
         for filename in os.listdir(output_dir):
             if filename.endswith('.txt'):
-                # Extract citation from filename (reverse of sanitize_filename)
-                citation = filename.replace('.txt', '').replace('_', ' ')
-                existing_files.add(citation)
-    
-    if not existing_files:
-        if verbose:
-            print("🚀 No existing processed files - starting from beginning")
-        return 0
-    
-    # Load the input CSV to find the resume point
-    df = pd.read_csv(input_file)
-    unique_citations = df[['caseIssuesId', 'usCite', 'caseName']].drop_duplicates(subset=['usCite']).reset_index(drop=True)
-    
-    # Find the last processed case index in the unique citations list
-    last_processed_idx = -1
-    processed_count = 0
-    
-    for sequential_idx, (_, row) in enumerate(unique_citations.iterrows()):
-        us_cite = row['usCite']
-        
-        # Skip rows with NaN/null citations
-        if pd.isna(us_cite) or not us_cite:
-            continue
-            
-        # Convert to string to handle any remaining type issues
-        us_cite = str(us_cite)
-        sanitized_cite = sanitize_filename(us_cite).replace('.txt', '')
-        
-        # Check if this case was already processed
-        citation_variations = [
-            sanitized_cite,
-            us_cite,
-            us_cite.replace(' ', '_'),
-            re.sub(r'[^\w\s.-]', '', us_cite).replace(' ', '_')
-        ]
-        
-        if any(var in existing_files for var in citation_variations):
-            last_processed_idx = sequential_idx  # Use sequential index, not original DataFrame index
-            processed_count += 1
-    
-    if last_processed_idx >= 0:
-        resume_idx = last_processed_idx + 1
-        remaining_cases = len(unique_citations) - resume_idx
-        if verbose:
-            print(f"📄 Found {processed_count} existing processed files")
-            print(f"🔄 Resuming from case #{resume_idx + 1} of {len(unique_citations)} (skipping {resume_idx} already processed)")
-            print(f"📊 Remaining cases to process: {remaining_cases}")
-        return resume_idx
-    else:
-        if verbose:
-            print("🚀 No matching processed files found - starting from beginning")
-        return 0
+                existing_files.add(filename)
+    return existing_files
 
 def should_stop_on_api_error(error_msg: str) -> bool:
     """
@@ -320,7 +264,7 @@ def should_stop_on_api_error(error_msg: str) -> bool:
 def process_case_descriptions(input_file: str, output_dir: str, limit: int = None, verbose: bool = True, quiet: bool = False, resume: bool = True):
     """
     Process cases metadata and scrape descriptions, using Gemini API for content filtering.
-    Supports resuming from where it left off after API quota/rate limit errors.
+    Supports resuming by skipping already processed files.
     """
     if verbose:
         print(f"Loading cases metadata from {input_file}...")
@@ -329,12 +273,12 @@ def process_case_descriptions(input_file: str, output_dir: str, limit: int = Non
     # Get unique citations to avoid duplicates
     unique_citations = df[['caseIssuesId', 'usCite', 'caseName']].drop_duplicates(subset=['usCite']).reset_index(drop=True)
     
-    # Find resume point if requested
-    start_idx = 0
+    # Get existing files if resume is enabled
+    existing_files = set()
     if resume:
-        start_idx = find_resume_point(input_file, output_dir, verbose)
-        if start_idx > 0:
-            unique_citations = unique_citations.iloc[start_idx:].reset_index(drop=True)
+        existing_files = get_existing_files(output_dir)
+        if existing_files and verbose:
+            print(f"📄 Found {len(existing_files)} existing processed files - will skip these")
     
     if limit:
         unique_citations = unique_citations.head(limit)
@@ -342,8 +286,8 @@ def process_case_descriptions(input_file: str, output_dir: str, limit: int = Non
             print(f"Limiting to first {limit} cases for testing...")
     
     if not quiet:
-        if start_idx > 0:
-            print(f"Resuming processing of {len(unique_citations):,} remaining cases with AI filtering...")
+        if existing_files:
+            print(f"Processing {len(unique_citations):,} unique cases with AI filtering (skipping already processed)...")
         else:
             print(f"Processing {len(unique_citations):,} unique cases with AI filtering...")
     
@@ -363,6 +307,7 @@ def process_case_descriptions(input_file: str, output_dir: str, limit: int = Non
     failed = 0
     no_content = 0
     api_failed = 0
+    skipped = 0
     quota_exceeded = False
     
     # Set up progress bar
@@ -376,12 +321,22 @@ def process_case_descriptions(input_file: str, output_dir: str, limit: int = Non
             us_cite = row['usCite'] 
             case_name = row['caseName']
             
+            # Create filename to check if it already exists
+            filename = sanitize_filename(us_cite)
+            
+            # Skip if file already exists and resume is enabled
+            if resume and filename in existing_files:
+                skipped += 1
+                if verbose and skipped <= 5:  # Show first few skipped files
+                    tqdm.write(f"[SKIP] Already processed: {case_name} ({us_cite})")
+                pbar.update(1)
+                continue
+            
             # Update progress bar description
             pbar.set_description(f"Processing {case_name[:30]}...")
             
             if verbose:
-                actual_idx = start_idx + idx + 1
-                tqdm.write(f"[{actual_idx:,}] Processing: {case_name} ({us_cite})")
+                tqdm.write(f"[{idx + 1:,}] Processing: {case_name} ({us_cite})")
             
             try:
                 # Convert citation to URL
@@ -434,8 +389,7 @@ def process_case_descriptions(input_file: str, output_dir: str, limit: int = Non
                     pbar.update(1)
                     continue
                 
-                # Create filename
-                filename = sanitize_filename(us_cite)
+                # Create filepath (filename already created above)
                 filepath = os.path.join(output_dir, filename)
                 
                 # Save filtered description
@@ -482,19 +436,26 @@ def process_case_descriptions(input_file: str, output_dir: str, limit: int = Non
     
     if not quiet:
         if quota_exceeded:
-            print(f"\n⚠️  Processing stopped due to API limits after {successful}/{len(unique_citations)} cases")
+            print(f"\n⚠️  Processing stopped due to API limits after {successful} new cases processed")
         else:
-            print(f"Successfully processed {successful}/{len(unique_citations)} cases ({successful/len(unique_citations)*100:.1f}% success rate)")
+            processed_count = successful + skipped
+            print(f"Completed processing: {successful} new cases, {skipped} already existed")
+            if len(unique_citations) > 0:
+                print(f"Total coverage: {processed_count}/{len(unique_citations)} cases ({processed_count/len(unique_citations)*100:.1f}%)")
     
     if verbose:
         print(f"\n=== DETAILED SUMMARY ===")
         print(f"Total cases in batch: {len(unique_citations):,}")
+        print(f"Skipped (already processed): {skipped:,}")
         print(f"Successful (AI-filtered): {successful:,}")
         print(f"Failed (scraping): {failed:,}")
         print(f"No content: {no_content:,}")
         print(f"API filtering failed: {api_failed:,}")
+        processed_count = successful + skipped
         if len(unique_citations) > 0:
-            print(f"Batch success rate: {successful/len(unique_citations)*100:.1f}%")
+            print(f"Total coverage: {processed_count}/{len(unique_citations)} ({processed_count/len(unique_citations)*100:.1f}%)")
+            if successful > 0:
+                print(f"New cases success rate: {successful/(len(unique_citations)-skipped)*100:.1f}%")
         print(f"Case descriptions saved to: {output_dir}")
         if quota_exceeded:
             print(f"⚠️  STOPPED: API quota/rate limit exceeded")
