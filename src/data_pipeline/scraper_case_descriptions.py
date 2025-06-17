@@ -80,7 +80,7 @@ def setup_gemini_api():
         raise ValueError("GEMMA_KEY not found in environment variables. Please add it to your .env file.")
     
     genai.configure(api_key=api_key)
-    model = genai.GenerativeModel('gemini-2.0-flash-lite')
+    model = genai.GenerativeModel('gemini-2.0-flash')
     return model
 
 def create_filter_prompt(case_name: str, citation: str) -> str:
