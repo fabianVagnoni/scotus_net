@@ -79,12 +79,11 @@ Thumbs.db
 # Git
 .git/
 .gitignore
+.gitattributes
 
 # Documentation (keep essential docs)
 docs/
 *.md
-!README.md
-!DOCKER_DEPLOYMENT.md
 
 # Docker files (avoid recursive copying)
 Dockerfile*
@@ -190,4 +189,5 @@ runs/
 
 # Configuration that shouldn't be in image
 config.local.*
-settings.local.* 
+settings.local.*
+configs/ 

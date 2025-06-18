@@ -1,6 +1,6 @@
 # SCOTUS AI Docker Container
 # Multi-stage build for optimized image size and better caching
-FROM nvidia/cuda:12.1.0-cudnn8-devel-ubuntu20.04 as builder
+FROM nvidia/cuda:12.1.0-cudnn8-devel-ubuntu22.04 AS builder
 
 # Prevent interactive prompts during apt installation
 ENV DEBIAN_FRONTEND=noninteractive
@@ -31,46 +31,9 @@ ENV PATH="/opt/venv/bin:$PATH"
 # Upgrade pip and install build dependencies
 RUN pip install --upgrade pip setuptools wheel
 
-# Production stage
-FROM nvidia/cuda:12.1.0-cudnn8-runtime-ubuntu20.04
-
-# Prevent interactive prompts during apt installation
-ENV DEBIAN_FRONTEND=noninteractive
-
-# Install runtime system dependencies
-RUN apt-get update && apt-get install -y \
-    python3 \
-    python3-distutils \
-    libxml2 \
-    libxslt1.1 \
-    zlib1g \
-    libjpeg8 \
-    libpng16-16 \
-    curl \
-    ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
-
-# Copy virtual environment from builder stage
-COPY --from=builder /opt/venv /opt/venv
-ENV PATH="/opt/venv/bin:$PATH"
-
-# Set working directory
-WORKDIR /app
-
-# Create necessary directories
-RUN mkdir -p /app/data/raw \
-    /app/data/processed \
-    /app/data/external \
-    /app/logs \
-    /app/models_output \
-    /app/.cache \
-    /app/notebooks
-
-# Copy requirements first for better caching
-COPY requirements.txt /app/
-
-# Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+# Copy requirements and install Python dependencies in builder stage
+COPY requirements.txt /tmp/
+RUN pip install --no-cache-dir -r /tmp/requirements.txt
 
 # Install additional dependencies that may be needed based on the codebase
 RUN pip install --no-cache-dir \
@@ -86,8 +49,46 @@ RUN pip install --no-cache-dir \
 # Download spaCy model
 RUN python3 -m spacy download en_core_web_sm
 
+# Production stage
+FROM nvidia/cuda:12.1.0-cudnn8-runtime-ubuntu22.04
+
+# Prevent interactive prompts during apt installation
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install runtime system dependencies (NO build tools)
+RUN apt-get update && apt-get install -y \
+    python3 \
+    python3-distutils \
+    libxml2 \
+    libxslt1.1 \
+    zlib1g \
+    libjpeg8 \
+    libpng16-16 \
+    curl \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy virtual environment from builder stage (now fully populated)
+COPY --from=builder /opt/venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Set working directory
+WORKDIR /app
+
+# Create necessary directories
+RUN mkdir -p /app/data/raw \
+    /app/data/processed \
+    /app/data/external \
+    /app/logs \
+    /app/models_output \
+    /app/.cache \
+    /app/notebooks
+
 # Copy project files
 COPY . /app/
+
+# Create a minimal README.md if it doesn't exist (for setup.py)
+RUN echo "# SCOTUS AI" > /app/README.md || true
 
 # Install the project in development mode
 RUN pip install -e .
@@ -106,15 +107,14 @@ ENV SCRAPER_DELAY=1.0
 ENV MAX_RETRIES=3
 ENV USER_AGENT="SCOTUS-AI-Bot/1.0"
 
+# Copy entrypoint script and set permissions while still root
+COPY entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
+
 # Create a non-root user for security
 RUN useradd -m -s /bin/bash scotus && \
     chown -R scotus:scotus /app
 USER scotus
-
-# Copy entrypoint script
-COPY entrypoint.sh /app/entrypoint.sh
-
-RUN chmod +x /app/entrypoint.sh
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \

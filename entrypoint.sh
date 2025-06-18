@@ -36,31 +36,31 @@ echo ""
 case "$1" in
     data-pipeline)
         shift
-        exec python3 /app/scripts/data_pipeline/main.py "$@"
+        exec python3 -m scripts.data_pipeline.main "$@"
         ;;
     data-pipeline-step)
         shift
-        exec python3 /app/scripts/data_pipeline/main.py --step "$@"
+        exec python3 -m scripts.data_pipeline.main --step "$@"
         ;;
     encoding)
         shift
-        exec python3 /app/scripts/tokenization/main_encoder.py "$@"
+        exec python3 -m scripts.tokenization.main_encoder "$@"
         ;;
     encode-bios)
         shift
-        exec python3 /app/scripts/tokenization/encode_bios.py "$@"
+        exec python3 -m scripts.tokenization.encode_bios "$@"
         ;;
     encode-descriptions)
         shift
-        exec python3 /app/scripts/tokenization/encode_descriptions.py "$@"
+        exec python3 -m scripts.tokenization.encode_descriptions "$@"
         ;;
     train)
         shift
-        exec python3 /app/scripts/models/model_trainer.py "$@"
+        exec python3 -m scripts.models.model_trainer "$@"
         ;;
     check)
         shift
-        exec python3 /app/scripts/data_pipeline/main.py --check "$@"
+        exec python3 -m scripts.data_pipeline.main --check "$@"
         ;;
     bash)
         exec /bin/bash
