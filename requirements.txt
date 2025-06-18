@@ -7,7 +7,7 @@ lxml
 python-dateutil
 
 # AI/ML
-google-generativeai>=0.4.0
+google-generativeai==0.1.0rc1
 transformers
 torch
 scikit-learn

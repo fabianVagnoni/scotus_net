@@ -1,0 +1,84 @@
+version: '3.8'
+
+services:
+  scotus-ai:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: scotus-ai:latest
+    container_name: scotus-ai-container
+    restart: unless-stopped
+    
+    # GPU support (requires nvidia-docker2)
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    
+    # Environment variables
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+    
+    # Volume mounts for data persistence
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./models_output:/app/models_output
+      - ./cache:/app/.cache
+      - ./.env:/app/.env:ro  # Mount environment file as read-only
+    
+    # Port mapping (for future web interface)
+    ports:
+      - "8000:8000"
+    
+    # Interactive mode by default
+    stdin_open: true
+    tty: true
+    
+    # Default command
+    command: ["bash"]
+
+  # Optional: Database service for future use
+  postgres:
+    image: postgres:13
+    container_name: scotus-ai-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: scotus_db
+      POSTGRES_USER: scotus_user
+      POSTGRES_PASSWORD: scotus_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    profiles:
+      - database  # Only starts when explicitly requested
+
+  # Optional: MongoDB service for future use
+  mongodb:
+    image: mongo:5
+    container_name: scotus-ai-mongo
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: scotus_user
+      MONGO_INITDB_ROOT_PASSWORD: scotus_password
+      MONGO_INITDB_DATABASE: scotus_mongo
+    volumes:
+      - mongodb_data:/data/db
+    ports:
+      - "27017:27017"
+    profiles:
+      - database  # Only starts when explicitly requested
+
+volumes:
+  postgres_data:
+  mongodb_data:
+
+# Networks
+networks:
+  default:
+    name: scotus-ai-network 

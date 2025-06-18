@@ -1,0 +1,193 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+pip-wheel-metadata/
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.atom/
+*.sublime-*
+
+# Data directories (these should be mounted as volumes)
+data/raw/
+data/processed/
+data/external/
+*.csv
+*.json
+*.parquet
+*.pkl
+*.h5
+*.hdf5
+
+# Model files (these should be mounted as volumes)
+models_output/
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+
+# Logs (these should be mounted as volumes)
+logs/
+*.log
+
+# Cache directories (these should be mounted as volumes)
+.cache/
+*.cache
+.huggingface/
+.torch/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+
+# Documentation (keep essential docs)
+docs/
+*.md
+!README.md
+!DOCKER_DEPLOYMENT.md
+
+# Docker files (avoid recursive copying)
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# Environment files (these will be mounted)
+.env
+.env.*
+!env.example
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.temp
+
+# Backup files
+*.bak
+*.backup
+*~
+
+# Package managers
+node_modules/
+bower_components/
+
+# Coverage reports
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+*.cover
+.hypothesis/
+.pytest_cache/
+
+# Translations
+*.mo
+*.pot
+
+# Django
+local_settings.py
+db.sqlite3
+
+# Flask
+instance/
+.webassets-cache
+
+# Scrapy
+.scrapy
+
+# Sphinx documentation
+docs/_build/
+
+# PyBuilder
+target/
+
+# pytest
+.pytest_cache/
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre type checker
+.pyre/
+
+# Celery
+celerybeat-schedule
+celerybeat.pid
+
+# SageMath parsed files
+*.sage.py
+
+# Spyder project settings
+.spyderproject
+.spyproject
+
+# Rope project settings
+.ropeproject
+
+# mkdocs documentation
+/site
+
+# Weights & Biases
+wandb/
+
+# MLflow
+mlruns/
+
+# TensorBoard
+runs/
+
+# Large model files that should be downloaded at runtime
+*.bin
+*.model
+*.vocab
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Configuration that shouldn't be in image
+config.local.*
+settings.local.* 
