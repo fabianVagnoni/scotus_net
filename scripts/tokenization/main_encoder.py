@@ -130,33 +130,33 @@ def analyze_encoding_requirements(dataset: Dict) -> Tuple[Set[str], Set[str], Di
         # Collect biography paths
         for bio_path in justice_bio_paths:
             if bio_path and bio_path.strip():
-                # Keep original path (don't convert to absolute yet)
-                original_path = bio_path.strip()
-                unique_bio_paths.add(original_path)
+                # Normalize path separators for cross-platform compatibility
+                normalized_path = bio_path.strip().replace('\\', '/')
+                unique_bio_paths.add(normalized_path)
                 total_bios += 1
                 
                 # Debug: collect first few paths
                 if len(debug_bio_paths) < 5:
-                    debug_bio_paths.append(original_path)
+                    debug_bio_paths.append(normalized_path)
                 
-                # Check if file exists (try both relative and absolute paths)
-                if not os.path.exists(original_path):
-                    missing_bio_files.append(original_path)
+                # Check if file exists
+                if not os.path.exists(normalized_path):
+                    missing_bio_files.append(normalized_path)
         
         # Collect case description paths
         if case_description_path and case_description_path.strip():
-            # Keep original path (don't convert to absolute yet)
-            original_path = case_description_path.strip()
-            unique_case_paths.add(original_path)
+            # Normalize path separators for cross-platform compatibility
+            normalized_path = case_description_path.strip().replace('\\', '/')
+            unique_case_paths.add(normalized_path)
             total_cases += 1
             
             # Debug: collect first few paths
             if len(debug_case_paths) < 5:
-                debug_case_paths.append(original_path)
+                debug_case_paths.append(normalized_path)
             
-            # Check if file exists (try both relative and absolute paths)
-            if not os.path.exists(original_path):
-                missing_case_files.append(original_path)
+            # Check if file exists
+            if not os.path.exists(normalized_path):
+                missing_case_files.append(normalized_path)
     
     stats = {
         'total_cases': len(dataset),
@@ -226,7 +226,7 @@ def check_existing_encodings(bio_embedding_file: str, description_embedding_file
             bio_metadata = data['metadata']
             status['bio_metadata_exists'] = True
             
-            encoded_bio_paths = set(os.path.abspath(path) for path in bio_embeddings.keys())
+            encoded_bio_paths = set(path.replace('\\', '/') for path in bio_embeddings.keys())
             status['encoded_bios'] = encoded_bio_paths
             
             # Calculate coverage
@@ -255,7 +255,7 @@ def check_existing_encodings(bio_embedding_file: str, description_embedding_file
             description_metadata = data['metadata']
             status['description_metadata_exists'] = True
             
-            encoded_desc_paths = set(os.path.abspath(path) for path in description_embeddings.keys())
+            encoded_desc_paths = set(path.replace('\\', '/') for path in description_embeddings.keys())
             status['encoded_descriptions'] = encoded_desc_paths
             
             # Calculate coverage
