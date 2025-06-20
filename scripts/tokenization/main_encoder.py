@@ -183,6 +183,7 @@ def analyze_encoding_requirements(dataset: Dict) -> Tuple[Set[str], Set[str], Di
     print(f"   📖 Unique case description files: {stats['unique_case_files']}")
     print(f"   🔗 Total biography references: {stats['total_bio_references']}")
     print(f"   🔗 Total case description references: {stats['total_case_references']}")
+    print(f"   💡 Note: Only encoding files referenced in dataset (more efficient)")
     
     if missing_bio_files:
         print(f"   ⚠️  Missing biography files: {len(missing_bio_files)}")
@@ -376,7 +377,7 @@ def encode_biographies(bios_to_encode: Set[str], output_file: str,
             "--batch-size", str(bio_config['batch_size'])
         ]
         
-        success = run_script("src/models/encoding/encode_bios.py", args, 
+        success = run_script("scripts/tokenization/encode_bios.py", args, 
                            f"Encoding {len(bios_to_encode)} biography files")
         
         # If we were doing a merge, combine the files
@@ -425,7 +426,7 @@ def encode_descriptions(descriptions_to_encode: Set[str], output_file: str,
             "--batch-size", str(desc_config['batch_size'])
         ]
         
-        success = run_script("src/models/encoding/encode_descriptions.py", args,
+        success = run_script("scripts/tokenization/encode_descriptions.py", args,
                            f"Encoding {len(descriptions_to_encode)} case description files")
         
         # If we were doing a merge, combine the files

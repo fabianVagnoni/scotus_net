@@ -202,7 +202,7 @@ def encode_description_files(
             except RuntimeError as e:
                 if "out of memory" in str(e).lower():
                     print(f"⚠️  GPU memory issue at batch {i//batch_size + 1}. Clearing cache...")
-                    if config.clear_cache_on_oom:
+                    if desc_config.get('clear_cache_on_oom', True):
                         torch.cuda.empty_cache()
                     # Try processing this batch one by one
                     for single_text, single_path in zip(batch_texts, batch_paths):
