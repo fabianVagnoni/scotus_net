@@ -113,7 +113,14 @@ def analyze_encoding_requirements(dataset: Dict) -> Tuple[Set[str], Set[str], Di
     missing_case_files = []
     
     for case_id, case_data in tqdm(dataset.items(), desc="Analyzing dataset"):
-        justice_bio_paths, case_description_path, voting_percentages = case_data
+        # Handle both old format (3 elements) and new format (4 elements with encoded_locations)
+        if len(case_data) == 3:
+            justice_bio_paths, case_description_path, voting_percentages = case_data
+        elif len(case_data) == 4:
+            justice_bio_paths, case_description_path, voting_percentages, encoded_locations = case_data
+        else:
+            print(f"⚠️  Unexpected case data format for case {case_id}: {len(case_data)} elements")
+            continue
         
         # Collect biography paths
         for bio_path in justice_bio_paths:
@@ -471,8 +478,14 @@ def update_dataset_with_encodings(dataset_file: str, bio_embedding_file: str,
         updated_cases = 0
         
         for case_id, case_data in tqdm(dataset.items(), desc="Updating dataset"):
-            # Current format: [justice_bio_paths, case_description_path, voting_percentages]
-            justice_bio_paths, case_description_path, voting_percentages = case_data
+            # Handle both old and new formats
+            if len(case_data) == 3:
+                justice_bio_paths, case_description_path, voting_percentages = case_data
+            elif len(case_data) == 4:
+                justice_bio_paths, case_description_path, voting_percentages, _ = case_data
+            else:
+                print(f"⚠️  Unexpected case data format for case {case_id}: {len(case_data)} elements")
+                continue
             
             # New format: [justice_bio_paths, case_description_path, voting_percentages, encoded_locations]
             encoded_locations = {
