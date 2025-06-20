@@ -333,15 +333,24 @@ def encode_from_dataset(dataset_file: str, descriptions_dir: str, output_file: s
     if missing_paths:
         print(f"⚠️  {len(missing_paths)} referenced files are missing")
     
-    # Read and encode only the referenced files
-    return encode_specific_files(existing_paths, output_file, **kwargs)
-
-def encode_specific_files(file_paths: List[str], output_file: str, **kwargs):
-    """Encode specific files rather than a whole directory."""
-    # Similar to encode_description_files but for specific file list
-    # Implementation would be similar but reading from file_paths list instead of directory
-    # This is a more efficient version for dataset-specific encoding
-    pass
+    # Create a temporary file list for the existing paths
+    import tempfile
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
+        for path in existing_paths:
+            f.write(f"{path}\n")
+        temp_file_list = f.name
+    
+    try:
+        # Call the main encoding function with the file list
+        return encode_description_files(
+            descriptions_dir=descriptions_dir,
+            output_file=output_file,
+            file_list=temp_file_list,
+            **kwargs
+        )
+    finally:
+        # Clean up the temporary file
+        os.unlink(temp_file_list)
 
 def main():
     # Load configuration for defaults
