@@ -302,15 +302,20 @@ def encode_from_dataset(dataset_file: str, descriptions_dir: str, output_file: s
     
     # Extract unique case description paths
     referenced_paths = set()
-    for case_id, (justice_bio_paths, case_description_path, voting_percentages) in dataset.items():
+    for case_id, case_data in dataset.items():
+        # Handle both old format (3 elements) and new format (4 elements with encoded_locations)
+        if len(case_data) == 3:
+            justice_bio_paths, case_description_path, voting_percentages = case_data
+        elif len(case_data) == 4:
+            justice_bio_paths, case_description_path, voting_percentages, encoded_locations = case_data
+        else:
+            print(f"⚠️  Unexpected case data format for case {case_id}: {len(case_data)} elements")
+            continue
+            
         if case_description_path and case_description_path.strip():
-            # Normalize path
-            if not os.path.isabs(case_description_path):
-                # Convert relative path to absolute
-                abs_path = os.path.abspath(case_description_path)
-            else:
-                abs_path = case_description_path
-            referenced_paths.add(abs_path)
+            # Normalize path separators for cross-platform compatibility
+            normalized_path = case_description_path.strip().replace('\\', '/')
+            referenced_paths.add(normalized_path)
     
     print(f"📚 Found {len(referenced_paths)} unique case descriptions referenced in dataset")
     
