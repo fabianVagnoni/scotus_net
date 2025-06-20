@@ -104,6 +104,7 @@ def analyze_encoding_requirements(dataset: Dict) -> Tuple[Set[str], Set[str], Di
         (unique_bio_paths, unique_case_paths, stats)
     """
     print("\n🔍 Analyzing encoding requirements...")
+    print(f"🔍 Current working directory: {os.getcwd()}")
     
     unique_bio_paths = set()
     unique_case_paths = set()
@@ -111,6 +112,10 @@ def analyze_encoding_requirements(dataset: Dict) -> Tuple[Set[str], Set[str], Di
     total_cases = 0
     missing_bio_files = []
     missing_case_files = []
+    
+    # Debug: track first few paths to understand the issue
+    debug_bio_paths = []
+    debug_case_paths = []
     
     for case_id, case_data in tqdm(dataset.items(), desc="Analyzing dataset"):
         # Handle both old format (3 elements) and new format (4 elements with encoded_locations)
@@ -125,23 +130,33 @@ def analyze_encoding_requirements(dataset: Dict) -> Tuple[Set[str], Set[str], Di
         # Collect biography paths
         for bio_path in justice_bio_paths:
             if bio_path and bio_path.strip():
-                abs_bio_path = os.path.abspath(bio_path)
-                unique_bio_paths.add(abs_bio_path)
+                # Keep original path (don't convert to absolute yet)
+                original_path = bio_path.strip()
+                unique_bio_paths.add(original_path)
                 total_bios += 1
                 
-                # Check if file exists
-                if not os.path.exists(abs_bio_path):
-                    missing_bio_files.append(abs_bio_path)
+                # Debug: collect first few paths
+                if len(debug_bio_paths) < 5:
+                    debug_bio_paths.append(original_path)
+                
+                # Check if file exists (try both relative and absolute paths)
+                if not os.path.exists(original_path):
+                    missing_bio_files.append(original_path)
         
         # Collect case description paths
         if case_description_path and case_description_path.strip():
-            abs_case_path = os.path.abspath(case_description_path)
-            unique_case_paths.add(abs_case_path)
+            # Keep original path (don't convert to absolute yet)
+            original_path = case_description_path.strip()
+            unique_case_paths.add(original_path)
             total_cases += 1
             
-            # Check if file exists
-            if not os.path.exists(abs_case_path):
-                missing_case_files.append(abs_case_path)
+            # Debug: collect first few paths
+            if len(debug_case_paths) < 5:
+                debug_case_paths.append(original_path)
+            
+            # Check if file exists (try both relative and absolute paths)
+            if not os.path.exists(original_path):
+                missing_case_files.append(original_path)
     
     stats = {
         'total_cases': len(dataset),
@@ -153,6 +168,15 @@ def analyze_encoding_requirements(dataset: Dict) -> Tuple[Set[str], Set[str], Di
         'missing_case_files': len(missing_case_files)
     }
     
+    # Debug output
+    print(f"\n🔍 DEBUG: Sample paths found in dataset:")
+    for i, path in enumerate(debug_bio_paths):
+        exists = os.path.exists(path)
+        print(f"   👥 Bio {i+1}: {path} (exists: {exists})")
+    for i, path in enumerate(debug_case_paths):
+        exists = os.path.exists(path)
+        print(f"   📖 Case {i+1}: {path} (exists: {exists})")
+    
     print(f"\n📊 ENCODING REQUIREMENTS ANALYSIS:")
     print(f"   📚 Cases in dataset: {stats['total_cases']}")
     print(f"   👥 Unique biography files: {stats['unique_bio_files']}")
@@ -162,8 +186,14 @@ def analyze_encoding_requirements(dataset: Dict) -> Tuple[Set[str], Set[str], Di
     
     if missing_bio_files:
         print(f"   ⚠️  Missing biography files: {len(missing_bio_files)}")
+        # Show first few missing files for debugging
+        for i, path in enumerate(missing_bio_files[:3]):
+            print(f"      📋 Missing bio {i+1}: {path}")
     if missing_case_files:
         print(f"   ⚠️  Missing case description files: {len(missing_case_files)}")
+        # Show first few missing files for debugging
+        for i, path in enumerate(missing_case_files[:3]):
+            print(f"      📋 Missing case {i+1}: {path}")
     
     return unique_bio_paths, unique_case_paths, stats
 
