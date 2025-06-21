@@ -1,11 +1,12 @@
 import torch
 import torch.nn as nn
 from transformers import AutoTokenizer, AutoModel
+from sentence_transformers import SentenceTransformer
 from typing import List, Optional, Dict, Any, Tuple
 import torch.nn.functional as F
 import os
 import pickle
-from src.models.justice_cross_attention import JusticeCrossAttention
+from justice_cross_attention import JusticeCrossAttention
 
 class SCOTUSVotingModel(nn.Module):
     """
@@ -20,15 +21,17 @@ class SCOTUSVotingModel(nn.Module):
     
     def __init__(
         self,
-        bio_embeddings_file: str,  # Required: Path to pre-encoded biography embeddings
-        description_embeddings_file: str,  # Required: Path to pre-encoded case description embeddings
+        bio_tokenized_file: str,  # Required: Path to pre-tokenized biography data
+        description_tokenized_file: str,  # Required: Path to pre-tokenized case description data
+        bio_model_name: str,  # Required: Model name for biographies
+        description_model_name: str,  # Required: Model name for case descriptions
         embedding_dim: int = 384,
         hidden_dim: int = 512,
         dropout_rate: float = 0.1,
         max_justices: int = 15,  # Maximum number of justices that can be on the court
         num_attention_heads: int = 4,  # Number of attention heads for justice cross-attention
         use_justice_attention: bool = True,  # Whether to use attention or simple concatenation
-        device: str = 'cpu'  # Device to place embeddings on
+        device: str = 'cpu'  # Device to place models and data on
     ):
         super(SCOTUSVotingModel, self).__init__()
         
@@ -39,28 +42,36 @@ class SCOTUSVotingModel(nn.Module):
         self.use_justice_attention = use_justice_attention
         self.device = device
         
-        # Pre-encoded embeddings storage
-        self.bio_embeddings = {}
-        self.description_embeddings = {}
+        # Pre-tokenized data storage
+        self.bio_tokenized_data = {}
+        self.description_tokenized_data = {}
         self.bio_metadata = {}
         self.description_metadata = {}
         
-        # Load required pre-encoded embeddings
-        if not os.path.exists(bio_embeddings_file):
-            raise FileNotFoundError(f"Biography embeddings file not found: {bio_embeddings_file}")
-        if not os.path.exists(description_embeddings_file):
-            raise FileNotFoundError(f"Description embeddings file not found: {description_embeddings_file}")
+        # Load required pre-tokenized data
+        if not os.path.exists(bio_tokenized_file):
+            raise FileNotFoundError(f"Biography tokenized file not found: {bio_tokenized_file}")
+        if not os.path.exists(description_tokenized_file):
+            raise FileNotFoundError(f"Description tokenized file not found: {description_tokenized_file}")
             
-        self._load_bio_embeddings(bio_embeddings_file)
-        self._load_description_embeddings(description_embeddings_file)
+        self._load_bio_tokenized_data(bio_tokenized_file)
+        self._load_description_tokenized_data(description_tokenized_file)
+        
+        # Initialize sentence transformer models
+        print(f"📥 Loading sentence transformer models...")
+        self.bio_model = SentenceTransformer(bio_model_name, device=device)
+        self.description_model = SentenceTransformer(description_model_name, device=device)
         
         # Verify embedding dimensions match
-        if self.bio_metadata['embedding_dim'] != embedding_dim:
-            raise ValueError(f"Biography embedding dimension {self.bio_metadata['embedding_dim']} doesn't match expected {embedding_dim}")
-        if self.description_metadata['embedding_dim'] != embedding_dim:
-            raise ValueError(f"Description embedding dimension {self.description_metadata['embedding_dim']} doesn't match expected {embedding_dim}")
+        bio_actual_dim = self.bio_model.get_sentence_embedding_dimension()
+        desc_actual_dim = self.description_model.get_sentence_embedding_dimension()
         
-        print(f"✅ Model initialized with {len(self.bio_embeddings)} biography and {len(self.description_embeddings)} case description embeddings")
+        if bio_actual_dim != embedding_dim:
+            raise ValueError(f"Biography model embedding dimension {bio_actual_dim} doesn't match expected {embedding_dim}")
+        if desc_actual_dim != embedding_dim:
+            raise ValueError(f"Description model embedding dimension {desc_actual_dim} doesn't match expected {embedding_dim}")
+        
+        print(f"✅ Model initialized with {len(self.bio_tokenized_data)} biography and {len(self.description_tokenized_data)} case description tokenized files")
         
         # Justice attention mechanism or concatenation
         if use_justice_attention:
@@ -89,53 +100,59 @@ class SCOTUSVotingModel(nn.Module):
         # Layer normalization
         self.layer_norm = nn.LayerNorm(embedding_dim)
     
-    def _load_bio_embeddings(self, embeddings_file: str):
-        """Load pre-encoded biography embeddings."""
-        print(f"📥 Loading pre-encoded biographies from: {embeddings_file}")
+    def _load_bio_tokenized_data(self, tokenized_file: str):
+        """Load pre-tokenized biography data."""
+        print(f"📥 Loading pre-tokenized biographies from: {tokenized_file}")
         
-        with open(embeddings_file, 'rb') as f:
+        with open(tokenized_file, 'rb') as f:
             data = pickle.load(f)
         
-        # Load embeddings and move to specified device
-        self.bio_embeddings = {}
-        for path, embedding in data['embeddings'].items():
-            self.bio_embeddings[path] = embedding.to(self.device)
+        # Load tokenized data and move to specified device
+        self.bio_tokenized_data = {}
+        for path, tokenized_info in data['tokenized_data'].items():
+            self.bio_tokenized_data[path] = {
+                'input_ids': tokenized_info['input_ids'].to(self.device),
+                'attention_mask': tokenized_info['attention_mask'].to(self.device)
+            }
         
         self.bio_metadata = data['metadata']
         
-        print(f"✅ Loaded {self.bio_metadata['num_embeddings']} pre-encoded biographies to {self.device}")
+        print(f"✅ Loaded {self.bio_metadata['num_tokenized']} pre-tokenized biographies to {self.device}")
     
-    def _load_description_embeddings(self, embeddings_file: str):
-        """Load pre-encoded case description embeddings."""
-        print(f"📥 Loading pre-encoded descriptions from: {embeddings_file}")
+    def _load_description_tokenized_data(self, tokenized_file: str):
+        """Load pre-tokenized case description data."""
+        print(f"📥 Loading pre-tokenized descriptions from: {tokenized_file}")
         
-        with open(embeddings_file, 'rb') as f:
+        with open(tokenized_file, 'rb') as f:
             data = pickle.load(f)
         
-        # Load embeddings and move to specified device
-        self.description_embeddings = {}
-        for path, embedding in data['embeddings'].items():
-            self.description_embeddings[path] = embedding.to(self.device)
+        # Load tokenized data and move to specified device
+        self.description_tokenized_data = {}
+        for path, tokenized_info in data['tokenized_data'].items():
+            self.description_tokenized_data[path] = {
+                'input_ids': tokenized_info['input_ids'].to(self.device),
+                'attention_mask': tokenized_info['attention_mask'].to(self.device)
+            }
         
         self.description_metadata = data['metadata']
         
-        print(f"✅ Loaded {self.description_metadata['num_embeddings']} pre-encoded descriptions to {self.device}")
+        print(f"✅ Loaded {self.description_metadata['num_tokenized']} pre-tokenized descriptions to {self.device}")
     
     def encode_case_description(self, case_description_path: str) -> torch.Tensor:
         """
-        Encode case description using ONLY pre-encoded embeddings from .pkl files.
+        Encode case description using pre-tokenized data and sentence transformer.
         
         Args:
-            case_description_path: Path to case description file (for pre-encoded lookup)
+            case_description_path: Path to case description file (for pre-tokenized lookup)
             
         Returns:
             Tensor of shape (embedding_dim,) representing the case
             
         Raises:
-            KeyError: If the case description path is not found in pre-encoded embeddings
+            KeyError: If the case description path is not found in pre-tokenized data
         """
         if not case_description_path:
-            raise ValueError("case_description_path is required when using pre-encoded embeddings")
+            raise ValueError("case_description_path is required when using pre-tokenized data")
         
         # Normalize path for consistent lookup
         normalized_path = case_description_path.replace('\\', '/')
@@ -147,34 +164,53 @@ class SCOTUSVotingModel(nn.Module):
             os.path.normpath(normalized_path).replace('\\', '/'),
         ]
         
+        tokenized_data = None
         for path_variant in path_variations:
-            if path_variant in self.description_embeddings:
-                return self.description_embeddings[path_variant]
+            if path_variant in self.description_tokenized_data:
+                tokenized_data = self.description_tokenized_data[path_variant]
+                break
         
-        # If not found, raise error with helpful message
-        available_paths = list(self.description_embeddings.keys())[:5]  # Show first 5 for debugging
-        raise KeyError(
-            f"Case description path not found in pre-encoded embeddings: {case_description_path}\n"
-            f"Tried variations: {path_variations}\n"
-            f"Available paths (first 5): {available_paths}\n"
-            f"Total available: {len(self.description_embeddings)}"
-        )
+        if tokenized_data is None:
+            # If not found, raise error with helpful message
+            available_paths = list(self.description_tokenized_data.keys())[:5]  # Show first 5 for debugging
+            raise KeyError(
+                f"Case description path not found in pre-tokenized data: {case_description_path}\n"
+                f"Tried variations: {path_variations}\n"
+                f"Available paths (first 5): {available_paths}\n"
+                f"Total available: {len(self.description_tokenized_data)}"
+            )
+        
+        # Pass through sentence transformer model
+        # Note: SentenceTransformer expects batch, so we add batch dimension
+        input_ids = tokenized_data['input_ids'].unsqueeze(0)  # (1, seq_len)
+        attention_mask = tokenized_data['attention_mask'].unsqueeze(0)  # (1, seq_len)
+        
+        # Use the sentence transformer's internal encoding
+        with torch.no_grad() if not self.training else torch.enable_grad():
+            # Get embeddings from the underlying transformer model
+            features = {
+                'input_ids': input_ids,
+                'attention_mask': attention_mask
+            }
+            embedding = self.description_model(features)['sentence_embedding']
+            
+        return embedding.squeeze(0)  # Remove batch dimension
     
     def encode_justice_bio(self, justice_bio_path: str) -> torch.Tensor:
         """
-        Encode justice biography using ONLY pre-encoded embeddings from .pkl files.
+        Encode justice biography using pre-tokenized data and sentence transformer.
         
         Args:
-            justice_bio_path: Path to justice biography file (for pre-encoded lookup)
+            justice_bio_path: Path to justice biography file (for pre-tokenized lookup)
             
         Returns:
             Tensor of shape (embedding_dim,) representing the justice
             
         Raises:
-            KeyError: If the justice biography path is not found in pre-encoded embeddings
+            KeyError: If the justice biography path is not found in pre-tokenized data
         """
         if not justice_bio_path:
-            raise ValueError("justice_bio_path is required when using pre-encoded embeddings")
+            raise ValueError("justice_bio_path is required when using pre-tokenized data")
         
         # Normalize path for consistent lookup
         normalized_path = justice_bio_path.replace('\\', '/')
@@ -186,26 +222,45 @@ class SCOTUSVotingModel(nn.Module):
             os.path.normpath(normalized_path).replace('\\', '/'),
         ]
         
+        tokenized_data = None
         for path_variant in path_variations:
-            if path_variant in self.bio_embeddings:
-                return self.bio_embeddings[path_variant]
+            if path_variant in self.bio_tokenized_data:
+                tokenized_data = self.bio_tokenized_data[path_variant]
+                break
         
-        # If not found, raise error with helpful message
-        available_paths = list(self.bio_embeddings.keys())[:5]  # Show first 5 for debugging
-        raise KeyError(
-            f"Justice biography path not found in pre-encoded embeddings: {justice_bio_path}\n"
-            f"Tried variations: {path_variations}\n"
-            f"Available paths (first 5): {available_paths}\n"
-            f"Total available: {len(self.bio_embeddings)}"
-        )
+        if tokenized_data is None:
+            # If not found, raise error with helpful message
+            available_paths = list(self.bio_tokenized_data.keys())[:5]  # Show first 5 for debugging
+            raise KeyError(
+                f"Justice biography path not found in pre-tokenized data: {justice_bio_path}\n"
+                f"Tried variations: {path_variations}\n"
+                f"Available paths (first 5): {available_paths}\n"
+                f"Total available: {len(self.bio_tokenized_data)}"
+            )
+        
+        # Pass through sentence transformer model
+        # Note: SentenceTransformer expects batch, so we add batch dimension
+        input_ids = tokenized_data['input_ids'].unsqueeze(0)  # (1, seq_len)
+        attention_mask = tokenized_data['attention_mask'].unsqueeze(0)  # (1, seq_len)
+        
+        # Use the sentence transformer's internal encoding
+        with torch.no_grad() if not self.training else torch.enable_grad():
+            # Get embeddings from the underlying transformer model
+            features = {
+                'input_ids': input_ids,
+                'attention_mask': attention_mask
+            }
+            embedding = self.bio_model(features)['sentence_embedding']
+            
+        return embedding.squeeze(0)  # Remove batch dimension
     
     def forward(self, case_description_path: str, justice_bio_paths: List[str]) -> torch.Tensor:
         """
-        Forward pass of the model using ONLY pre-encoded embeddings from .pkl files.
+        Forward pass of the model using pre-tokenized data and sentence transformers.
         
         Args:
-            case_description_path: Path to case description file (for pre-encoded lookup)
-            justice_bio_paths: List of paths to justice biography files (for pre-encoded lookup)
+            case_description_path: Path to case description file (for pre-tokenized lookup)
+            justice_bio_paths: List of paths to justice biography files (for pre-tokenized lookup)
             
         Returns:
             Tensor of shape (4,) with voting percentage predictions
@@ -266,7 +321,7 @@ class SCOTUSVotingModel(nn.Module):
     
     def predict_from_files(self, case_description_path: str, justice_bio_paths: List[str]) -> torch.Tensor:
         """
-        Make prediction from file paths using ONLY pre-encoded embeddings.
+        Make prediction from file paths using pre-tokenized data.
         
         Args:
             case_description_path: Path to case description file
@@ -276,8 +331,8 @@ class SCOTUSVotingModel(nn.Module):
             Tensor of shape (4,) with voting percentage predictions
             
         Note:
-            This method now requires all files to be pre-encoded in the .pkl files.
-            No fallback to reading raw text files.
+            This method requires all files to be pre-tokenized in the .pkl files.
+            Sentence transformers are applied during forward pass for potential fine-tuning.
         """
         return self.forward(case_description_path, justice_bio_paths)
     
@@ -314,8 +369,8 @@ class SCOTUSVotingModel(nn.Module):
         }, filepath)
     
     @classmethod
-    def load_model(cls, filepath: str, bio_embeddings_file: str, description_embeddings_file: str, 
-                   device: str = None):
+    def load_model(cls, filepath: str, bio_tokenized_file: str, description_tokenized_file: str,
+                   bio_model_name: str, description_model_name: str, device: str = None):
         """Load a saved model."""
         checkpoint = torch.load(filepath, map_location='cpu')  # Load to CPU first
         
@@ -324,8 +379,10 @@ class SCOTUSVotingModel(nn.Module):
             device = checkpoint.get('device', 'cpu')
         
         model = cls(
-            bio_embeddings_file=bio_embeddings_file,
-            description_embeddings_file=description_embeddings_file,
+            bio_tokenized_file=bio_tokenized_file,
+            description_tokenized_file=description_tokenized_file,
+            bio_model_name=bio_model_name,
+            description_model_name=description_model_name,
             embedding_dim=checkpoint['embedding_dim'],
             hidden_dim=checkpoint['hidden_dim'],
             max_justices=checkpoint['max_justices'],
@@ -339,11 +396,11 @@ class SCOTUSVotingModel(nn.Module):
         
         return model
     
-    def get_embedding_stats(self) -> Dict[str, Any]:
-        """Get statistics about loaded embeddings."""
+    def get_tokenized_stats(self) -> Dict[str, Any]:
+        """Get statistics about loaded tokenized data."""
         stats = {
-            'bio_embeddings_loaded': len(self.bio_embeddings),
-            'description_embeddings_loaded': len(self.description_embeddings),
+            'bio_tokenized_loaded': len(self.bio_tokenized_data),
+            'description_tokenized_loaded': len(self.description_tokenized_data),
             'bio_metadata': self.bio_metadata,
             'description_metadata': self.description_metadata,
             'device': self.device
@@ -352,10 +409,10 @@ class SCOTUSVotingModel(nn.Module):
         return stats
     
     def get_available_paths(self) -> Dict[str, List[str]]:
-        """Get lists of available file paths in embeddings."""
+        """Get lists of available file paths in tokenized data."""
         return {
-            'bio_paths': list(self.bio_embeddings.keys()),
-            'description_paths': list(self.description_embeddings.keys())
+            'bio_paths': list(self.bio_tokenized_data.keys()),
+            'description_paths': list(self.description_tokenized_data.keys())
         }
 
 

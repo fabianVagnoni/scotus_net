@@ -15,7 +15,7 @@ import numpy as np
 from pathlib import Path
 from typing import Dict, List, Optional
 from tqdm import tqdm
-from sentence_transformers import SentenceTransformer
+from transformers import AutoTokenizer
 import argparse
 
 # Import configuration
@@ -70,25 +70,17 @@ def encode_biography_files(
         else:
             device = device_config
     
-    print(f"🚀 Pre-encoding Justice Biographies")
+    print(f"🚀 Pre-tokenizing Justice Biographies")
     print(f"📁 Bios directory: {bios_dir}")
     print(f"🤖 Model: {model_name}")
     print(f"💾 Device: {device}")
-    print(f"📊 Target embedding dim: {embedding_dim}")
+    print(f"📊 Max sequence length: {max_sequence_length}")
     
-    # Initialize sentence transformer model
-    print("\n📥 Loading sentence transformer model...")
-    model = SentenceTransformer(model_name, device=device)
+    # Initialize tokenizer only (model will be used during training)
+    print("\n📥 Loading tokenizer...")
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
     
-    # Get actual embedding dimension from the model
-    actual_embedding_dim = model.get_sentence_embedding_dimension()
-    print(f"📏 Model embedding dim: {actual_embedding_dim}")
-    
-    # Check if embedding dimensions match
-    if actual_embedding_dim != embedding_dim:
-        print(f"⚠️  Warning: Model dimension ({actual_embedding_dim}) doesn't match target ({embedding_dim})")
-        print(f"   Using model's native dimension: {actual_embedding_dim}")
-        embedding_dim = actual_embedding_dim
+    print(f"✅ Tokenizer loaded successfully")
     
     # Find all biography files
     bio_files = []
@@ -141,50 +133,52 @@ def encode_biography_files(
     if failed_files:
         print(f"❌ Failed to read {len(failed_files)} files")
     
-    # Encode biographies using sentence transformers
-    print(f"\n🧠 Encoding biographies (batch size: {batch_size})...")
+    # Tokenize biographies
+    print(f"\n🧠 Tokenizing biographies (batch size: {batch_size})...")
     
     bio_paths = list(bio_data.keys())
     bio_texts = list(bio_data.values())
-    encoded_embeddings = {}
+    tokenized_data = {}
     
     # Process in batches for memory efficiency
-    for i in tqdm(range(0, len(bio_texts), batch_size), desc="Encoding batches"):
+    for i in tqdm(range(0, len(bio_texts), batch_size), desc="Tokenizing batches"):
         batch_texts = bio_texts[i:i + batch_size]
         batch_paths = bio_paths[i:i + batch_size]
         
-        # Encode batch using sentence transformer (handles tokenization, pooling internally)
-        batch_embeddings = model.encode(
+        # Tokenize batch
+        tokenized = tokenizer(
             batch_texts,
-            batch_size=len(batch_texts),
-            show_progress_bar=False,
-            convert_to_tensor=True,
-            device=device
+            padding=True,
+            truncation=True,
+            max_length=max_sequence_length,
+            return_tensors="pt"
         )
         
-        # Store embeddings (move to CPU to save memory)
+        # Store tokenized data for each file
         for j, path in enumerate(batch_paths):
-            encoded_embeddings[path] = batch_embeddings[j].cpu()
+            tokenized_data[path] = {
+                'input_ids': tokenized['input_ids'][j],
+                'attention_mask': tokenized['attention_mask'][j]
+            }
     
-    print(f"✅ Encoded {len(encoded_embeddings)} biographies")
+    print(f"✅ Tokenized {len(tokenized_data)} biographies")
     
     # Create metadata
     metadata = {
         'model_name': model_name,
-        'embedding_dim': embedding_dim,
         'max_sequence_length': max_sequence_length,
-        'num_embeddings': len(encoded_embeddings),
+        'num_tokenized': len(tokenized_data),
         'failed_files': failed_files,
         'device_used': device,
-        'encoding_method': 'sentence_transformers'
+        'tokenization_method': 'transformers_autotokenizer'
     }
     
-    # Save embeddings and metadata
-    print(f"\n💾 Saving embeddings to: {output_file}")
+    # Save tokenized data and metadata
+    print(f"\n💾 Saving tokenized data to: {output_file}")
     os.makedirs(os.path.dirname(output_file), exist_ok=True)
     
     save_data = {
-        'embeddings': encoded_embeddings,
+        'tokenized_data': tokenized_data,
         'metadata': metadata
     }
     
@@ -193,38 +187,38 @@ def encode_biography_files(
     
     # Calculate file size
     file_size_mb = os.path.getsize(output_file) / (1024 * 1024)
-    print(f"✅ Saved {len(encoded_embeddings)} embeddings ({file_size_mb:.1f} MB)")
+    print(f"✅ Saved {len(tokenized_data)} tokenized biographies ({file_size_mb:.1f} MB)")
     
     # Print summary
-    print(f"\n📊 ENCODING SUMMARY")
+    print(f"\n📊 TOKENIZATION SUMMARY")
     print(f"   Total files found: {len(bio_files)}")
-    print(f"   Successfully encoded: {len(encoded_embeddings)}")
+    print(f"   Successfully tokenized: {len(tokenized_data)}")
     print(f"   Failed files: {len(failed_files)}")
     print(f"   Output file: {output_file}")
     print(f"   File size: {file_size_mb:.1f} MB")
     
     return output_file, metadata
 
-def load_encoded_bios(embeddings_file: str) -> tuple:
+def load_tokenized_bios(tokenized_file: str) -> tuple:
     """
-    Load pre-encoded biography embeddings.
+    Load pre-tokenized biography data.
     
     Returns:
-        (embeddings_dict, metadata)
+        (tokenized_dict, metadata)
     """
-    print(f"📥 Loading pre-encoded biographies from: {embeddings_file}")
+    print(f"📥 Loading pre-tokenized biographies from: {tokenized_file}")
     
-    with open(embeddings_file, 'rb') as f:
+    with open(tokenized_file, 'rb') as f:
         data = pickle.load(f)
     
-    embeddings = data['embeddings']
+    tokenized_data = data['tokenized_data']
     metadata = data['metadata']
     
-    print(f"✅ Loaded {metadata['num_embeddings']} pre-encoded biographies")
+    print(f"✅ Loaded {metadata['num_tokenized']} pre-tokenized biographies")
     print(f"🤖 Original model: {metadata['model_name']}")
-    print(f"📏 Embedding dimension: {metadata['embedding_dim']}")
+    print(f"📏 Max sequence length: {metadata['max_sequence_length']}")
     
-    return embeddings, metadata
+    return tokenized_data, metadata
 
 def main():
     # Load configuration for defaults
@@ -232,7 +226,7 @@ def main():
     bio_config = get_bio_config()
     
     parser = argparse.ArgumentParser(
-        description="Pre-encode justice biographies for fast training"
+        description="Pre-tokenize justice biographies for efficient training"
     )
     parser.add_argument(
         "--bios-dir",
@@ -247,30 +241,24 @@ def main():
         "--output",
         "-o",
         default=bio_config['output_file'],
-        help="Output file for encoded embeddings"
+        help="Output file for tokenized data"
     )
     parser.add_argument(
         "--model-name",
         default=bio_config['model_name'],
-        help="HuggingFace model name for encoding"
-    )
-    parser.add_argument(
-        "--embedding-dim",
-        type=int,
-        default=bio_config['embedding_dim'],
-        help="Target embedding dimension"
+        help="HuggingFace model name for tokenization"
     )
     parser.add_argument(
         "--batch-size",
         type=int,
         default=bio_config['batch_size'],
-        help="Batch size for encoding"
+        help="Batch size for tokenization"
     )
     parser.add_argument(
         "--device",
         choices=['cuda', 'cpu', 'auto'],
         default=bio_config['device'],
-        help="Device to use for encoding"
+        help="Device preference (not used for tokenization, kept for compatibility)"
     )
     parser.add_argument(
         "--config",
@@ -291,16 +279,15 @@ def main():
             bios_dir=args.bios_dir,
             output_file=args.output,
             model_name=args.model_name,
-            embedding_dim=args.embedding_dim,
             batch_size=args.batch_size,
             device=device,
             file_list=args.file_list
         )
         
-        print("\n🎉 Biography encoding completed successfully!")
+        print("\n🎉 Biography tokenization completed successfully!")
         
     except Exception as e:
-        print(f"\n❌ Error during encoding: {e}")
+        print(f"\n❌ Error during tokenization: {e}")
         sys.exit(1)
 
 if __name__ == "__main__":

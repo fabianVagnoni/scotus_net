@@ -15,7 +15,7 @@ import numpy as np
 from pathlib import Path
 from typing import Dict, List, Optional
 from tqdm import tqdm
-from sentence_transformers import SentenceTransformer
+from transformers import AutoTokenizer
 import argparse
 
 # Import configuration
@@ -70,25 +70,17 @@ def encode_description_files(
         else:
             device = device_config
     
-    print(f"🚀 Pre-encoding Case Descriptions")
+    print(f"🚀 Pre-tokenizing Case Descriptions")
     print(f"📁 Descriptions directory: {descriptions_dir}")
     print(f"🤖 Model: {model_name}")
     print(f"💾 Device: {device}")
-    print(f"📊 Target embedding dim: {embedding_dim}")
+    print(f"📊 Max sequence length: {max_sequence_length}")
     
-    # Initialize sentence transformer model
-    print("\n📥 Loading legal sentence transformer model...")
-    model = SentenceTransformer(model_name, device=device)
+    # Initialize tokenizer only (model will be used during training)
+    print("\n📥 Loading tokenizer...")
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
     
-    # Get actual embedding dimension from the model
-    actual_embedding_dim = model.get_sentence_embedding_dimension()
-    print(f"📏 Model embedding dim: {actual_embedding_dim}")
-    
-    # Check if embedding dimensions match
-    if actual_embedding_dim != embedding_dim:
-        print(f"⚠️  Warning: Model dimension ({actual_embedding_dim}) doesn't match target ({embedding_dim})")
-        print(f"   Using model's native dimension: {actual_embedding_dim}")
-        embedding_dim = actual_embedding_dim
+    print(f"✅ Tokenizer loaded successfully")
     
     # Find all case description files
     description_files = []
@@ -151,74 +143,58 @@ def encode_description_files(
     if skipped_large_files:
         print(f"⚠️  Skipped {len(skipped_large_files)} very large files (>10k words)")
     
-    # Encode case descriptions using sentence transformers
-    print(f"\n🧠 Encoding case descriptions (batch size: {batch_size})...")
+    # Tokenize case descriptions
+    print(f"\n🧠 Tokenizing case descriptions (batch size: {batch_size})...")
     
     desc_paths = list(description_data.keys())
     desc_texts = list(description_data.values())
-    encoded_embeddings = {}
+    tokenized_data = {}
     
     # Process in batches for memory efficiency
-    for i in tqdm(range(0, len(desc_texts), batch_size), desc="Encoding batches"):
+    for i in tqdm(range(0, len(desc_texts), batch_size), desc="Tokenizing batches"):
         batch_texts = desc_texts[i:i + batch_size]
         batch_paths = desc_paths[i:i + batch_size]
         
         try:
-            # Encode batch using sentence transformer (handles tokenization, pooling internally)
-            batch_embeddings = model.encode(
+            # Tokenize batch
+            tokenized = tokenizer(
                 batch_texts,
-                batch_size=len(batch_texts),
-                show_progress_bar=False,
-                convert_to_tensor=True,
-                device=device
+                padding=True,
+                truncation=True,
+                max_length=max_sequence_length,
+                return_tensors="pt"
             )
             
-            # Store embeddings (move to CPU to save memory)
+            # Store tokenized data for each file
             for j, path in enumerate(batch_paths):
-                encoded_embeddings[path] = batch_embeddings[j].cpu()
+                tokenized_data[path] = {
+                    'input_ids': tokenized['input_ids'][j],
+                    'attention_mask': tokenized['attention_mask'][j]
+                }
                 
-        except RuntimeError as e:
-            if "out of memory" in str(e).lower():
-                print(f"⚠️  GPU memory issue at batch {i//batch_size + 1}. Clearing cache...")
-                if torch.cuda.is_available():
-                    torch.cuda.empty_cache()
-                
-                # Try processing this batch one by one
-                for single_text, single_path in zip(batch_texts, batch_paths):
-                    try:
-                        single_embedding = model.encode(
-                            [single_text],
-                            convert_to_tensor=True,
-                            device=device
-                        )
-                        encoded_embeddings[single_path] = single_embedding[0].cpu()
-                    except Exception as single_e:
-                        print(f"❌ Failed to encode {single_path}: {single_e}")
-                        failed_files.append(single_path)
-            else:
-                print(f"❌ Error encoding batch {i//batch_size + 1}: {e}")
-                failed_files.extend(batch_paths)
+        except Exception as e:
+            print(f"❌ Error tokenizing batch {i//batch_size + 1}: {e}")
+            failed_files.extend(batch_paths)
     
-    print(f"✅ Encoded {len(encoded_embeddings)} case descriptions")
+    print(f"✅ Tokenized {len(tokenized_data)} case descriptions")
     
     # Create metadata
     metadata = {
         'model_name': model_name,
-        'embedding_dim': embedding_dim,
         'max_sequence_length': max_sequence_length,
-        'num_embeddings': len(encoded_embeddings),
+        'num_tokenized': len(tokenized_data),
         'failed_files': failed_files,
         'skipped_large_files': skipped_large_files,
         'device_used': device,
-        'encoding_method': 'sentence_transformers'
+        'tokenization_method': 'transformers_autotokenizer'
     }
     
-    # Save embeddings and metadata
-    print(f"\n💾 Saving embeddings to: {output_file}")
+    # Save tokenized data and metadata
+    print(f"\n💾 Saving tokenized data to: {output_file}")
     os.makedirs(os.path.dirname(output_file), exist_ok=True)
     
     save_data = {
-        'embeddings': encoded_embeddings,
+        'tokenized_data': tokenized_data,
         'metadata': metadata
     }
     
@@ -227,12 +203,12 @@ def encode_description_files(
     
     # Calculate file size
     file_size_mb = os.path.getsize(output_file) / (1024 * 1024)
-    print(f"✅ Saved {len(encoded_embeddings)} embeddings ({file_size_mb:.1f} MB)")
+    print(f"✅ Saved {len(tokenized_data)} tokenized descriptions ({file_size_mb:.1f} MB)")
     
     # Print summary
-    print(f"\n📊 ENCODING SUMMARY")
+    print(f"\n📊 TOKENIZATION SUMMARY")
     print(f"   Total files found: {len(description_files)}")
-    print(f"   Successfully encoded: {len(encoded_embeddings)}")
+    print(f"   Successfully tokenized: {len(tokenized_data)}")
     print(f"   Failed files: {len(failed_files)}")
     print(f"   Skipped large files: {len(skipped_large_files)}")
     print(f"   Output file: {output_file}")
@@ -240,26 +216,26 @@ def encode_description_files(
     
     return output_file, metadata
 
-def load_encoded_descriptions(embeddings_file: str) -> tuple:
+def load_tokenized_descriptions(tokenized_file: str) -> tuple:
     """
-    Load pre-encoded case description embeddings.
+    Load pre-tokenized case description data.
     
     Returns:
-        (embeddings_dict, metadata)
+        (tokenized_dict, metadata)
     """
-    print(f"📥 Loading pre-encoded case descriptions from: {embeddings_file}")
+    print(f"📥 Loading pre-tokenized case descriptions from: {tokenized_file}")
     
-    with open(embeddings_file, 'rb') as f:
+    with open(tokenized_file, 'rb') as f:
         data = pickle.load(f)
     
-    embeddings = data['embeddings']
+    tokenized_data = data['tokenized_data']
     metadata = data['metadata']
     
-    print(f"✅ Loaded {metadata['num_embeddings']} pre-encoded case descriptions")
+    print(f"✅ Loaded {metadata['num_tokenized']} pre-tokenized case descriptions")
     print(f"🤖 Original model: {metadata['model_name']}")
-    print(f"📏 Embedding dimension: {metadata['embedding_dim']}")
+    print(f"📏 Max sequence length: {metadata['max_sequence_length']}")
     
-    return embeddings, metadata
+    return tokenized_data, metadata
 
 def encode_from_dataset(dataset_file: str, descriptions_dir: str, output_file: str, **kwargs):
     """
@@ -330,7 +306,7 @@ def main():
     desc_config = get_description_config()
     
     parser = argparse.ArgumentParser(
-        description="Pre-encode case descriptions for fast training"
+        description="Pre-tokenize case descriptions for efficient training"
     )
     parser.add_argument(
         "--descriptions-dir",
@@ -345,30 +321,24 @@ def main():
         "--output",
         "-o",
         default=desc_config['output_file'],
-        help="Output file for encoded embeddings"
+        help="Output file for tokenized data"
     )
     parser.add_argument(
         "--model-name",
         default=desc_config['model_name'],
-        help="HuggingFace model name for encoding (legal model)"
-    )
-    parser.add_argument(
-        "--embedding-dim",
-        type=int,
-        default=desc_config['embedding_dim'],
-        help="Target embedding dimension"
+        help="HuggingFace model name for tokenization (legal model)"
     )
     parser.add_argument(
         "--batch-size",
         type=int,
         default=desc_config['batch_size'],
-        help="Batch size for encoding (smaller for legal models)"
+        help="Batch size for tokenization"
     )
     parser.add_argument(
         "--device",
         choices=['cuda', 'cpu', 'auto'],
         default=desc_config['device'],
-        help="Device to use for encoding"
+        help="Device preference (not used for tokenization, kept for compatibility)"
     )
     parser.add_argument(
         "--dataset-file",
@@ -397,7 +367,6 @@ def main():
                 descriptions_dir=args.descriptions_dir,
                 output_file=args.output,
                 model_name=args.model_name,
-                embedding_dim=args.embedding_dim,
                 batch_size=args.batch_size,
                 device=device
             )
@@ -407,16 +376,15 @@ def main():
                 descriptions_dir=args.descriptions_dir,
                 output_file=args.output,
                 model_name=args.model_name,
-                embedding_dim=args.embedding_dim,
                 batch_size=args.batch_size,
                 device=device,
                 file_list=args.file_list
             )
         
-        print("\n🎉 Case description encoding completed successfully!")
+        print("\n🎉 Case description tokenization completed successfully!")
         
     except Exception as e:
-        print(f"\n❌ Error during encoding: {e}")
+        print(f"\n❌ Error during tokenization: {e}")
         sys.exit(1)
 
 if __name__ == "__main__":
