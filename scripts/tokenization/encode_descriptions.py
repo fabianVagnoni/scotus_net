@@ -11,20 +11,15 @@ import sys
 import json
 import torch
 import pickle
+import numpy as np
 from pathlib import Path
 from typing import Dict, List, Optional
 from tqdm import tqdm
-from transformers import AutoTokenizer, AutoModel
+from sentence_transformers import SentenceTransformer
 import argparse
 
 # Import configuration
 from config import get_config, get_description_config
-
-def mean_pooling(model_output, attention_mask):
-    """Mean pooling to get sentence embeddings."""
-    token_embeddings = model_output[0]
-    input_mask_expanded = attention_mask.unsqueeze(-1).expand(token_embeddings.size()).float()
-    return torch.sum(token_embeddings * input_mask_expanded, 1) / torch.clamp(input_mask_expanded.sum(1), min=1e-9)
 
 def encode_description_files(
     descriptions_dir: str = None,
@@ -81,23 +76,19 @@ def encode_description_files(
     print(f"💾 Device: {device}")
     print(f"📊 Target embedding dim: {embedding_dim}")
     
-    # Initialize model and tokenizer
-    print("\n📥 Loading legal model and tokenizer...")
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
-    model = AutoModel.from_pretrained(model_name)
-    model.to(device)
-    model.eval()
+    # Initialize sentence transformer model
+    print("\n📥 Loading legal sentence transformer model...")
+    model = SentenceTransformer(model_name, device=device)
     
-    # Get actual embedding dimension
-    actual_embedding_dim = model.config.hidden_size
+    # Get actual embedding dimension from the model
+    actual_embedding_dim = model.get_sentence_embedding_dimension()
     print(f"📏 Model embedding dim: {actual_embedding_dim}")
     
-    # Create projection layer if needed
-    projection = None
+    # Check if embedding dimensions match
     if actual_embedding_dim != embedding_dim:
-        projection = torch.nn.Linear(actual_embedding_dim, embedding_dim)
-        projection.to(device)
-        print(f"🔄 Added projection layer: {actual_embedding_dim} → {embedding_dim}")
+        print(f"⚠️  Warning: Model dimension ({actual_embedding_dim}) doesn't match target ({embedding_dim})")
+        print(f"   Using model's native dimension: {actual_embedding_dim}")
+        embedding_dim = actual_embedding_dim
     
     # Find all case description files
     description_files = []
@@ -160,72 +151,53 @@ def encode_description_files(
     if skipped_large_files:
         print(f"⚠️  Skipped {len(skipped_large_files)} very large files (>10k words)")
     
-    # Encode case descriptions in batches
+    # Encode case descriptions using sentence transformers
     print(f"\n🧠 Encoding case descriptions (batch size: {batch_size})...")
     
     desc_paths = list(description_data.keys())
     desc_texts = list(description_data.values())
     encoded_embeddings = {}
     
-    with torch.no_grad():
-        for i in tqdm(range(0, len(desc_texts), batch_size), desc="Encoding batches"):
-            batch_texts = desc_texts[i:i + batch_size]
-            batch_paths = desc_paths[i:i + batch_size]
+    # Process in batches for memory efficiency
+    for i in tqdm(range(0, len(desc_texts), batch_size), desc="Encoding batches"):
+        batch_texts = desc_texts[i:i + batch_size]
+        batch_paths = desc_paths[i:i + batch_size]
+        
+        try:
+            # Encode batch using sentence transformer (handles tokenization, pooling internally)
+            batch_embeddings = model.encode(
+                batch_texts,
+                batch_size=len(batch_texts),
+                show_progress_bar=False,
+                convert_to_tensor=True,
+                device=device
+            )
             
-            try:
-                # Tokenize batch
-                encoded = tokenizer(
-                    batch_texts,
-                    padding=True,
-                    truncation=True,
-                    max_length=max_sequence_length,
-                    return_tensors="pt"
-                )
+            # Store embeddings (move to CPU to save memory)
+            for j, path in enumerate(batch_paths):
+                encoded_embeddings[path] = batch_embeddings[j].cpu()
                 
-                # Move to device
-                encoded = {k: v.to(device) for k, v in encoded.items()}
+        except RuntimeError as e:
+            if "out of memory" in str(e).lower():
+                print(f"⚠️  GPU memory issue at batch {i//batch_size + 1}. Clearing cache...")
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
                 
-                # Get embeddings
-                model_output = model(**encoded)
-                
-                # Mean pooling
-                embeddings = mean_pooling(model_output, encoded['attention_mask'])
-                
-                # Project if needed
-                if projection is not None:
-                    embeddings = projection(embeddings)
-                
-                # Store embeddings (move to CPU to save memory)
-                for j, path in enumerate(batch_paths):
-                    encoded_embeddings[path] = embeddings[j].cpu()
-                    
-            except RuntimeError as e:
-                if "out of memory" in str(e).lower():
-                    print(f"⚠️  GPU memory issue at batch {i//batch_size + 1}. Clearing cache...")
-                    if desc_config.get('clear_cache_on_oom', True):
-                        torch.cuda.empty_cache()
-                    # Try processing this batch one by one
-                    for single_text, single_path in zip(batch_texts, batch_paths):
-                        try:
-                            encoded = tokenizer(
-                                single_text,
-                                padding=True,
-                                truncation=True,
-                                max_length=max_sequence_length,
-                                return_tensors="pt"
-                            )
-                            encoded = {k: v.to(device) for k, v in encoded.items()}
-                            model_output = model(**encoded)
-                            embedding = mean_pooling(model_output, encoded['attention_mask'])
-                            if projection is not None:
-                                embedding = projection(embedding)
-                            encoded_embeddings[single_path] = embedding[0].cpu()
-                        except Exception as single_e:
-                            print(f"❌ Failed to encode {single_path}: {single_e}")
-                            failed_files.append(single_path)
-                else:
-                    print(f"❌ Error encoding batch {i//batch_size + 1}: {e}")
-                    failed_files.extend(batch_paths)
+                # Try processing this batch one by one
+                for single_text, single_path in zip(batch_texts, batch_paths):
+                    try:
+                        single_embedding = model.encode(
+                            [single_text],
+                            convert_to_tensor=True,
+                            device=device
+                        )
+                        encoded_embeddings[single_path] = single_embedding[0].cpu()
+                    except Exception as single_e:
+                        print(f"❌ Failed to encode {single_path}: {single_e}")
+                        failed_files.append(single_path)
+            else:
+                print(f"❌ Error encoding batch {i//batch_size + 1}: {e}")
+                failed_files.extend(batch_paths)
     
     print(f"✅ Encoded {len(encoded_embeddings)} case descriptions")
     
@@ -233,12 +205,12 @@ def encode_description_files(
     metadata = {
         'model_name': model_name,
         'embedding_dim': embedding_dim,
-        'actual_model_dim': actual_embedding_dim,
         'max_sequence_length': max_sequence_length,
         'num_embeddings': len(encoded_embeddings),
         'failed_files': failed_files,
         'skipped_large_files': skipped_large_files,
-        'device_used': device
+        'device_used': device,
+        'encoding_method': 'sentence_transformers'
     }
     
     # Save embeddings and metadata

@@ -15,6 +15,7 @@ spacy==3.8.2
 sentence-transformers==3.2.1
 datasets
 loguru
+sentence-transformers
 
 # Visualization and Analysis
 seaborn
