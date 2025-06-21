@@ -89,12 +89,12 @@ class JusticeCrossAttention(nn.Module):
         attn_mask = ~justice_mask  # Invert: True for padding, False for real justices
         
         # Apply multi-head attention
-        attn_output, attn_weights = self.attn(
+        attn_output = self.attn(
             query=query,
             key=key, 
             value=value,
             key_padding_mask=attn_mask  # (batch_size, max_justices)
-        )
+        ) 
         
         # attn_output shape: (batch_size, 1, embedding_dim)
         court_emb = attn_output.squeeze(1)  # (batch_size, embedding_dim)

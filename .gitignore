@@ -5,3 +5,4 @@ data/raw/*
 data/processed/*
 data/external/*
 tests.py
+pickle_format_example.py
