@@ -22,15 +22,12 @@ import pandas as pd
 from datetime import datetime
 import argparse
 
-# Add scripts to path for imports
-sys.path.append(str(Path(__file__).parent.parent))
-
-from models.model_trainer import SCOTUSModelTrainer
-from models.scotus_voting_model import SCOTUSVotingModel, SCOTUSDataset, collate_fn
+from scripts.models.model_trainer import SCOTUSModelTrainer
+from scripts.models.scotus_voting_model import SCOTUSVotingModel, SCOTUSDataset, collate_fn
 from torch.utils.data import DataLoader
-from models.config import ModelConfig
-from utils.logger import get_logger
-from utils.holdout_test_set import HoldoutTestSetManager
+from scripts.models.config import ModelConfig
+from scripts.utils.logger import get_logger
+from scripts.utils.holdout_test_set import HoldoutTestSetManager
 
 
 class OptunaModelTrainer(SCOTUSModelTrainer):
