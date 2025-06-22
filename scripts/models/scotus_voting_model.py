@@ -6,7 +6,7 @@ from typing import List, Optional, Dict, Any, Tuple
 import torch.nn.functional as F
 import os
 import pickle
-from justice_cross_attention import JusticeCrossAttention
+from .justice_cross_attention import JusticeCrossAttention
 
 class SCOTUSVotingModel(nn.Module):
     """
