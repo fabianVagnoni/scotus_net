@@ -272,7 +272,7 @@ class SCOTUSModelTrainer:
         # Learning rate scheduler
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
             optimizer, mode='min', factor=self.config.lr_scheduler_factor, 
-            patience=self.config.lr_scheduler_patience, verbose=True
+            patience=self.config.lr_scheduler_patience
         )
         
         # Training loop

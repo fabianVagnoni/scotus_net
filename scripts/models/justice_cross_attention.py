@@ -89,7 +89,7 @@ class JusticeCrossAttention(nn.Module):
         attn_mask = ~justice_mask  # Invert: True for padding, False for real justices
         
         # Apply multi-head attention
-        attn_output = self.attn(
+        attn_output, attn_weights = self.attn(
             query=query,
             key=key, 
             value=value,
