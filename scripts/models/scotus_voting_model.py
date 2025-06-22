@@ -31,7 +31,7 @@ class SCOTUSVotingModel(nn.Module):
         max_justices: int = 15,  # Maximum number of justices that can be on the court
         num_attention_heads: int = 4,  # Number of attention heads for justice cross-attention
         use_justice_attention: bool = True,  # Whether to use attention or simple concatenation
-        device: str = 'cpu'  # Device to place models and data on
+        device: str = 'cuda'  # Device to place models and data on
     ):
         super(SCOTUSVotingModel, self).__init__()
         
@@ -315,7 +315,10 @@ class SCOTUSVotingModel(nn.Module):
         output = self.fc_layers(combined_embedding)
         
         # Apply softmax to get probabilities
-        probabilities = F.softmax(output, dim=0)
+        if not self.training:
+            probabilities = F.softmax(output, dim=0)
+        else:
+            probabilities = output
         
         return probabilities
     
