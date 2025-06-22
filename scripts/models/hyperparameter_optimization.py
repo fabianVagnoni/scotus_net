@@ -61,11 +61,10 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
             bio_tokenized_file, description_tokenized_file = self.get_tokenized_file_paths(dataset)
             
             # Split dataset (use smaller validation set for faster optimization)
-            train_dataset, val_dataset, _ = self.split_dataset(
+            train_dataset, val_dataset = self.split_dataset(
                 dataset, 
                 train_ratio=0.8, 
-                val_ratio=0.2, 
-                test_ratio=0.0  # Skip test set during optimization
+                val_ratio=0.2
             )
             
             # Suggest hyperparameters

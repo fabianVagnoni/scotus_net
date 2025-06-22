@@ -49,39 +49,30 @@ class SCOTUSModelTrainer:
         
         return dataset
     
-    def split_dataset(self, dataset: Dict, train_ratio: float = 0.7, 
-                     val_ratio: float = 0.15, test_ratio: float = 0.15, 
-                     random_state: int = 42) -> Tuple[Dict, Dict, Dict]:
-        """Split the dataset into train, validation, and test sets."""
+    def split_dataset(self, dataset: Dict, train_ratio: float = 0.85, 
+                     val_ratio: float = 0.15, random_state: int = 42) -> Tuple[Dict, Dict]:
+        """Split the dataset into train and validation sets only (holdout test set is separate)."""
         
         # Ensure ratios sum to 1
-        assert abs(train_ratio + val_ratio + test_ratio - 1.0) < 1e-6, "Ratios must sum to 1"
+        assert abs(train_ratio + val_ratio - 1.0) < 1e-6, "Ratios must sum to 1"
         
         case_ids = list(dataset.keys())
         
-        # First split: separate train from (val + test)
-        train_ids, temp_ids = train_test_split(
+        # Split into train and validation only
+        train_ids, val_ids = train_test_split(
             case_ids, 
-            test_size=(val_ratio + test_ratio), 
-            random_state=random_state
-        )
-        
-        # Second split: separate val from test
-        val_ids, test_ids = train_test_split(
-            temp_ids,
-            test_size=test_ratio / (val_ratio + test_ratio),
+            test_size=val_ratio, 
             random_state=random_state
         )
         
         # Create dataset splits
         train_dataset = {case_id: dataset[case_id] for case_id in train_ids}
         val_dataset = {case_id: dataset[case_id] for case_id in val_ids}
-        test_dataset = {case_id: dataset[case_id] for case_id in test_ids}
         
         self.logger.info(f"Dataset split - Train: {len(train_dataset)}, "
-                        f"Val: {len(val_dataset)}, Test: {len(test_dataset)}")
+                        f"Val: {len(val_dataset)} (Holdout test set managed separately)")
         
-        return train_dataset, val_dataset, test_dataset
+        return train_dataset, val_dataset
     
     def get_tokenized_file_paths(self, dataset: Dict) -> Tuple[str, str]:
         """Extract tokenized file paths from the dataset."""
@@ -187,8 +178,8 @@ class SCOTUSModelTrainer:
         # Get tokenized file paths
         bio_tokenized_file, description_tokenized_file = self.get_tokenized_file_paths(dataset)
         
-        # Split dataset
-        train_dataset, val_dataset, test_dataset = self.split_dataset(dataset)
+        # Split dataset (test set is managed separately as holdout)
+        train_dataset, val_dataset = self.split_dataset(dataset)
         
         # Model configuration
         bio_model_name = self.config.bio_model_name
@@ -380,22 +371,7 @@ class SCOTUSModelTrainer:
                     break
         
         self.logger.info("Training completed")
-        
-        # Final evaluation on test set if available
-        if test_dataset:
-            test_dataset_dict = self.prepare_dataset_dict(test_dataset)
-            if test_dataset_dict:
-                test_pytorch_dataset = SCOTUSDataset(test_dataset_dict)
-                test_loader = DataLoader(
-                    test_pytorch_dataset, 
-                    batch_size=batch_size, 
-                    shuffle=False, 
-                    collate_fn=collate_fn,
-                    num_workers=num_workers
-                )
-                
-                test_loss = self.evaluate_model(model, test_loader, criterion)
-                self.logger.info(f"Final test loss: {test_loss:.4f}")
+        self.logger.info("Use evaluate_on_holdout_test_set() method for final evaluation on holdout test set")
         
         return model
     
