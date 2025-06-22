@@ -67,10 +67,10 @@ class SCOTUSVotingModel(nn.Module):
         desc_actual_dim = self.description_model.get_sentence_embedding_dimension()
         
         if bio_actual_dim != embedding_dim:
-            self.logger.warning(f"Biography model embedding dimension {bio_actual_dim} doesn't match expected {embedding_dim}")
+            print(f"Biography model embedding dimension {bio_actual_dim} doesn't match expected {embedding_dim}")
             self.bio_projection_layer = nn.Linear(bio_actual_dim, embedding_dim)
         if desc_actual_dim != embedding_dim:
-            self.logger.warning(f"Description model embedding dimension {desc_actual_dim} doesn't match expected {embedding_dim}")
+            print(f"Description model embedding dimension {desc_actual_dim} doesn't match expected {embedding_dim}")
             self.description_projection_layer = nn.Linear(desc_actual_dim, embedding_dim)
         
         print(f"✅ Model initialized with {len(self.bio_tokenized_data)} biography and {len(self.description_tokenized_data)} case description tokenized files")
