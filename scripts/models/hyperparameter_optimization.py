@@ -134,13 +134,8 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
                 weight_decay=hyperparams['weight_decay']
             )
             
-            # Setup loss function
-            if hyperparams['loss_function'] == 'kl_div':
-                criterion = nn.KLDivLoss(reduction='batchmean')
-            elif hyperparams['loss_function'] == 'mse':
-                criterion = nn.MSELoss()
-            else:
-                criterion = nn.CrossEntropyLoss()
+            # Setup loss function (fixed to KL Divergence for optimization)
+            criterion = nn.KLDivLoss(reduction='batchmean')
             
             # Learning rate scheduler
             scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
@@ -152,7 +147,7 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
             best_val_loss = float('inf')
             patience_counter = 0
             
-            max_epochs = min(hyperparams['num_epochs'], 10)  # Limit epochs for optimization
+            max_epochs = 10  # Fixed epochs for optimization (was hyperparams['num_epochs'])
             
             for epoch in range(max_epochs):
                 # Training phase
@@ -167,10 +162,7 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
                         batch_predictions = []
                         batch_targets = batch['targets'].to(self.device)
                         
-                        # Normalize targets for KL divergence
-                        if hyperparams['loss_function'] == 'kl_div':
-                            batch_targets = torch.softmax(batch_targets, dim=1)
-                        
+
                         # Process each sample in the batch
                         for i in range(len(batch['case_ids'])):
                             case_description_path = batch['case_description_paths'][i]
@@ -183,15 +175,9 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
                         # Stack predictions and compute loss
                         predictions_tensor = torch.stack(batch_predictions)
                         
-                        # Apply appropriate transformations based on loss function
-                        if hyperparams['loss_function'] == 'kl_div':
-                            log_predictions = torch.log_softmax(predictions_tensor, dim=1)
-                            loss = criterion(log_predictions, batch_targets)
-                        elif hyperparams['loss_function'] == 'mse':
-                            loss = criterion(predictions_tensor, batch_targets)
-                        else:  # cross_entropy
-                            target_classes = torch.argmax(batch_targets, dim=1)
-                            loss = criterion(predictions_tensor, target_classes)
+                        # Apply log_softmax for KL divergence loss
+                        log_predictions = torch.log_softmax(predictions_tensor, dim=1)
+                        loss = criterion(log_predictions, batch_targets)
                         
                         # Backward pass
                         loss.backward()
@@ -214,7 +200,7 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
                 avg_train_loss = train_loss / num_batches
                 
                 # Validation phase
-                val_loss = self._evaluate_model_for_optimization(model, val_loader, criterion, hyperparams)
+                val_loss = self._evaluate_model_for_optimization(model, val_loader, criterion)
                 
                 # Learning rate scheduling
                 scheduler.step(val_loss)
@@ -256,14 +242,10 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
             # Training Parameters
             'learning_rate': self.trial.suggest_float('learning_rate', 1e-5, 1e-3, log=True),
             'batch_size': self.trial.suggest_categorical('batch_size', [8, 16, 32, 64]),
-            'weight_decay': self.trial.suggest_float('weight_decay', 1e-4, 1e-1, log=True),
-            'num_epochs': self.trial.suggest_int('num_epochs', 5, 15),
-            
-            # Loss Function
-            'loss_function': self.trial.suggest_categorical('loss_function', ['kl_div', 'mse'])
+            'weight_decay': self.trial.suggest_float('weight_decay', 1e-4, 1e-1, log=True)
         }
     
-    def _evaluate_model_for_optimization(self, model: SCOTUSVotingModel, data_loader, criterion, hyperparams: Dict) -> float:
+    def _evaluate_model_for_optimization(self, model: SCOTUSVotingModel, data_loader, criterion) -> float:
         """Evaluate model for optimization (faster version)."""
         model.eval()
         total_loss = 0.0
@@ -274,10 +256,6 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
                 try:
                     batch_predictions = []
                     batch_targets = batch['targets'].to(self.device)
-                    
-                    # Normalize targets for KL divergence
-                    if hyperparams['loss_function'] == 'kl_div':
-                        batch_targets = torch.softmax(batch_targets, dim=1)
                     
                     # Process each sample in the batch
                     for i in range(len(batch['case_ids'])):
@@ -291,15 +269,9 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
                     # Stack predictions and compute loss
                     predictions_tensor = torch.stack(batch_predictions)
                     
-                    # Apply appropriate transformations based on loss function
-                    if hyperparams['loss_function'] == 'kl_div':
-                        log_predictions = torch.log_softmax(predictions_tensor, dim=1)
-                        loss = criterion(log_predictions, batch_targets)
-                    elif hyperparams['loss_function'] == 'mse':
-                        loss = criterion(predictions_tensor, batch_targets)
-                    else:  # cross_entropy
-                        target_classes = torch.argmax(batch_targets, dim=1)
-                        loss = criterion(predictions_tensor, target_classes)
+                    # Apply log_softmax for KL divergence loss
+                    log_predictions = torch.log_softmax(predictions_tensor, dim=1)
+                    loss = criterion(log_predictions, batch_targets)
                     
                     total_loss += loss.item()
                     num_batches += 1
@@ -455,12 +427,12 @@ def save_best_config(study: optuna.Study, output_file: str = "best_config.env"):
         "",
         "# Training Configuration",
         f"LEARNING_RATE={best_params.get('learning_rate', base_config.learning_rate)}",
-        f"NUM_EPOCHS={best_params.get('num_epochs', base_config.num_epochs)}",
+        f"NUM_EPOCHS={base_config.num_epochs}",
         f"BATCH_SIZE={best_params.get('batch_size', base_config.batch_size)}",
         f"NUM_WORKERS={base_config.num_workers}",
         "",
         "# Loss Function",
-        f"LOSS_FUNCTION={best_params.get('loss_function', base_config.loss_function)}",
+        f"LOSS_FUNCTION={base_config.loss_function}",
         f"KL_REDUCTION={base_config.kl_reduction}",
         "",
         "# Other parameters (kept from base config)",

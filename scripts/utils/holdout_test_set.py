@@ -74,11 +74,14 @@ class HoldoutTestSetManager:
                 
                 # Check if description path exists and is not empty
                 if case_description_path and case_description_path.strip():
-                    # Optionally verify the file exists
-                    if os.path.exists(case_description_path):
+                    # Normalize path separators for cross-platform compatibility
+                    normalized_path = case_description_path.replace('\\', '/')
+                    
+                    # Verify the file exists
+                    if os.path.exists(normalized_path):
                         cases_with_descriptions[case_id] = case_data
                     else:
-                        self.logger.debug(f"Description file missing for case {case_id}: {case_description_path}")
+                        self.logger.debug(f"Description file missing for case {case_id}: {normalized_path}")
                 else:
                     self.logger.debug(f"No description path for case {case_id}")
         
