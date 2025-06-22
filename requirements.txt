@@ -16,6 +16,8 @@ sentence-transformers==3.2.1
 datasets
 loguru
 sentence-transformers
+optuna
+optuna-dashboard
 
 # Visualization and Analysis
 seaborn

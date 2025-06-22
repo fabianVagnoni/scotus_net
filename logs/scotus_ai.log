@@ -1687,3 +1687,35 @@
 2025-06-22 13:47:16 | INFO     | __main__:prepare_dataset_dict:169 |     - 0 with unexpected data format.
 2025-06-22 13:47:16 | INFO     | __main__:train_model:268 | Using loss function: kl_div
 2025-06-22 13:47:16 | INFO     | __main__:train_model:270 | KL divergence reduction: batchmean
+2025-06-22 17:43:26 | INFO     | __main__:create_holdout_test_set:168 | Creating holdout test set...
+2025-06-22 17:43:26 | INFO     | __main__:load_dataset:50 | Loading dataset from: data/processed/case_dataset.json
+2025-06-22 17:43:26 | INFO     | __main__:load_dataset:55 | Loaded 13853 cases from dataset
+2025-06-22 17:43:26 | INFO     | __main__:filter_cases_with_descriptions:85 | Found 12898 cases with valid descriptions out of 13853 total cases
+2025-06-22 17:43:26 | INFO     | __main__:select_most_recent_cases:137 | Selected 1934 cases (15.0%) for holdout test set
+2025-06-22 17:43:26 | INFO     | __main__:select_most_recent_cases:138 | Holdout cases span from 1997 to 2015
+2025-06-22 17:43:26 | INFO     | __main__:select_most_recent_cases:145 | Cases by year in holdout set:
+2025-06-22 17:43:26 | INFO     | __main__:select_most_recent_cases:147 |   2015: 33 cases
+2025-06-22 17:43:26 | INFO     | __main__:select_most_recent_cases:147 |   2014: 88 cases
+2025-06-22 17:43:26 | INFO     | __main__:select_most_recent_cases:147 |   2013: 93 cases
+2025-06-22 17:43:26 | INFO     | __main__:select_most_recent_cases:147 |   2012: 90 cases
+2025-06-22 17:43:26 | INFO     | __main__:select_most_recent_cases:147 |   2011: 102 cases
+2025-06-22 17:43:26 | INFO     | __main__:select_most_recent_cases:147 |   2010: 105 cases
+2025-06-22 17:43:26 | INFO     | __main__:select_most_recent_cases:147 |   2009: 111 cases
+2025-06-22 17:43:26 | INFO     | __main__:select_most_recent_cases:147 |   2008: 102 cases
+2025-06-22 17:43:26 | INFO     | __main__:select_most_recent_cases:147 |   2007: 85 cases
+2025-06-22 17:43:26 | INFO     | __main__:select_most_recent_cases:147 |   2006: 92 cases
+2025-06-22 17:43:26 | INFO     | __main__:select_most_recent_cases:147 |   2005: 101 cases
+2025-06-22 17:43:26 | INFO     | __main__:select_most_recent_cases:147 |   2004: 104 cases
+2025-06-22 17:43:26 | INFO     | __main__:select_most_recent_cases:147 |   2003: 168 cases
+2025-06-22 17:43:26 | INFO     | __main__:select_most_recent_cases:147 |   2002: 119 cases
+2025-06-22 17:43:26 | INFO     | __main__:select_most_recent_cases:147 |   2001: 105 cases
+2025-06-22 17:43:26 | INFO     | __main__:select_most_recent_cases:147 |   2000: 117 cases
+2025-06-22 17:43:26 | INFO     | __main__:select_most_recent_cases:147 |   1999: 113 cases
+2025-06-22 17:43:26 | INFO     | __main__:select_most_recent_cases:147 |   1998: 110 cases
+2025-06-22 17:43:26 | INFO     | __main__:select_most_recent_cases:147 |   1997: 96 cases
+2025-06-22 17:43:26 | INFO     | __main__:save_holdout_test_set:210 | Saved holdout test set with 1934 cases to: data/processed/holdout_test_cases.json
+2025-06-22 17:49:41 | INFO     | scripts.utils.holdout_test_set:load_holdout_test_set:227 | Loaded holdout test set with 1934 cases from: data/processed/holdout_test_cases.json
+2025-06-22 17:49:41 | INFO     | scripts.utils.holdout_test_set:load_holdout_test_set:227 | Loaded holdout test set with 1934 cases from: data/processed/holdout_test_cases.json
+2025-06-22 17:49:41 | INFO     | scripts.utils.holdout_test_set:filter_dataset_exclude_holdout:265 | Filtered dataset: removed 1934 holdout cases, keeping 11919 cases for training/validation
+2025-06-22 17:49:41 | INFO     | scripts.utils.holdout_test_set:load_holdout_test_set:227 | Loaded holdout test set with 1934 cases from: data/processed/holdout_test_cases.json
+2025-06-22 17:49:41 | INFO     | scripts.utils.holdout_test_set:get_holdout_dataset:288 | Created holdout dataset with 1934 cases

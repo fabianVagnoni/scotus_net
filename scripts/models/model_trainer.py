@@ -1,5 +1,6 @@
 """Model training for SCOTUS outcome prediction."""
 
+import os
 import pandas as pd
 import numpy as np
 from pathlib import Path
@@ -15,6 +16,7 @@ import torch.nn.functional as F
 
 from .scotus_voting_model import SCOTUSVotingModel, SCOTUSDataset, collate_fn
 from ..utils.logger import get_logger
+from ..utils.holdout_test_set import HoldoutTestSetManager
 from .config import config
 
 
@@ -25,6 +27,7 @@ class SCOTUSModelTrainer:
         self.logger = get_logger(__name__)
         self.config = config
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.holdout_manager = HoldoutTestSetManager()
         
     def load_case_dataset(self, dataset_file: str = None) -> Dict:
         """Load the case dataset JSON file."""
@@ -40,6 +43,10 @@ class SCOTUSModelTrainer:
             dataset = json.load(f)
         
         self.logger.info(f"Loaded dataset with {len(dataset)} cases")
+        
+        # Filter out holdout test cases
+        dataset = self.holdout_manager.filter_dataset_exclude_holdout(dataset)
+        
         return dataset
     
     def split_dataset(self, dataset: Dict, train_ratio: float = 0.7, 
@@ -441,6 +448,103 @@ class SCOTUSModelTrainer:
         
         model.train()
         return total_loss / num_batches if num_batches > 0 else float('inf')
+    
+    def evaluate_on_holdout_test_set(self, model_path: str = None) -> Dict:
+        """
+        Evaluate a trained model on the holdout test set.
+        
+        Args:
+            model_path: Path to saved model (defaults to best model)
+            
+        Returns:
+            Dictionary with evaluation metrics
+        """
+        if model_path is None:
+            model_output_dir = Path(self.config.model_output_dir)
+            model_path = str(model_output_dir / 'best_model.pth')
+        
+        if not os.path.exists(model_path):
+            raise FileNotFoundError(f"Model file not found: {model_path}")
+        
+        self.logger.info(f"Evaluating model on holdout test set: {model_path}")
+        
+        # Load full dataset (without filtering holdout cases)
+        dataset_file = self.config.dataset_file
+        with open(dataset_file, 'r', encoding='utf-8') as f:
+            full_dataset = json.load(f)
+        
+        # Get holdout test cases
+        holdout_dataset = self.holdout_manager.get_holdout_dataset(full_dataset)
+        
+        if not holdout_dataset:
+            raise ValueError("No holdout test cases found")
+        
+        # Get tokenized file paths from the full dataset
+        bio_tokenized_file, description_tokenized_file = self.get_tokenized_file_paths(full_dataset)
+        
+        # Load model
+        model = SCOTUSVotingModel(
+            bio_tokenized_file=bio_tokenized_file,
+            description_tokenized_file=description_tokenized_file,
+            bio_model_name=self.config.bio_model_name,
+            description_model_name=self.config.description_model_name,
+            embedding_dim=self.config.embedding_dim,
+            hidden_dim=self.config.hidden_dim,
+            dropout_rate=self.config.dropout_rate,
+            max_justices=self.config.max_justices,
+            num_attention_heads=self.config.num_attention_heads,
+            use_justice_attention=self.config.use_justice_attention,
+            device=str(self.device)
+        )
+        
+        # Load trained weights
+        model.load_model(model_path)
+        model.to(self.device)
+        model.eval()
+        
+        # Prepare holdout dataset
+        holdout_dataset_dict = self.prepare_dataset_dict(holdout_dataset)
+        
+        if not holdout_dataset_dict:
+            raise ValueError("No valid holdout test cases found")
+        
+        holdout_pytorch_dataset = SCOTUSDataset(holdout_dataset_dict)
+        
+        # Create data loader
+        holdout_loader = DataLoader(
+            holdout_pytorch_dataset,
+            batch_size=self.config.batch_size,
+            shuffle=False,
+            collate_fn=collate_fn,
+            num_workers=self.config.num_workers
+        )
+        
+        # Setup loss function
+        loss_function = self.config.loss_function
+        if loss_function == 'kl_div':
+            criterion = nn.KLDivLoss(reduction=self.config.kl_reduction)
+        elif loss_function == 'mse':
+            criterion = nn.MSELoss()
+        elif loss_function == 'cross_entropy':
+            criterion = nn.CrossEntropyLoss()
+        else:
+            raise ValueError(f"Unsupported loss function: {loss_function}")
+        
+        # Evaluate
+        holdout_loss = self.evaluate_model(model, holdout_loader, criterion)
+        
+        self.logger.info(f"Holdout test set evaluation completed")
+        self.logger.info(f"Holdout test loss: {holdout_loss:.4f}")
+        
+        # Additional metrics could be computed here
+        results = {
+            'holdout_loss': holdout_loss,
+            'num_holdout_cases': len(holdout_dataset_dict),
+            'loss_function': loss_function,
+            'model_path': model_path
+        }
+        
+        return results
 
 
 if __name__ == "__main__":
