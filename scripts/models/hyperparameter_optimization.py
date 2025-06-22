@@ -255,7 +255,7 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
             
             # Training Parameters
             'learning_rate': self.trial.suggest_float('learning_rate', 1e-5, 1e-3, log=True),
-            'batch_size': self.trial.suggest_categorical('batch_size', [2, 4, 8]),
+            'batch_size': self.trial.suggest_categorical('batch_size', [8, 16, 32, 64]),
             'weight_decay': self.trial.suggest_float('weight_decay', 1e-4, 1e-1, log=True),
             'num_epochs': self.trial.suggest_int('num_epochs', 5, 15),
             
