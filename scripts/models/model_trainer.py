@@ -15,7 +15,7 @@ import torch.nn.functional as F
 
 from .scotus_voting_model import SCOTUSVotingModel, SCOTUSDataset, collate_fn
 from ..utils.logger import get_logger
-from ..utils.config import config
+from .config import config
 
 
 class SCOTUSModelTrainer:
@@ -29,7 +29,7 @@ class SCOTUSModelTrainer:
     def load_case_dataset(self, dataset_file: str = None) -> Dict:
         """Load the case dataset JSON file."""
         if dataset_file is None:
-            dataset_file = self.config.get('data.dataset_file', 'data/processed/case_dataset.json')
+            dataset_file = self.config.dataset_file
         
         if not Path(dataset_file).exists():
             raise FileNotFoundError(f"Dataset file not found: {dataset_file}")
@@ -94,12 +94,10 @@ class SCOTUSModelTrainer:
         
         # Fall back to default paths if not found in dataset
         if not bio_tokenized_file:
-            data_path = Path(self.config.get('data.processed_data_path', 'data/processed'))
-            bio_tokenized_file = str(data_path / 'encoded_bios.pkl')
+            bio_tokenized_file = self.config.bio_tokenized_file
             
         if not description_tokenized_file:
-            data_path = Path(self.config.get('data.processed_data_path', 'data/processed'))
-            description_tokenized_file = str(data_path / 'encoded_descriptions.pkl')
+            description_tokenized_file = self.config.description_tokenized_file
         
         # Verify files exist
         if not Path(bio_tokenized_file).exists():
@@ -114,7 +112,7 @@ class SCOTUSModelTrainer:
     
     def prepare_dataset_dict(self, dataset: Dict) -> Dict[str, List]:
         """
-        Convert dataset to the format expected by SCOTUSDataset.
+        Convert dataset to the format expected by SCOTUSDataset, skipping invalid entries.
         
         Args:
             dataset: Dataset with case_id as keys and case data as values
@@ -123,7 +121,11 @@ class SCOTUSModelTrainer:
             Dictionary with case_id as keys and [justice_bio_paths, case_description_path, voting_percentages] as values
         """
         prepared_dataset = {}
-        
+        skipped_missing_desc = 0
+        skipped_missing_bio = 0
+        skipped_bad_format = 0
+        skipped_bad_target = 0
+
         for case_id, case_data in dataset.items():
             # Handle both old format (3 elements) and new format (4 elements with tokenized_locations)
             if len(case_data) == 3:
@@ -131,25 +133,41 @@ class SCOTUSModelTrainer:
             elif len(case_data) == 4:
                 justice_bio_paths, case_description_path, voting_percentages, _ = case_data
             else:
-                self.logger.warning(f"Unexpected case data format for case {case_id}: {len(case_data)} elements")
+                self.logger.warning(f"Skipping case {case_id}: Unexpected case data format with {len(case_data)} elements.")
+                skipped_bad_format += 1
                 continue
             
             # Ensure voting percentages is a list of 4 floats
             if not isinstance(voting_percentages, list) or len(voting_percentages) != 4:
-                self.logger.warning(f"Invalid voting percentages for case {case_id}: {voting_percentages}")
+                self.logger.warning(f"Skipping case {case_id}: Invalid voting percentages format: {voting_percentages}")
+                skipped_bad_target += 1
+                continue
+
+            # Skip cases without case description path
+            if not case_description_path or not case_description_path.strip():
+                self.logger.warning(f"Skipping case {case_id}: Missing case description path.")
+                skipped_missing_desc += 1
                 continue
             
-            # Filter out empty/None justice bio paths
+            # Filter out empty/None justice bio paths and skip if none are left
             filtered_bio_paths = [path for path in justice_bio_paths if path and path.strip()]
-            
-            # Skip cases without case description
-            if not case_description_path or not case_description_path.strip():
-                self.logger.warning(f"No case description for case {case_id}")
+            if not filtered_bio_paths:
+                self.logger.warning(f"Skipping case {case_id}: No valid justice biography paths provided.")
+                skipped_missing_bio += 1
                 continue
             
             prepared_dataset[case_id] = [filtered_bio_paths, case_description_path, voting_percentages]
         
-        self.logger.info(f"Prepared {len(prepared_dataset)} cases for training")
+        total_cases = len(dataset)
+        total_skipped = skipped_missing_desc + skipped_missing_bio + skipped_bad_format + skipped_bad_target
+        self.logger.info(f"Dataset preparation summary for {total_cases} initial cases:")
+        self.logger.info(f"  - Prepared {len(prepared_dataset)} cases for use.")
+        self.logger.info(f"  - Skipped {total_skipped} cases in total:")
+        self.logger.info(f"    - {skipped_missing_desc} with missing descriptions.")
+        self.logger.info(f"    - {skipped_missing_bio} with no valid justice bios.")
+        self.logger.info(f"    - {skipped_bad_target} with invalid target format.")
+        self.logger.info(f"    - {skipped_bad_format} with unexpected data format.")
+        
         return prepared_dataset
         
     def train_model(self, dataset_file: str = None):
@@ -166,14 +184,14 @@ class SCOTUSModelTrainer:
         train_dataset, val_dataset, test_dataset = self.split_dataset(dataset)
         
         # Model configuration
-        bio_model_name = self.config.get('model.bio_model_name', 'all-MiniLM-L6-v2')
-        description_model_name = self.config.get('model.description_model_name', 'Stern5497/sbert-legal-xlm-roberta-base')
-        embedding_dim = self.config.get('model.embedding_dim', 384)
-        hidden_dim = self.config.get('model.hidden_dim', 512)
-        dropout_rate = self.config.get('model.dropout_rate', 0.1)
-        max_justices = self.config.get('model.max_justices', 15)
-        num_attention_heads = self.config.get('model.num_attention_heads', 4)
-        use_justice_attention = self.config.get('model.use_justice_attention', True)
+        bio_model_name = self.config.bio_model_name
+        description_model_name = self.config.description_model_name
+        embedding_dim = self.config.embedding_dim
+        hidden_dim = self.config.hidden_dim
+        dropout_rate = self.config.dropout_rate
+        max_justices = self.config.max_justices
+        num_attention_heads = self.config.num_attention_heads
+        use_justice_attention = self.config.use_justice_attention
         
         # Initialize model
         model = SCOTUSVotingModel(
@@ -210,8 +228,8 @@ class SCOTUSModelTrainer:
         val_pytorch_dataset = SCOTUSDataset(val_dataset_dict)
         
         # Data loaders
-        batch_size = self.config.get('training.batch_size', 4)  # Smaller batch size for memory
-        num_workers = self.config.get('training.num_workers', 0)  # Start with 0 to avoid multiprocessing issues
+        batch_size = self.config.batch_size
+        num_workers = self.config.num_workers
         
         train_loader = DataLoader(
             train_pytorch_dataset, 
@@ -229,23 +247,39 @@ class SCOTUSModelTrainer:
         )
         
         # Training setup
-        learning_rate = self.config.get('training.learning_rate', 1e-4)
-        num_epochs = self.config.get('training.num_epochs', 10)
-        weight_decay = self.config.get('training.weight_decay', 0.01)
+        learning_rate = self.config.learning_rate
+        num_epochs = self.config.num_epochs
+        weight_decay = self.config.weight_decay
         
         optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
-        criterion = nn.KLDivLoss(reduction='batchmean')  # Using KL divergence for voting distribution
+        
+        # Setup loss function based on configuration
+        loss_function = self.config.loss_function
+        if loss_function == 'kl_div':
+            kl_reduction = self.config.kl_reduction
+            criterion = nn.KLDivLoss(reduction=kl_reduction)
+        elif loss_function == 'mse':
+            criterion = nn.MSELoss()
+        elif loss_function == 'cross_entropy':
+            criterion = nn.CrossEntropyLoss()
+        else:
+            raise ValueError(f"Unsupported loss function: {loss_function}")
+        
+        self.logger.info(f"Using loss function: {loss_function}")
+        if loss_function == 'kl_div':
+            self.logger.info(f"KL divergence reduction: {kl_reduction}")
         
         # Learning rate scheduler
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-            optimizer, mode='min', factor=0.5, patience=3, verbose=True
+            optimizer, mode='min', factor=self.config.lr_scheduler_factor, 
+            patience=self.config.lr_scheduler_patience, verbose=True
         )
         
         # Training loop
         model.train()
         best_val_loss = float('inf')
         patience_counter = 0
-        max_patience = self.config.get('training.patience', 5)
+        max_patience = self.config.patience
         
         for epoch in range(num_epochs):
             # Training phase
@@ -271,22 +305,35 @@ class SCOTUSModelTrainer:
                     
                     # Stack predictions and compute loss
                     predictions_tensor = torch.stack(batch_predictions)
-                    predictions_tensor = F.log_softmax(predictions_tensor, dim=1)
-                    loss = criterion(predictions_tensor, batch_targets)
+                    
+                    # Apply appropriate transformations based on loss function
+                    if loss_function == 'kl_div':
+                        # Apply log_softmax to predictions for KL divergence
+                        log_predictions = F.log_softmax(predictions_tensor, dim=1)
+                        loss = criterion(log_predictions, batch_targets)
+                    elif loss_function == 'mse':
+                        # For MSE, use raw predictions and targets
+                        loss = criterion(predictions_tensor, batch_targets)
+                    elif loss_function == 'cross_entropy':
+                        # For cross-entropy, convert targets to class indices (argmax)
+                        target_classes = torch.argmax(batch_targets, dim=1)
+                        loss = criterion(predictions_tensor, target_classes)
+                    else:
+                        raise ValueError(f"Unsupported loss function: {loss_function}")
                     
                     # Backward pass
                     loss.backward()
                     
                     # Gradient clipping
-                    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=self.config.max_grad_norm)
                     
                     optimizer.step()
                     
                     train_loss += loss.item()
                     num_batches += 1
                     
-                    # Log progress every 10 batches
-                    if (batch_idx + 1) % 10 == 0:
+                    # Log progress based on config frequency
+                    if (batch_idx + 1) % self.config.log_frequency == 0:
                         self.logger.info(f"Epoch {epoch+1}/{num_epochs}, "
                                        f"Batch {batch_idx+1}/{len(train_loader)}, "
                                        f"Loss: {loss.item():.4f}")
@@ -315,7 +362,7 @@ class SCOTUSModelTrainer:
                 best_val_loss = val_loss
                 patience_counter = 0
                 
-                model_output_dir = Path(self.config.get('model.output_dir', './models_output'))
+                model_output_dir = Path(self.config.model_output_dir)
                 model_output_dir.mkdir(exist_ok=True)
                 model.save_model(str(model_output_dir / 'best_model.pth'))
                 self.logger.info(f"New best model saved with validation loss: {val_loss:.4f}")
@@ -368,7 +415,22 @@ class SCOTUSModelTrainer:
                     
                     # Stack predictions and compute loss
                     predictions_tensor = torch.stack(batch_predictions)
-                    loss = criterion(predictions_tensor, batch_targets)
+                    
+                    # Apply appropriate transformations based on loss function (same as training)
+                    loss_function = self.config.loss_function
+                    if loss_function == 'kl_div':
+                        # Apply log_softmax to predictions for KL divergence
+                        log_predictions = F.log_softmax(predictions_tensor, dim=1)
+                        loss = criterion(log_predictions, batch_targets)
+                    elif loss_function == 'mse':
+                        # For MSE, use raw predictions and targets
+                        loss = criterion(predictions_tensor, batch_targets)
+                    elif loss_function == 'cross_entropy':
+                        # For cross-entropy, convert targets to class indices (argmax)
+                        target_classes = torch.argmax(batch_targets, dim=1)
+                        loss = criterion(predictions_tensor, target_classes)
+                    else:
+                        raise ValueError(f"Unsupported loss function: {loss_function}")
                     
                     total_loss += loss.item()
                     num_batches += 1

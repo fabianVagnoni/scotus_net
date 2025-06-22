@@ -62,16 +62,25 @@ class SCOTUSVotingModel(nn.Module):
         self.bio_model = SentenceTransformer(bio_model_name, device=device)
         self.description_model = SentenceTransformer(description_model_name, device=device)
         
-        # Verify embedding dimensions match
+        # Verify embedding dimensions match and create projection layers if needed
         bio_actual_dim = self.bio_model.get_sentence_embedding_dimension()
         desc_actual_dim = self.description_model.get_sentence_embedding_dimension()
+        
+        # Initialize projection layers
+        self.bio_projection_layer = None
+        self.description_projection_layer = None
         
         if bio_actual_dim != embedding_dim:
             print(f"Biography model embedding dimension {bio_actual_dim} doesn't match expected {embedding_dim}")
             self.bio_projection_layer = nn.Linear(bio_actual_dim, embedding_dim)
+        else:
+            print(f"Biography model embedding dimension {bio_actual_dim} matches expected {embedding_dim}")
+            
         if desc_actual_dim != embedding_dim:
             print(f"Description model embedding dimension {desc_actual_dim} doesn't match expected {embedding_dim}")
             self.description_projection_layer = nn.Linear(desc_actual_dim, embedding_dim)
+        else:
+            print(f"Description model embedding dimension {desc_actual_dim} matches expected {embedding_dim}")
         
         print(f"✅ Model initialized with {len(self.bio_tokenized_data)} biography and {len(self.description_tokenized_data)} case description tokenized files")
         
@@ -276,16 +285,18 @@ class SCOTUSVotingModel(nn.Module):
         
         # Encode justice biographies
         justice_embeddings = []
-        num_real_justices = len(justice_bio_paths)
-        
         for bio_path in justice_bio_paths:
             if bio_path:  # Skip None/empty paths
                 justice_embedding = self.encode_justice_bio(bio_path)
                 justice_embeddings.append(justice_embedding)
         
-        # Update num_real_justices to reflect actual loaded justices
+        # Number of real justices with valid bio paths
         num_real_justices = len(justice_embeddings)
         
+        # Ensure there is at least one justice to process
+        if num_real_justices == 0:
+            raise ValueError("Cannot process a case with no valid justice biographies.")
+
         # Pad with zeros if fewer justices than max_justices
         while len(justice_embeddings) < self.max_justices:
             zero_embedding = torch.zeros(self.embedding_dim, device=case_embedding.device)
@@ -320,13 +331,7 @@ class SCOTUSVotingModel(nn.Module):
         # Pass through fully connected layers
         output = self.fc_layers(combined_embedding)
         
-        # Apply softmax to get probabilities
-        if not self.training:
-            probabilities = F.softmax(output, dim=0)
-        else:
-            probabilities = output
-        
-        return probabilities
+        return output
     
     def predict_from_files(self, case_description_path: str, justice_bio_paths: List[str]) -> torch.Tensor:
         """
@@ -337,28 +342,49 @@ class SCOTUSVotingModel(nn.Module):
             justice_bio_paths: List of paths to justice biography files
             
         Returns:
-            Tensor of shape (4,) with voting percentage predictions
+            Tensor of shape (4,) with voting percentage predictions (probabilities)
             
         Note:
             This method requires all files to be pre-tokenized in the .pkl files.
             Sentence transformers are applied during forward pass for potential fine-tuning.
         """
+        with torch.no_grad():
+            logits = self.forward(case_description_path, justice_bio_paths)
+            probabilities = F.softmax(logits, dim=0)
+        return probabilities
+    
+    def predict_logits_from_files(self, case_description_path: str, justice_bio_paths: List[str]) -> torch.Tensor:
+        """
+        Make prediction from file paths returning raw logits (for training/loss computation).
+        
+        Args:
+            case_description_path: Path to case description file
+            justice_bio_paths: List of paths to justice biography files
+            
+        Returns:
+            Tensor of shape (4,) with raw logits
+        """
         return self.forward(case_description_path, justice_bio_paths)
     
-    def predict_batch_from_dataset(self, dataset_entries: List[Tuple[List[str], str, List[float]]]) -> torch.Tensor:
+    def predict_batch_from_dataset(self, dataset_entries: List[Tuple[List[str], str, List[float]]], 
+                                   return_probabilities: bool = True) -> torch.Tensor:
         """
         Make batch predictions from dataset entries.
         
         Args:
             dataset_entries: List of (justice_bio_paths, case_description_path, voting_percentages)
+            return_probabilities: If True, returns probabilities; if False, returns raw logits
             
         Returns:
-            Tensor of shape (batch_size, 4) with voting percentage predictions
+            Tensor of shape (batch_size, 4) with predictions
         """
         batch_predictions = []
         
         for justice_bio_paths, case_description_path, _ in dataset_entries:
-            prediction = self.predict_from_files(case_description_path, justice_bio_paths)
+            if return_probabilities:
+                prediction = self.predict_from_files(case_description_path, justice_bio_paths)
+            else:
+                prediction = self.predict_logits_from_files(case_description_path, justice_bio_paths)
             batch_predictions.append(prediction)
         
         return torch.stack(batch_predictions)
