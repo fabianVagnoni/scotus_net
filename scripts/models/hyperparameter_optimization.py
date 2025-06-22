@@ -135,7 +135,7 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
             
             # Learning rate scheduler
             scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-                optimizer, mode='min', factor=0.5, patience=2, verbose=False
+                optimizer, mode='min', factor=0.5, patience=2
             )
             
             # Training loop with early stopping
