@@ -67,9 +67,11 @@ class SCOTUSVotingModel(nn.Module):
         desc_actual_dim = self.description_model.get_sentence_embedding_dimension()
         
         if bio_actual_dim != embedding_dim:
-            raise ValueError(f"Biography model embedding dimension {bio_actual_dim} doesn't match expected {embedding_dim}")
+            self.logger.warning(f"Biography model embedding dimension {bio_actual_dim} doesn't match expected {embedding_dim}")
+            self.bio_projection_layer = nn.Linear(bio_actual_dim, embedding_dim)
         if desc_actual_dim != embedding_dim:
-            raise ValueError(f"Description model embedding dimension {desc_actual_dim} doesn't match expected {embedding_dim}")
+            self.logger.warning(f"Description model embedding dimension {desc_actual_dim} doesn't match expected {embedding_dim}")
+            self.description_projection_layer = nn.Linear(desc_actual_dim, embedding_dim)
         
         print(f"✅ Model initialized with {len(self.bio_tokenized_data)} biography and {len(self.description_tokenized_data)} case description tokenized files")
         
@@ -193,7 +195,9 @@ class SCOTUSVotingModel(nn.Module):
                 'attention_mask': attention_mask
             }
             embedding = self.description_model(features)['sentence_embedding']
-            
+            if self.description_projection_layer:
+                embedding = self.description_projection_layer(embedding)
+                
         return embedding.squeeze(0)  # Remove batch dimension
     
     def encode_justice_bio(self, justice_bio_path: str) -> torch.Tensor:
@@ -251,6 +255,8 @@ class SCOTUSVotingModel(nn.Module):
                 'attention_mask': attention_mask
             }
             embedding = self.bio_model(features)['sentence_embedding']
+            if self.bio_projection_layer:
+                embedding = self.bio_projection_layer(embedding)
             
         return embedding.squeeze(0)  # Remove batch dimension
     

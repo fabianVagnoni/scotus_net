@@ -167,7 +167,7 @@ class SCOTUSModelTrainer:
         
         # Model configuration
         bio_model_name = self.config.get('model.bio_model_name', 'all-MiniLM-L6-v2')
-        description_model_name = self.config.get('model.description_model_name', 'nlpaueb/legal-bert-base-uncased')
+        description_model_name = self.config.get('model.description_model_name', 'Stern5497/sbert-legal-xlm-roberta-base')
         embedding_dim = self.config.get('model.embedding_dim', 384)
         hidden_dim = self.config.get('model.hidden_dim', 512)
         dropout_rate = self.config.get('model.dropout_rate', 0.1)
