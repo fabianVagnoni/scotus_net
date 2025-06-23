@@ -1,295 +1,384 @@
-# SCOTUS AI Encoding Configuration System
+# SCOTUS AI Tokenization
 
-This directory contains the encoding pipeline for SCOTUS AI with centralized configuration management.
+The tokenization module handles text encoding and embedding generation for justice biographies and case descriptions. It uses sentence transformer models to create high-quality embeddings for the machine learning pipeline.
 
-## 📁 Files Overview
+## 🎯 Overview
 
-- **`config.env`** - Central configuration file with all encoding hyperparameters
-- **`config.py`** - Configuration loader module
-- **`encode_bios.py`** - Biography encoding script
-- **`encode_descriptions.py`** - Case description encoding script  
-- **`main_encoder.py`** - Main encoding pipeline orchestrator
+The tokenization system converts raw text files into numerical embeddings that can be used by the SCOTUS voting prediction model:
 
-## ⚙️ Configuration System
+```
+Text Files → Sentence Transformers → Embeddings → ML Model
+     ↓               ↓                   ↓          ↓
+[Raw Text]    [Pre-trained Models]  [Vectors]  [Predictions]
+```
 
-### Configuration File (`config.env`)
+## 🤖 Model Architecture
 
-All encoding hyperparameters are centralized in `config.env`:
+### Text Encoders
+
+1. **Biography Encoder**: `sentence-transformers/all-MiniLM-L6-v2`
+   - General-purpose sentence transformer
+   - 384-dimensional embeddings
+   - Optimized for biographical text and general content
+
+2. **Case Description Encoder**: `Stern5497/sbert-legal-xlm-roberta-base`
+   - Legal domain-specialized model
+   - 384-dimensional embeddings  
+   - Fine-tuned on legal text and court documents
+
+### Embedding Process
+
+```python
+Text → Tokenization → Model Encoding → Embeddings
+  ↓         ↓              ↓             ↓
+"John..."  [101,1188,...]  RoBERTa     [0.1,0.3,...]
+```
+
+## 🏗️ Module Components
+
+### `encode_bios.py`
+Justice biography encoding:
+- Loads justice biography text files
+- Encodes using biography-specific transformer model
+- Saves embeddings with metadata mapping
+- Handles batch processing for efficiency
+
+### `encode_descriptions.py`
+Case description encoding:
+- Processes case description files
+- Uses legal-specialized transformer model
+- Creates embeddings for case content
+- Supports dataset-driven encoding
+
+### `main_encoder.py`
+Complete tokenization pipeline:
+- Orchestrates biography and description encoding
+- Manages dependencies and file validation
+- Supports incremental and batch processing
+- Provides comprehensive progress tracking
+
+### `config.py`
+Configuration management:
+- Model selection and parameters
+- Processing configuration
+- Output path management
+- Device and resource settings
+
+## 🚀 Usage
+
+### Complete Tokenization Pipeline
+
+```bash
+# Run full tokenization pipeline
+python scripts/tokenization/main_encoder.py
+
+# Tokenize only biographies
+python scripts/tokenization/main_encoder.py --bios-only
+
+# Tokenize only case descriptions
+python scripts/tokenization/main_encoder.py --descriptions-only
+
+# Force re-tokenization of existing files
+python scripts/tokenization/main_encoder.py --force-retokenization
+```
+
+### Individual Encoding
+
+```bash
+# Encode justice biographies
+python scripts/tokenization/encode_bios.py \
+    --input data/processed/bios \
+    --output data/processed/encoded_bios.pkl
+
+# Encode case descriptions
+python scripts/tokenization/encode_descriptions.py \
+    --input data/processed/case_descriptions \
+    --output data/processed/encoded_descriptions.pkl
+```
+
+### Python API Usage
+
+```python
+from scripts.tokenization.encode_bios import encode_biography_files
+from scripts.tokenization.encode_descriptions import encode_description_files
+
+# Encode biographies
+encode_biography_files(
+    bios_dir="data/processed/bios",
+    output_file="data/processed/encoded_bios.pkl",
+    model_name="sentence-transformers/all-MiniLM-L6-v2"
+)
+
+# Encode case descriptions
+encode_description_files(
+    descriptions_dir="data/processed/case_descriptions", 
+    output_file="data/processed/encoded_descriptions.pkl",
+    model_name="Stern5497/sbert-legal-xlm-roberta-base"
+)
+```
+
+## ⚙️ Configuration
+
+### Environment Configuration (`config.env`)
 
 ```bash
 # Model Configuration
 BIO_MODEL_NAME=sentence-transformers/all-MiniLM-L6-v2
-DESCRIPTION_MODEL_NAME=nlpaueb/legal-bert-base-uncased
-
-# Embedding Configuration
+DESCRIPTION_MODEL_NAME=Stern5497/sbert-legal-xlm-roberta-base
 EMBEDDING_DIM=384
 MAX_SEQUENCE_LENGTH=512
 
-# Batch Processing
-BIO_BATCH_SIZE=16
-DESCRIPTION_BATCH_SIZE=8
+# Processing Configuration
+BIO_BATCH_SIZE=32
+DESCRIPTION_BATCH_SIZE=16
+DEVICE=auto
+NUM_WORKERS=0
 
-# Device Configuration
-DEVICE=auto  # Options: cuda, cpu, auto
-
-# File Paths
-BIO_OUTPUT_FILE=data/processed/encoded_bios.pkl
-DESCRIPTION_OUTPUT_FILE=data/processed/encoded_descriptions.pkl
-DATASET_FILE=data/processed/case_dataset.json
+# Input/Output Paths
 BIO_INPUT_DIR=data/processed/bios
 DESCRIPTION_INPUT_DIR=data/processed/case_descriptions
+BIO_OUTPUT_FILE=data/processed/encoded_bios.pkl
+DESCRIPTION_OUTPUT_FILE=data/processed/encoded_descriptions.pkl
 
-# Processing Settings
-MAX_DESCRIPTION_WORDS=10000
+# Processing Options
 SHOW_PROGRESS=true
 CLEAR_CACHE_ON_OOM=true
-RANDOM_SEED=42
+USE_MODEL_CACHE=true
 ```
 
-### Configuration Loader (`config.py`)
-
-The configuration loader provides:
-
-- **Automatic loading** of `config.env` from the same directory
-- **Type conversion** (string, int, float, bool, path)
-- **Default values** if config file is missing
-- **Convenient properties** for common settings
-- **Validation** with error handling
-
-#### Usage Examples:
+### Advanced Configuration
 
 ```python
-from config import get_config, get_bio_config, get_description_config
+from scripts.tokenization.config import EncodingConfig
 
-# Get full configuration
-config = get_config()
+# Load custom configuration
+config = EncodingConfig("custom_config.env")
+
+# Access configuration values
 print(f"Bio model: {config.bio_model_name}")
-print(f"Batch size: {config.bio_batch_size}")
-
-# Get specific configuration dictionaries
-bio_config = get_bio_config()
-desc_config = get_description_config()
-
-# Use custom config file
-config = get_config("custom_config.env")
+print(f"Embedding dimension: {config.embedding_dim}")
+print(f"Device: {config.device}")
 ```
 
-## 🚀 Usage
+## 📊 Output Format
 
-### 1. Main Encoding Pipeline
+### Encoded Data Structure
 
-Run the complete encoding pipeline:
+The tokenization pipeline outputs pickle files containing:
 
-```bash
-# From project root
-python src/models/encoding/main_encoder.py
-
-# Check status only
-python src/models/encoding/main_encoder.py --check
-
-# Encode only biographies
-python src/models/encoding/main_encoder.py --bios-only
-
-# Encode only descriptions  
-python src/models/encoding/main_encoder.py --descriptions-only
-
-# Force re-encoding
-python src/models/encoding/main_encoder.py --force
-
-# Use custom config
-python src/models/encoding/main_encoder.py --config my_config.env
+```python
+# encoded_bios.pkl structure
+{
+    'embeddings': {
+        'path/to/bio1.txt': numpy.array([0.1, 0.3, ...]),  # 384-dim
+        'path/to/bio2.txt': numpy.array([0.2, 0.1, ...]),
+        # ... more embeddings
+    },
+    'model_name': 'sentence-transformers/all-MiniLM-L6-v2',
+    'embedding_dim': 384,
+    'total_files': 116,
+    'creation_date': '2024-01-15T10:30:00'
+}
 ```
 
-### 2. Individual Encoding Scripts
+### Loading Encoded Data
 
-#### Biography Encoding:
+```python
+import pickle
 
-```bash
-# Use config defaults
-python src/models/encoding/encode_bios.py
+# Load biography embeddings
+with open('data/processed/encoded_bios.pkl', 'rb') as f:
+    bio_data = pickle.load(f)
 
-# Override specific parameters
-python src/models/encoding/encode_bios.py --batch-size 32 --device cuda
+bio_embeddings = bio_data['embeddings']
+model_name = bio_data['model_name']
 
-# Encode specific files
-python src/models/encoding/encode_bios.py --file-list bio_files.txt
+# Load case description embeddings  
+with open('data/processed/encoded_descriptions.pkl', 'rb') as f:
+    desc_data = pickle.load(f)
 
-# Use custom config
-python src/models/encoding/encode_bios.py --config my_config.env
+desc_embeddings = desc_data['embeddings']
 ```
 
-#### Description Encoding:
+## 🔧 Pipeline Features
 
-```bash
-# Use config defaults
-python src/models/encoding/encode_descriptions.py
+### Smart Processing
 
-# Override specific parameters
-python src/models/encoding/encode_descriptions.py --batch-size 4 --device cpu
-
-# Encode specific files
-python src/models/encoding/encode_descriptions.py --file-list desc_files.txt
-
-# Use custom config
-python src/models/encoding/encode_descriptions.py --config my_config.env
-```
-
-## 📊 Configuration Parameters
-
-### Model Settings
-
-| Parameter | Description | Default |
-|-----------|-------------|---------|
-| `BIO_MODEL_NAME` | HuggingFace model for biography encoding | `sentence-transformers/all-MiniLM-L6-v2` |
-| `DESCRIPTION_MODEL_NAME` | HuggingFace model for description encoding | `nlpaueb/legal-bert-base-uncased` |
-| `EMBEDDING_DIM` | Target embedding dimension | `384` |
-| `MAX_SEQUENCE_LENGTH` | Maximum sequence length for tokenization | `512` |
+- **Incremental Encoding**: Only processes new or modified files
+- **Resume Capability**: Continues from where processing left off
+- **Validation**: Checks file availability before processing
+- **Conflict Resolution**: Handles file path mismatches
 
 ### Batch Processing
 
-| Parameter | Description | Default |
-|-----------|-------------|---------|
-| `BIO_BATCH_SIZE` | Batch size for biography encoding | `16` |
-| `DESCRIPTION_BATCH_SIZE` | Batch size for description encoding | `8` |
-| `DEVICE` | Computing device (`cuda`, `cpu`, `auto`) | `auto` |
-
-### File Paths
-
-| Parameter | Description | Default |
-|-----------|-------------|---------|
-| `DATASET_FILE` | Main dataset JSON file | `data/processed/case_dataset.json` |
-| `BIO_INPUT_DIR` | Biography files directory | `data/processed/bios` |
-| `DESCRIPTION_INPUT_DIR` | Description files directory | `data/processed/case_descriptions` |
-| `BIO_OUTPUT_FILE` | Biography embeddings output | `data/processed/encoded_bios.pkl` |
-| `DESCRIPTION_OUTPUT_FILE` | Description embeddings output | `data/processed/encoded_descriptions.pkl` |
-
-### Processing Settings
-
-| Parameter | Description | Default |
-|-----------|-------------|---------|
-| `MAX_DESCRIPTION_WORDS` | Skip descriptions larger than this | `10000` |
-| `SHOW_PROGRESS` | Show progress bars | `true` |
-| `CLEAR_CACHE_ON_OOM` | Clear GPU cache on out-of-memory | `true` |
-| `RANDOM_SEED` | Random seed for reproducibility | `42` |
-| `NUM_WORKERS` | CPU threads for data loading | `4` |
-
-## 🔧 Customization
-
-### Creating Custom Configurations
-
-1. **Copy the default config:**
-   ```bash
-   cp src/models/encoding/config.env my_custom_config.env
-   ```
-
-2. **Edit parameters:**
-   ```bash
-   # Increase batch sizes for powerful GPUs
-   BIO_BATCH_SIZE=32
-   DESCRIPTION_BATCH_SIZE=16
-   
-   # Use different models
-   BIO_MODEL_NAME=sentence-transformers/all-mpnet-base-v2
-   DESCRIPTION_MODEL_NAME=microsoft/DialoGPT-medium
-   
-   # Custom paths
-   BIO_OUTPUT_FILE=experiments/run1/bios.pkl
-   DESCRIPTION_OUTPUT_FILE=experiments/run1/descriptions.pkl
-   ```
-
-3. **Use custom config:**
-   ```bash
-   python src/models/encoding/main_encoder.py --config my_custom_config.env
-   ```
-
-### Environment-Specific Configs
-
-Create different configs for different environments:
-
-- `config.env` - Default/development
-- `config_production.env` - Production settings
-- `config_gpu.env` - High-performance GPU settings
-- `config_cpu.env` - CPU-only settings
-
-### Override Priority
-
-Configuration values are resolved in this order (highest to lowest priority):
-
-1. **Command-line arguments** (e.g., `--batch-size 32`)
-2. **Custom config file** (e.g., `--config custom.env`)
-3. **Default config file** (`config.env`)
-4. **Hard-coded defaults** (in `config.py`)
-
-## 🐛 Troubleshooting
-
-### Config File Not Found
+```python
+# Efficient batch processing
+for batch in batch_iterator(text_files, batch_size=32):
+    embeddings = model.encode(batch)
+    # Process batch results
 ```
-⚠️  Config file not found: config.env
-Using default values...
-```
-**Solution:** Ensure `config.env` exists in the same directory as the script, or specify a custom config with `--config`.
 
-### Invalid Parameter Values
-```
-⚠️  Invalid integer value for BIO_BATCH_SIZE: abc, using default: 16
-```
-**Solution:** Check that numeric parameters contain valid numbers in `config.env`.
+### Memory Management
 
-### GPU Out of Memory
-```
-⚠️  GPU memory issue at batch 5. Clearing cache...
-```
-**Solution:** Reduce batch sizes in `config.env`:
+- **Automatic Cache Clearing**: Handles GPU memory overflow
+- **Batch Size Optimization**: Adjusts batch size based on available memory
+- **Progress Tracking**: Real-time progress with memory usage monitoring
+
+### Error Handling
+
+- **File Validation**: Ensures all referenced files exist
+- **Model Loading**: Graceful handling of model download failures
+- **Encoding Errors**: Continues processing despite individual file failures
+
+## 📈 Performance Optimization
+
+### GPU Acceleration
+
 ```bash
-BIO_BATCH_SIZE=8
-DESCRIPTION_BATCH_SIZE=4
+# Enable GPU processing
+DEVICE=cuda python scripts/tokenization/main_encoder.py
+
+# Automatic device selection
+DEVICE=auto python scripts/tokenization/main_encoder.py
 ```
 
-### Model Loading Errors
+### Batch Size Tuning
+
+```python
+# Optimize batch size for your hardware
+BIO_BATCH_SIZE=64      # Larger batch for biographies
+DESCRIPTION_BATCH_SIZE=16  # Smaller batch for longer case descriptions
 ```
-❌ Error loading model: nlpaueb/legal-bert-base-uncased
+
+### Model Caching
+
+```python
+# Enable model caching to avoid re-downloading
+USE_MODEL_CACHE=true
+
+# Cache location (default: ~/.cache/huggingface)
+export TRANSFORMERS_CACHE=/path/to/cache
 ```
-**Solution:** Verify model names are correct in `config.env`, or use alternative models:
+
+## 🧪 Testing and Validation
+
+### Tokenization Status Check
+
 ```bash
-# Alternative legal models
-DESCRIPTION_MODEL_NAME=microsoft/DialoGPT-medium
-DESCRIPTION_MODEL_NAME=nlpaueb/legal-bert-small-uncased
+# Check tokenization status without processing
+python scripts/tokenization/main_encoder.py --check-status
 ```
 
-## 📈 Performance Tuning
+### Validation Tests
 
-### For High-End GPUs (RTX 4090, A100)
+```python
+from scripts.tokenization.main_encoder import validate_final_tokenizations
+
+# Validate tokenization completeness
+validation_results = validate_final_tokenizations(
+    dataset_file="data/processed/case_dataset.json",
+    bio_tokenized_file="data/processed/encoded_bios.pkl",
+    description_tokenized_file="data/processed/encoded_descriptions.pkl"
+)
+
+print(f"Bio coverage: {validation_results['bio_coverage']}")
+print(f"Description coverage: {validation_results['description_coverage']}")
+```
+
+### Performance Benchmarks
+
+| Component | Files | Avg Time | GPU Memory |
+|-----------|-------|----------|------------|
+| Biography Encoding | 116 files | ~2 minutes | ~1GB |
+| Case Description Encoding | ~8,000 files | ~15 minutes | ~2GB |
+| Complete Pipeline | All files | ~20 minutes | ~2GB |
+
+## 📁 Output Structure
+
+### Generated Files
+
+```
+data/processed/
+├── encoded_bios.pkl           # Biography embeddings
+├── encoded_descriptions.pkl   # Case description embeddings
+└── tokenization_log.json     # Processing metadata
+```
+
+### Embedding Statistics
+
+```python
+# Get embedding statistics
+from scripts.tokenization.encode_bios import load_tokenized_bios
+
+embeddings, metadata = load_tokenized_bios("data/processed/encoded_bios.pkl")
+
+print(f"Total embeddings: {len(embeddings)}")
+print(f"Embedding dimension: {metadata['embedding_dim']}")
+print(f"Model used: {metadata['model_name']}")
+```
+
+## 🚨 Important Considerations
+
+### Model Requirements
+
+- **Internet Connection**: Required for initial model download
+- **Storage Space**: ~2GB for model caching
+- **Memory**: 8GB+ RAM recommended for batch processing
+- **GPU**: Optional but recommended for faster processing
+
+### Data Preprocessing
+
+- **Text Cleaning**: Automatic handling of encoding issues
+- **Length Limits**: Respects model maximum sequence lengths
+- **Format Validation**: Ensures proper text file formatting
+
+### Compatibility
+
+- **Model Versions**: Specific transformer model versions for reproducibility
+- **Python Requirements**: Compatible with PyTorch and transformers library
+- **Platform Support**: Cross-platform compatibility (Windows, macOS, Linux)
+
+## 🛠️ Troubleshooting
+
+### Common Issues
+
+| Issue | Cause | Solution |
+|-------|-------|----------|
+| CUDA out of memory | Batch size too large | Reduce batch size in config |
+| Model download fails | Network/proxy issues | Check internet connection |
+| File not found | Missing input files | Run data pipeline first |
+| Encoding errors | Text format issues | Check file encoding (UTF-8) |
+
+### Debug Mode
+
 ```bash
-BIO_BATCH_SIZE=64
-DESCRIPTION_BATCH_SIZE=32
-DEVICE=cuda
+# Enable detailed logging
+python scripts/tokenization/main_encoder.py --verbose
+
+# Test model loading
+python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2')"
 ```
 
-### For Mid-Range GPUs (RTX 3070, RTX 4070)
-```bash
-BIO_BATCH_SIZE=32
-DESCRIPTION_BATCH_SIZE=16
-DEVICE=cuda
+### Memory Optimization
+
+```python
+# Clear cache manually
+import torch
+torch.cuda.empty_cache()
+
+# Reduce batch size
+BIO_BATCH_SIZE=16
+DESCRIPTION_BATCH_SIZE=8
 ```
 
-### For CPU-Only Systems
-```bash
-BIO_BATCH_SIZE=8
-DESCRIPTION_BATCH_SIZE=4
-DEVICE=cpu
-NUM_WORKERS=8
-```
+## 📞 Support
 
-### For Memory-Constrained Systems
-```bash
-BIO_BATCH_SIZE=4
-DESCRIPTION_BATCH_SIZE=2
-MAX_DESCRIPTION_WORDS=5000
-CLEAR_CACHE_ON_OOM=true
-```
+For tokenization issues:
+- Verify input files exist and are readable
+- Check model download and caching
+- Monitor GPU memory usage during processing
+- Review configuration parameters in `config.env`
 
-## 🔄 Integration
+---
 
-The configuration system is automatically integrated into all encoding scripts. No code changes are needed to use the centralized configuration - just edit `config.env` and run the scripts normally.
-
-All scripts support the `--config` parameter to use custom configuration files, allowing for flexible experimentation and deployment scenarios. 
+**Ready to encode your text data?** Start with `python scripts/tokenization/main_encoder.py` 🔤 

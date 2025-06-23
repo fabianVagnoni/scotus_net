@@ -1,249 +1,355 @@
-# SCOTUS AI Prediction Project
+# SCOTUS AI: Supreme Court Case Outcome Prediction
 
-An AI-powered system to predict Supreme Court of the United States (SCOTUS) case outcomes using machine learning and natural language processing. This project creates a comprehensive dataset combining case metadata, justice biographies, and AI-filtered case descriptions for training predictive models.
+A comprehensive machine learning system for predicting Supreme Court of the United States (SCOTUS) case outcomes using justice biographies, case descriptions, and historical voting patterns.
 
 ## 🎯 Project Overview
 
-This project aims to:
-- **Extract comprehensive SCOTUS data** from multiple authoritative sources
-- **Create AI-filtered case descriptions** that exclude post-decision information (preventing data leakage)
-- **Build a complete ML dataset** with case metadata, justice biographies, and voting patterns
-- **Enable outcome prediction** by training models on pre-decision information only
+SCOTUS AI combines natural language processing, attention mechanisms, and historical data to predict how Supreme Court justices will vote on cases. The system processes justice biographies, case descriptions, and voting patterns to create predictive models with cross-attention mechanisms.
 
-## 🏗️ System Architecture
+### Key Features
 
-The project uses a **9-step pipeline** that processes data from scratch to final ML-ready dataset:
+- **📊 Complete Data Pipeline**: Automated scraping and processing of Supreme Court data
+- **🤖 Advanced ML Models**: Neural networks with justice-case cross-attention mechanisms  
+- **🔄 End-to-End Automation**: From data collection to model training and prediction
+- **📈 Hyperparameter Optimization**: Automated model tuning with Optuna
+- **🐳 Docker Support**: Containerized deployment and execution
+- **📋 Comprehensive Logging**: Detailed progress tracking and error handling
 
-### **Data Collection (Steps 1-5)**
-1. **Justice Metadata** - Scrape Supreme Court justice information from Wikipedia
-2. **Justice Biographies** - Download detailed biographies for each justice
-3. **SCDB Data** - Download official Supreme Court Database voting records
-4. **Case Processing** - Process raw SCDB data into structured metadata
-5. **Case Descriptions** - Scrape and AI-filter case descriptions from Justia
+## 🏗️ Architecture
 
-### **Data Processing (Steps 6-9)**
-6. **Biography Processing** - Enrich biographies with metadata and remove SCOTUS content
-7. **Case Metadata** - Create natural language case descriptions from structured data
-8. **Complete Descriptions** - Combine metadata with AI-filtered case descriptions
-9. **Final Dataset** - Build JSON dataset mapping cases to file paths and voting data
+```
+SCOTUS AI
+├── Data Pipeline          # Automated data collection and processing
+│   ├── Justice Scraping   # Wikipedia biographies and metadata
+│   ├── Case Scraping      # Justia case descriptions with AI filtering
+│   ├── SCDB Integration   # Supreme Court Database voting records
+│   └── Data Processing    # Cleaning, enrichment, and dataset creation
+├── ML Models             # Neural networks and training
+│   ├── Voting Prediction # Main SCOTUS voting outcome model
+│   ├── Cross-Attention   # Justice-case attention mechanisms
+│   ├── Model Training    # Training pipeline with evaluation
+│   └── Hyperparameter    # Automated optimization with Optuna
+├── Tokenization          # Text encoding and embedding
+│   ├── Biography Encoding # Justice biography embeddings
+│   ├── Case Encoding     # Case description embeddings
+│   └── Model Management  # Sentence transformer models
+└── Utilities            # Configuration, logging, and tools
+    ├── Configuration     # YAML and environment config
+    ├── Logging          # Comprehensive logging system
+    ├── Progress Tracking # tqdm-based progress bars
+    └── Test Management  # Holdout test set management
+```
 
 ## 🚀 Quick Start
 
-### 1. Environment Setup
+### Prerequisites
 
+- Python 3.8+
+- CUDA-compatible GPU (recommended)
+- 16GB+ RAM
+- 10GB+ disk space
+
+### Installation
+
+1. **Clone the repository:**
 ```bash
-# Clone the repository
-git clone <your-repo-url>
+git clone https://github.com/your-username/scotus_ai.git
 cd scotus_ai
+```
 
+2. **Set up environment:**
+```bash
 # Create virtual environment
 python -m venv venv
-venv\Scripts\activate  # Windows
-# source venv/bin/activate  # macOS/Linux
+source venv/bin/activate  # On Windows: venv\Scripts\activate
 
 # Install dependencies
 pip install -r requirements.txt
 ```
 
-### 2. Configuration
-
+3. **Configure environment:**
 ```bash
-# Copy environment template
+# Copy and edit environment configuration
 cp env.example .env
-
-# Edit .env file with your API keys
-# GEMMA_KEY=your_gemini_api_key_here
+# Edit .env with your API keys (GEMMA_KEY for Gemini API)
 ```
 
-### 3. Run the Complete Pipeline
+### Running the Complete Pipeline
 
 ```bash
-# Run the full pipeline (interactive mode)
-python src/data_pipeline/main.py
+# Run the complete data pipeline from scratch
+python scripts/data_pipeline/main.py
 
-# Or run in non-interactive mode
-python src/data_pipeline/main.py --non-interactive
+# Or run specific components
+python scripts/data_pipeline/main.py --step scrape-justices
+python scripts/data_pipeline/main.py --step scrape-cases
+python scripts/data_pipeline/main.py --step dataset
 ```
 
-## 📊 Pipeline Features
+### Training Models
 
-### **Smart Resume Functionality**
-- **Automatic detection** of existing processed files
-- **Resume from any step** - no need to restart from beginning
-- **Progress preservation** - continues exactly where it left off
-- **API quota handling** - gracefully stops and resumes when limits exceeded
-
-### **AI-Powered Content Filtering**
-- **Gemini 2.0 Flash** integration for intelligent content processing
-- **Pre-decision filtering** - removes post-decision information to prevent data leakage
-- **Batch processing** - efficient handling of large case datasets
-- **Quality control** - ensures filtered content meets ML training standards
-
-### **Comprehensive Data Sources**
-- **Wikipedia** - Justice metadata and biographies
-- **Supreme Court Database (SCDB)** - Official voting records and case metadata
-- **Justia** - Detailed case descriptions and legal content
-- **AI Enhancement** - Intelligent content filtering and enrichment
-
-## 🛠️ Usage Examples
-
-### **Full Pipeline Execution**
 ```bash
-# Interactive mode (recommended)
-python src/data_pipeline/main.py
+# Tokenize text data
+python scripts/tokenization/main_encoder.py
 
-# Start from specific step
-python src/data_pipeline/main.py --from-step 5
+# Train the voting prediction model
+python scripts/models/model_trainer.py
 
-# Quick mode (limited processing for testing)
-python src/data_pipeline/main.py --quick
+# Run hyperparameter optimization
+python scripts/models/hyperparameter_optimization.py
 ```
 
-### **Individual Step Execution**
+## 📊 Data Sources
+
+### Primary Data Sources
+- **[Supreme Court Database (SCDB)](http://scdb.wustl.edu/)**: Comprehensive voting records
+- **[Wikipedia](https://en.wikipedia.org/)**: Justice biographies and metadata
+- **[Justia](https://supreme.justia.com/)**: Case descriptions and legal documents
+
+### Data Processing Pipeline
+1. **Justice Metadata**: Scrapes Wikipedia for justice information
+2. **Biography Processing**: Extracts pre-SCOTUS career information
+3. **Case Descriptions**: AI-filtered to remove post-decision content
+4. **Voting Records**: Processes SCDB justice-centered vote data
+5. **Dataset Creation**: Creates ML-ready JSON dataset
+
+## 🤖 Machine Learning Models
+
+### SCOTUS Voting Model
+- **Architecture**: Multi-layer neural network with cross-attention
+- **Input**: Justice biographies + case descriptions
+- **Output**: Voting probability distribution (in favor, against, absent, other)
+- **Key Features**:
+  - Justice-case cross-attention mechanism
+  - Sentence transformer embeddings
+  - Configurable architecture and hyperparameters
+
+### Model Components
+- **Biography Encoder**: `sentence-transformers/all-MiniLM-L6-v2`
+- **Case Encoder**: `Stern5497/sbert-legal-xlm-roberta-base`
+- **Attention Mechanism**: Multi-head cross-attention
+- **Loss Function**: KL Divergence (configurable)
+
+## 🔧 Configuration
+
+### Environment Configuration
 ```bash
-# Scrape justice metadata
-python src/data_pipeline/main.py --step scrape-justices
+# API Keys
+GEMMA_KEY=your_gemini_api_key_here
 
-# Scrape case descriptions with AI filtering
-python src/data_pipeline/main.py --step scrape-cases
+# Model Configuration
+BIO_MODEL_NAME=sentence-transformers/all-MiniLM-L6-v2
+DESCRIPTION_MODEL_NAME=Stern5497/sbert-legal-xlm-roberta-base
+EMBEDDING_DIM=384
+HIDDEN_DIM=512
 
-# Build final dataset
-python src/data_pipeline/main.py --step dataset
+# Training Configuration
+LEARNING_RATE=0.0001
+BATCH_SIZE=4
+NUM_EPOCHS=10
 ```
 
-### **Data Status Check**
-```bash
-# Check what data already exists
-python src/data_pipeline/main.py --check
+### YAML Configuration
+Main configuration in `configs/base_config.yaml`:
+```yaml
+data:
+  raw_dir: "data/raw"
+  processed_dir: "data/processed"
+  
+model:
+  embedding_dim: 384
+  hidden_dim: 512
+  
+training:
+  learning_rate: 0.0001
+  batch_size: 4
 ```
 
 ## 📁 Project Structure
 
 ```
 scotus_ai/
-├── data/                          # Data storage
-│   ├── raw/                      # Raw scraped data
-│   │   ├── justices.json         # Justice metadata
-│   │   ├── bios/                 # Raw justice biographies
-│   │   ├── SCDB_2024_01_justiceCentered_Vote.csv  # Official voting data
-│   │   └── case_descriptions_ai_filtered/  # AI-filtered case descriptions
-│   └── processed/                # Cleaned and processed data
-│       ├── cases_metadata.csv    # Processed case metadata with voting stats
-│       ├── bios/                 # Processed justice biographies
-│       ├── case_metadata/        # Natural language case descriptions
-│       ├── case_descriptions/    # Complete case descriptions
-│       └── case_dataset.json     # Final ML dataset
-├── src/
-│   ├── data_pipeline/            # Main pipeline scripts
-│   │   ├── main.py              # Pipeline orchestrator
-│   │   ├── scraper_justices.py  # Justice metadata scraper
-│   │   ├── scraper_bios.py      # Biography scraper
-│   │   ├── scraper_scdb.py      # SCDB data downloader
-│   │   ├── scraper_case_descriptions.py  # Case description scraper with AI
-│   │   ├── process_cases_metadata.py     # Case metadata processor
-│   │   ├── process_bios.py      # Biography processor
-│   │   ├── case_metadata_creation.py     # Case metadata creator
-│   │   ├── case_descriptions_creation.py # Complete descriptions creator
-│   │   └── build_case_dataset.py # Final dataset builder
-│   └── utils/                    # Utility functions
-│       ├── progress.py          # Progress bar utilities
-│       └── logger.py            # Logging utilities
-├── requirements.txt              # Python dependencies
-├── env.example                   # Environment configuration template
-└── README.md                     # This file
+├── configs/                    # Configuration files
+│   └── base_config.yaml       # Main configuration
+├── data/                      # Data storage
+│   ├── raw/                   # Raw scraped data
+│   ├── processed/             # Processed datasets
+│   └── external/              # External data sources
+├── scripts/                   # Main codebase
+│   ├── data_pipeline/         # Data collection and processing
+│   ├── models/               # ML models and training
+│   ├── tokenization/         # Text encoding
+│   └── utils/                # Utilities and helpers
+├── logs/                     # Application logs
+├── venv/                     # Virtual environment
+├── docker-compose.yml        # Docker orchestration
+├── Dockerfile               # Container definition
+└── requirements.txt         # Python dependencies
 ```
 
-## 🔧 Key Components
+## 🐳 Docker Deployment
 
-### **Pipeline Orchestrator (`main.py`)**
-- **Smart step detection** - automatically determines optimal starting point
-- **Interactive mode** - guides users through pipeline execution
-- **Error handling** - graceful handling of API limits and failures
-- **Progress tracking** - real-time progress bars and status updates
-
-### **AI Content Filtering (`scraper_case_descriptions.py`)**
-- **Gemini 2.0 Flash integration** - intelligent content processing
-- **Pre-decision filtering** - removes post-decision information
-- **Resume functionality** - continues from where it left off
-- **Batch processing** - efficient handling of large datasets
-
-### **Data Processing Pipeline**
-- **Metadata enrichment** - combines multiple data sources
-- **Quality control** - ensures data integrity and completeness
-- **Format standardization** - creates consistent data structures
-- **ML-ready output** - produces training-ready datasets
-
-## 📈 Dataset Statistics
-
-The pipeline processes:
-- **8,823 unique Supreme Court cases** (from SCDB)
-- **116 justice biographies** (from Wikipedia)
-- **AI-filtered case descriptions** (from Justia + Gemini)
-- **Voting patterns** and outcome data for each case
-- **Complete metadata** including parties, origins, and issue areas
-
-## 🔑 Environment Variables
-
-Required in `.env` file:
+### Using Docker Compose
 ```bash
-# AI API Key (for content filtering)
-GEMMA_KEY=your_gemini_api_key_here
+# Build and run the complete system
+docker-compose up --build
 
-# Optional: Additional configuration
-SCRAPER_DELAY=1.0
-MAX_RETRIES=3
-LOG_LEVEL=INFO
+# Run specific services
+docker-compose run scotus-ai python scripts/data_pipeline/main.py
+docker-compose run scotus-ai python scripts/models/model_trainer.py
 ```
 
-## 🎯 ML Dataset Output
+### Manual Docker Build
+```bash
+# Build the image
+docker build -t scotus-ai .
 
-The final dataset (`data/processed/case_dataset.json`) contains:
-- **Case IDs** mapped to file paths
-- **Justice biography paths** for each case
-- **Case description paths** (AI-filtered)
-- **Voting percentages** (in favor, against, absent)
-- **Complete metadata** for training
+# Run the container
+docker run -it --gpus all -v $(pwd):/app scotus-ai
+```
 
-## 🚨 Important Notes
+## 📈 Usage Examples
 
-### **API Usage**
-- **Gemini API** is used for content filtering (requires API key)
-- **Rate limiting** is built-in to respect API quotas
-- **Resume functionality** prevents data loss during interruptions
+### Data Pipeline
+```python
+# Run complete pipeline
+from scripts.data_pipeline.main import run_full_pipeline
+run_full_pipeline()
 
-### **Data Quality**
-- **Pre-decision filtering** ensures no data leakage in ML training
-- **Multiple validation steps** ensure data integrity
-- **Comprehensive error handling** maintains pipeline reliability
+# Process specific components
+from scripts.data_pipeline.scraper_justices import main as scrape_justices
+scrape_justices("data/raw/justices.json")
+```
 
-### **Performance**
-- **Batch processing** optimizes API usage
-- **Progress tracking** provides real-time feedback
-- **Resume capability** handles interruptions gracefully
+### Model Training
+```python
+from scripts.models.model_trainer import SCOTUSModelTrainer
+
+trainer = SCOTUSModelTrainer()
+trainer.train_model("data/processed/case_dataset.json")
+```
+
+### Prediction
+```python
+from scripts.models.scotus_voting_model import SCOTUSVotingModel
+
+model = SCOTUSVotingModel.load_model("models_output/best_model.pth")
+prediction = model.predict_from_files(
+    case_description_path="data/processed/case_descriptions/case_123.txt",
+    justice_bio_paths=["data/processed/bios/John_Roberts.txt"]
+)
+```
+
+## 🧪 Testing and Evaluation
+
+### Holdout Test Set
+```python
+from scripts.utils.holdout_test_set import HoldoutTestSetManager
+
+manager = HoldoutTestSetManager()
+holdout_cases = manager.create_holdout_test_set(percentage=0.15)
+```
+
+### Model Evaluation
+```python
+from scripts.models.model_trainer import SCOTUSModelTrainer
+
+trainer = SCOTUSModelTrainer()
+results = trainer.evaluate_on_holdout_test_set("models_output/best_model.pth")
+```
+
+## 📊 Performance Metrics
+
+The model is evaluated using:
+- **KL Divergence Loss**: Measures prediction distribution accuracy
+- **Mean Squared Error**: Alternative regression-style loss
+- **Accuracy**: Classification accuracy for voting outcomes
+- **F1 Score**: Balanced precision and recall
+
+## 🔍 Hyperparameter Optimization
+
+```bash
+# Run Optuna optimization
+python scripts/models/hyperparameter_optimization.py --n-trials 100
+```
+
+Key hyperparameters optimized:
+- Learning rate
+- Hidden dimensions
+- Dropout rates
+- Attention heads
+- Batch size
 
 ## 🤝 Contributing
 
-1. Follow the existing code structure and patterns
-2. Add appropriate error handling and logging
-3. Update documentation for new features
-4. Test with the existing pipeline
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+## 📋 Requirements
+
+### Python Dependencies
+- `torch>=1.9.0`
+- `transformers>=4.20.0`
+- `sentence-transformers>=2.2.0`
+- `pandas>=1.5.0`
+- `numpy>=1.21.0`
+- `beautifulsoup4>=4.11.0`
+- `requests>=2.28.0`
+- `tqdm>=4.64.0`
+- `optuna>=3.0.0`
+- `google-generativeai>=0.3.0`
+
+### System Requirements
+- CUDA-compatible GPU (recommended)
+- 16GB+ RAM for full pipeline
+- 10GB+ disk space for complete datasets
+
+## 🚨 Important Notes
+
+### Data Collection Ethics
+- Respects robots.txt and rate limits
+- Uses appropriate delays between requests
+- Filters content to avoid data leakage
+- Cites all data sources appropriately
+
+### API Requirements
+- **Gemini API**: Required for case description filtering
+- **Rate Limits**: Automatic handling with resume capability
+- **Quota Management**: Stops on API limit exceeded
+
+### Legal Disclaimer
+This project is for educational and research purposes only. Predictions should not be used for legal advice or decision-making. Always consult qualified legal professionals for legal matters.
 
 ## 📄 License
 
-MIT License - see LICENSE file for details
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## 🆘 Troubleshooting
+## 🙏 Acknowledgments
 
-### **Common Issues**
-- **API quota exceeded**: Pipeline will automatically stop and can be resumed
-- **Missing dependencies**: Run `pip install -r requirements.txt`
-- **Permission errors**: Ensure write access to data directories
+- Supreme Court Database (SCDB) for comprehensive voting data
+- Wikipedia for justice biographical information
+- Justia for case descriptions and legal documents
+- Hugging Face for pre-trained language models
+- The open-source community for various tools and libraries
 
-### **Getting Help**
-- Check the logs in console output
-- Verify environment variables in `.env` file
-- Ensure all required directories exist
+## 📚 References
+
+Justia, "Supreme Court," Justia Supreme Court Center. [Online]. Available: https://supreme.justia.com/.
+
+H. J. Spaeth et al., "Supreme Court Database," The Supreme Court Database, Washington University in St. Louis. [Online]. Available: http://scdb.wustl.edu/data.php.
+
+Wikipedia, "List of justices of the Supreme Court of the United States," Wikipedia, Jun. 23, 2025. [Online]. Available: https://en.wikipedia.org/wiki/List_of_justices_of_the_Supreme_Court_of_the_United_States.
+
+## 📞 Support
+
+For questions, issues, or contributions:
+- Open an issue on GitHub
+- Check the documentation in individual module READMEs
+- Review the configuration files for customization options
 
 ---
 
-**Ready to predict Supreme Court outcomes?** Run `python src/data_pipeline/main.py` to start building your dataset! 🚀 
+**Built with ❤️ for AI research and education** 
