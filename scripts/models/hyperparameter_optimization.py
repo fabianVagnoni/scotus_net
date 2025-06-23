@@ -205,9 +205,8 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
                         
                         # Apply log_softmax for KL divergence loss
                         log_predictions = torch.log_softmax(predictions_tensor, dim=1)
-                        # Normalize targets to proper probabilities for KL divergence
-                        normalized_targets = torch.softmax(batch_targets, dim=1)
-                        loss = criterion(log_predictions, normalized_targets)
+                        # Targets are already probability distributions, no need to normalize
+                        loss = criterion(log_predictions, batch_targets)
                         
                         # Backward pass
                         loss.backward()
@@ -315,9 +314,8 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
                     
                     # Apply log_softmax for KL divergence loss
                     log_predictions = torch.log_softmax(predictions_tensor, dim=1)
-                    # Normalize targets to proper probabilities for KL divergence
-                    normalized_targets = torch.softmax(batch_targets, dim=1)
-                    loss = criterion(log_predictions, normalized_targets)
+                    # Targets are already probability distributions, no need to normalize
+                    loss = criterion(log_predictions, batch_targets)
                     
                     # Log predictions vs targets for first batch only
                     if not first_batch_logged and batch_idx == 0:
@@ -332,7 +330,7 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
                         for i in range(num_samples_to_show):
                             case_id = batch['case_ids'][i]
                             pred = display_predictions[i].cpu().numpy()
-                            target = normalized_targets[i].cpu().numpy()
+                            target = batch_targets[i].cpu().numpy()
                             
                             self.logger.info(f"Sample {i+1} (Case ID: {case_id}):")
                             self.logger.info(f"  Predicted:  [{pred[0]:.4f}, {pred[1]:.4f}, {pred[2]:.4f}, {pred[3]:.4f}]")
@@ -345,7 +343,7 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
                             # Show which class has highest prediction vs target
                             pred_class = pred.argmax()
                             target_class = target.argmax()
-                            class_names = ["Liberal", "Conservative", "Mixed", "Unclear"]
+                            class_names = ["In Favor", "Against", "Absent", "Other"]
                             self.logger.info(f"  Pred Class: {class_names[pred_class]} ({pred[pred_class]:.4f})")
                             self.logger.info(f"  True Class: {class_names[target_class]} ({target[target_class]:.4f})")
                             self.logger.info("")
