@@ -21,6 +21,8 @@ import numpy as np
 import pandas as pd
 from datetime import datetime
 import argparse
+import time
+import signal
 
 from scripts.models.model_trainer import SCOTUSModelTrainer
 from scripts.models.scotus_voting_model import SCOTUSVotingModel, SCOTUSDataset, collate_fn
@@ -53,13 +55,18 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
         Returns:
             Best validation loss achieved during training
         """
+        start_time = time.time()
+        max_trial_time = 300  # 5 minutes per trial
+        
         try:
+            self.logger.info("Loading dataset for optimization...")
             # Load dataset
             dataset = self.load_case_dataset(dataset_file)
             
             # Get tokenized file paths
             bio_tokenized_file, description_tokenized_file = self.get_tokenized_file_paths(dataset)
             
+            self.logger.info("Splitting dataset...")
             # Split dataset (use smaller validation set for faster optimization)
             train_dataset, val_dataset = self.split_dataset(
                 dataset, 
@@ -67,9 +74,12 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
                 val_ratio=0.2
             )
             
+            self.logger.info("Suggesting hyperparameters...")
             # Suggest hyperparameters
             hyperparams = self._suggest_hyperparameters()
+            self.logger.info(f"Trial hyperparameters: {hyperparams}")
             
+            self.logger.info("Initializing model...")
             # Initialize model with trial hyperparameters
             model = SCOTUSVotingModel(
                 bio_tokenized_file=bio_tokenized_file,
@@ -86,7 +96,9 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
             )
             
             model.to(self.device)
+            self.logger.info("Model moved to device")
             
+            self.logger.info("Preparing datasets...")
             # Prepare datasets
             train_dataset_dict = self.prepare_dataset_dict(train_dataset)
             val_dataset_dict = self.prepare_dataset_dict(val_dataset)
@@ -95,8 +107,10 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
                 raise ValueError("No valid training or validation cases found")
             
             # Limit dataset size for faster optimization
-            max_train_samples = min(len(train_dataset_dict), 1000)  # Limit training samples
-            max_val_samples = min(len(val_dataset_dict), 200)      # Limit validation samples
+            max_train_samples = min(len(train_dataset_dict), 500)  # Reduce for faster trials
+            max_val_samples = min(len(val_dataset_dict), 100)     # Reduce for faster trials
+            
+            self.logger.info(f"Using {max_train_samples} training samples and {max_val_samples} validation samples")
             
             train_keys = list(train_dataset_dict.keys())[:max_train_samples]
             val_keys = list(val_dataset_dict.keys())[:max_val_samples]
@@ -107,6 +121,7 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
             train_pytorch_dataset = SCOTUSDataset(train_subset)
             val_pytorch_dataset = SCOTUSDataset(val_subset)
             
+            self.logger.info("Creating data loaders...")
             # Data loaders with trial batch size
             train_loader = DataLoader(
                 train_pytorch_dataset, 
@@ -123,6 +138,7 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
                 num_workers=0
             )
             
+            self.logger.info("Setting up optimizer and loss function...")
             # Training setup with trial hyperparameters
             optimizer = torch.optim.AdamW(
                 model.parameters(), 
@@ -138,6 +154,7 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
                 optimizer, mode='min', factor=0.5, patience=2
             )
             
+            self.logger.info("Starting training loop...")
             # Training loop with early stopping
             model.train()
             best_val_loss = float('inf')
@@ -146,6 +163,12 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
             max_epochs = 10  # Fixed epochs for optimization (was hyperparams['num_epochs'])
             
             for epoch in range(max_epochs):
+                # Check timeout
+                if time.time() - start_time > max_trial_time:
+                    self.logger.warning(f"Trial timeout after {max_trial_time} seconds")
+                    break
+                    
+                self.logger.info(f"Starting epoch {epoch+1}/{max_epochs}")
                 # Training phase
                 model.train()
                 train_loss = 0.0
@@ -153,12 +176,14 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
                 
                 for batch_idx, batch in enumerate(train_loader):
                     try:
+                        if batch_idx == 0:
+                            self.logger.info(f"Processing first batch of epoch {epoch+1}")
+                        
                         optimizer.zero_grad()
                         
                         batch_predictions = []
                         batch_targets = batch['targets'].to(self.device)
                         
-
                         # Process each sample in the batch
                         for i in range(len(batch['case_ids'])):
                             case_description_path = batch['case_description_paths'][i]
@@ -173,7 +198,9 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
                         
                         # Apply log_softmax for KL divergence loss
                         log_predictions = torch.log_softmax(predictions_tensor, dim=1)
-                        loss = criterion(log_predictions, batch_targets)
+                        # Normalize targets to proper probabilities for KL divergence
+                        normalized_targets = torch.softmax(batch_targets, dim=1)
+                        loss = criterion(log_predictions, normalized_targets)
                         
                         # Backward pass
                         loss.backward()
@@ -186,6 +213,9 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
                         train_loss += loss.item()
                         num_batches += 1
                         
+                        if batch_idx == 0:
+                            self.logger.info(f"First batch completed, loss: {loss.item():.4f}")
+                        
                     except Exception as e:
                         self.logger.warning(f"Error in training batch {batch_idx}: {e}")
                         continue
@@ -195,7 +225,10 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
                     
                 avg_train_loss = train_loss / num_batches
                 
+                self.logger.info(f"Epoch {epoch+1} training completed, avg loss: {avg_train_loss:.4f}")
+                
                 # Validation phase
+                self.logger.info(f"Starting validation for epoch {epoch+1}")
                 val_loss = self._evaluate_model_for_optimization(model, val_loader, criterion)
                 
                 # Learning rate scheduling
@@ -208,11 +241,14 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
                 else:
                     patience_counter += 1
                 
+                self.logger.info(f"Epoch {epoch+1} completed - Train: {avg_train_loss:.4f}, Val: {val_loss:.4f}")
+                
                 # Report intermediate value to Optuna
                 self.trial.report(val_loss, epoch)
                 
                 # Check if trial should be pruned
                 if self.trial.should_prune():
+                    self.logger.info(f"Trial pruned at epoch {epoch+1}")
                     raise optuna.TrialPruned()
                 
                 # Early stopping
@@ -220,6 +256,7 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
                     self.logger.info(f"Early stopping at epoch {epoch+1}")
                     break
             
+            self.logger.info(f"Trial completed with best validation loss: {best_val_loss:.4f}")
             return best_val_loss
             
         except Exception as e:
@@ -267,7 +304,9 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
                     
                     # Apply log_softmax for KL divergence loss
                     log_predictions = torch.log_softmax(predictions_tensor, dim=1)
-                    loss = criterion(log_predictions, batch_targets)
+                    # Normalize targets to proper probabilities for KL divergence
+                    normalized_targets = torch.softmax(batch_targets, dim=1)
+                    loss = criterion(log_predictions, normalized_targets)
                     
                     total_loss += loss.item()
                     num_batches += 1
@@ -496,7 +535,7 @@ def save_best_config(study: optuna.Study, output_file: str = "best_config.env"):
     with open(output_file, 'w') as f:
         f.write('\n'.join(config_lines))
     
-    logger.info(f"💾 Best configuration saved to: {output_file}")
+    logger.info(f"�� Best configuration saved to: {output_file}")
 
 
 def main():
