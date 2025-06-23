@@ -23,6 +23,7 @@ from datetime import datetime
 import argparse
 import time
 import signal
+from tqdm import tqdm
 
 from scripts.models.model_trainer import SCOTUSModelTrainer
 from scripts.models.scotus_voting_model import SCOTUSVotingModel, SCOTUSDataset, collate_fn
@@ -174,11 +175,17 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
                 train_loss = 0.0
                 num_batches = 0
                 
-                for batch_idx, batch in enumerate(train_loader):
+                # Training progress bar
+                train_pbar = tqdm(
+                    enumerate(train_loader), 
+                    total=len(train_loader),
+                    desc=f"Epoch {epoch+1}/{max_epochs} - Training",
+                    leave=False,
+                    ncols=100
+                )
+                
+                for batch_idx, batch in train_pbar:
                     try:
-                        if batch_idx == 0:
-                            self.logger.info(f"Processing first batch of epoch {epoch+1}")
-                        
                         optimizer.zero_grad()
                         
                         batch_predictions = []
@@ -213,12 +220,15 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
                         train_loss += loss.item()
                         num_batches += 1
                         
-                        if batch_idx == 0:
-                            self.logger.info(f"First batch completed, loss: {loss.item():.4f}")
+                        # Update progress bar with current loss
+                        current_avg_loss = train_loss / num_batches
+                        train_pbar.set_postfix({'loss': f'{current_avg_loss:.4f}'})
                         
                     except Exception as e:
                         self.logger.warning(f"Error in training batch {batch_idx}: {e}")
                         continue
+                
+                train_pbar.close()
                 
                 if num_batches == 0:
                     raise ValueError("No successful training batches")
@@ -274,7 +284,7 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
             
             # Training Parameters
             'learning_rate': self.trial.suggest_float('learning_rate', 1e-5, 1e-3, log=True),
-            'batch_size': self.trial.suggest_categorical('batch_size', [8, 16, 32, 64]),
+            'batch_size': self.trial.suggest_categorical('batch_size', [8, 16, 32]),
             'weight_decay': self.trial.suggest_float('weight_decay', 1e-4, 1e-1, log=True)
         }
     
@@ -283,9 +293,10 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
         model.eval()
         total_loss = 0.0
         num_batches = 0
+        first_batch_logged = False
         
         with torch.no_grad():
-            for batch in data_loader:
+            for batch_idx, batch in enumerate(data_loader):
                 try:
                     batch_predictions = []
                     batch_targets = batch['targets'].to(self.device)
@@ -307,6 +318,39 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
                     # Normalize targets to proper probabilities for KL divergence
                     normalized_targets = torch.softmax(batch_targets, dim=1)
                     loss = criterion(log_predictions, normalized_targets)
+                    
+                    # Log predictions vs targets for first batch only
+                    if not first_batch_logged and batch_idx == 0:
+                        self.logger.info("=== VALIDATION PREDICTIONS vs TARGETS ===")
+                        
+                        # Convert log predictions back to probabilities for display
+                        display_predictions = torch.softmax(predictions_tensor, dim=1)
+                        
+                        # Show first few samples in the batch
+                        num_samples_to_show = min(3, len(batch['case_ids']))
+                        
+                        for i in range(num_samples_to_show):
+                            case_id = batch['case_ids'][i]
+                            pred = display_predictions[i].cpu().numpy()
+                            target = normalized_targets[i].cpu().numpy()
+                            
+                            self.logger.info(f"Sample {i+1} (Case ID: {case_id}):")
+                            self.logger.info(f"  Predicted:  [{pred[0]:.4f}, {pred[1]:.4f}, {pred[2]:.4f}, {pred[3]:.4f}]")
+                            self.logger.info(f"  Target:     [{target[0]:.4f}, {target[1]:.4f}, {target[2]:.4f}, {target[3]:.4f}]")
+                            
+                            # Calculate and show the difference
+                            diff = pred - target
+                            self.logger.info(f"  Difference: [{diff[0]:+.4f}, {diff[1]:+.4f}, {diff[2]:+.4f}, {diff[3]:+.4f}]")
+                            
+                            # Show which class has highest prediction vs target
+                            pred_class = pred.argmax()
+                            target_class = target.argmax()
+                            class_names = ["Liberal", "Conservative", "Mixed", "Unclear"]
+                            self.logger.info(f"  Pred Class: {class_names[pred_class]} ({pred[pred_class]:.4f})")
+                            self.logger.info(f"  True Class: {class_names[target_class]} ({target[target_class]:.4f})")
+                            self.logger.info("")
+                        
+                        first_batch_logged = True
                     
                     total_loss += loss.item()
                     num_batches += 1
