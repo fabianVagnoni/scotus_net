@@ -415,7 +415,7 @@ def initialize_results_file(study_name: str, n_trials: int, dataset_file: str):
         logger.warning(f"Failed to initialize results file: {e}")
 
 
-def append_trial_results(trial: Trial, val_loss: float, hyperparams: Dict[str, Any] = None):
+def append_trial_results(trial: Trial, val_loss: float, hyperparams: Dict[str, Any] = None, trial_status: str = "COMPLETED"):
     """
     Append trial results to the tuning results file.
     
@@ -423,6 +423,7 @@ def append_trial_results(trial: Trial, val_loss: float, hyperparams: Dict[str, A
         trial: Optuna trial object
         val_loss: Validation loss achieved
         hyperparams: Trial hyperparameters (optional, will be extracted from trial if not provided)
+        trial_status: Status of the trial (COMPLETED, PRUNED, FAILED)
     """
     # Create the results file path
     results_file = Path("scripts/models/tunning_results.txt")
@@ -442,7 +443,7 @@ def append_trial_results(trial: Trial, val_loss: float, hyperparams: Dict[str, A
         f"=" * 80,
         f"Trial #{trial.number} - {timestamp}",
         f"Validation Loss: {val_loss:.6f}",
-        f"Trial State: {trial.state.name}",
+        f"Trial Status: {trial_status}",
         f"Parameters:",
     ]
     
@@ -451,7 +452,6 @@ def append_trial_results(trial: Trial, val_loss: float, hyperparams: Dict[str, A
         result_lines.append(f"  {key}: {value}")
     
     result_lines.extend([
-        f"Duration: {trial.duration.total_seconds():.2f} seconds" if trial.duration else "Duration: N/A",
         "",  # Empty line for separation
     ])
     
@@ -535,19 +535,19 @@ def objective(trial: Trial, base_config: ModelConfig, dataset_file: str) -> floa
         logger.info(f"Trial {trial.number} completed with validation loss: {val_loss:.4f}")
         
         # Append trial results to file
-        append_trial_results(trial, val_loss)
+        append_trial_results(trial, val_loss, trial_status="COMPLETED")
         
         return val_loss
         
     except optuna.TrialPruned:
         logger.info(f"Trial {trial.number} was pruned")
         # Also log pruned trials
-        append_trial_results(trial, float('inf'))
+        append_trial_results(trial, float('inf'), trial_status="PRUNED")
         raise
     except Exception as e:
         logger.error(f"Trial {trial.number} failed with error: {e}")
         # Log failed trials
-        append_trial_results(trial, float('inf'))
+        append_trial_results(trial, float('inf'), trial_status="FAILED")
         return float('inf')
 
 
