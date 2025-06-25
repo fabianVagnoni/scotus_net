@@ -44,8 +44,8 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
         self.trial = trial
         self.base_config = base_config
         self.best_val_loss = float('inf')
-        self.early_stop_patience = 3  # Reduced for faster optimization
-        self.min_epochs = 2  # Minimum epochs before early stopping
+        self.early_stop_patience = base_config.optuna_early_stop_patience
+        self.min_epochs = base_config.optuna_min_epochs
         # Override holdout manager to ensure we exclude holdout cases
         self.holdout_manager = HoldoutTestSetManager()
         
@@ -57,7 +57,7 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
             Best validation loss achieved during training
         """
         start_time = time.time()
-        max_trial_time = 300  # 5 minutes per trial
+        max_trial_time = self.base_config.optuna_max_trial_time
         
         try:
             self.logger.info("Loading dataset for optimization...")
@@ -108,8 +108,13 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
                 raise ValueError("No valid training or validation cases found")
             
             # Limit dataset size for faster optimization
-            max_train_samples = min(len(train_dataset_dict), 500)  # Reduce for faster trials
-            max_val_samples = min(len(val_dataset_dict), 100)     # Reduce for faster trials
+            max_train_samples = len(train_dataset_dict)
+            max_val_samples = len(val_dataset_dict)
+            
+            if self.base_config.optuna_max_train_samples > 0:
+                max_train_samples = min(len(train_dataset_dict), self.base_config.optuna_max_train_samples)
+            if self.base_config.optuna_max_val_samples > 0:
+                max_val_samples = min(len(val_dataset_dict), self.base_config.optuna_max_val_samples)
             
             self.logger.info(f"Using {max_train_samples} training samples and {max_val_samples} validation samples")
             
@@ -161,11 +166,11 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
             best_val_loss = float('inf')
             patience_counter = 0
             
-            max_epochs = 10  # Fixed epochs for optimization (was hyperparams['num_epochs'])
+            max_epochs = self.base_config.optuna_max_epochs
             
             for epoch in range(max_epochs):
-                # Check timeout
-                if time.time() - start_time > max_trial_time:
+                # Check timeout (if enabled)
+                if max_trial_time > 0 and time.time() - start_time > max_trial_time:
                     self.logger.warning(f"Trial timeout after {max_trial_time} seconds")
                     break
                     
@@ -274,17 +279,29 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
     
     def _suggest_hyperparameters(self) -> Dict[str, Any]:
         """Suggest hyperparameters for the current trial."""
+        # Get dropout rate suggestion
+        dropout_min, dropout_max, dropout_step = self.base_config.optuna_dropout_rate_range
+        dropout_kwargs = {'step': dropout_step} if dropout_step is not None else {}
+        
+        # Get learning rate suggestion
+        lr_min, lr_max, lr_log = self.base_config.optuna_learning_rate_range
+        lr_kwargs = {'log': lr_log} if lr_log else {}
+        
+        # Get weight decay suggestion
+        wd_min, wd_max, wd_log = self.base_config.optuna_weight_decay_range
+        wd_kwargs = {'log': wd_log} if wd_log else {}
+        
         return {
             # Model Architecture
-            'hidden_dim': self.trial.suggest_categorical('hidden_dim', [256, 512, 768, 1024]),
-            'dropout_rate': self.trial.suggest_float('dropout_rate', 0.1, 0.5, step=0.1),
-            'num_attention_heads': self.trial.suggest_categorical('num_attention_heads', [2, 4, 6, 8]),
-            'use_justice_attention': self.trial.suggest_categorical('use_justice_attention', [True, False]),
+            'hidden_dim': self.trial.suggest_categorical('hidden_dim', self.base_config.optuna_hidden_dim_options),
+            'dropout_rate': self.trial.suggest_float('dropout_rate', dropout_min, dropout_max, **dropout_kwargs),
+            'num_attention_heads': self.trial.suggest_categorical('num_attention_heads', self.base_config.optuna_attention_heads_options),
+            'use_justice_attention': self.trial.suggest_categorical('use_justice_attention', self.base_config.optuna_justice_attention_options),
             
             # Training Parameters
-            'learning_rate': self.trial.suggest_float('learning_rate', 1e-5, 1e-3, log=True),
-            'batch_size': self.trial.suggest_categorical('batch_size', [8, 16, 32]),
-            'weight_decay': self.trial.suggest_float('weight_decay', 1e-4, 1e-1, log=True)
+            'learning_rate': self.trial.suggest_float('learning_rate', lr_min, lr_max, **lr_kwargs),
+            'batch_size': self.trial.suggest_categorical('batch_size', self.base_config.optuna_batch_size_options),
+            'weight_decay': self.trial.suggest_float('weight_decay', wd_min, wd_max, **wd_kwargs)
         }
     
     def _evaluate_model_for_optimization(self, model: SCOTUSVotingModel, data_loader, criterion) -> float:
@@ -361,6 +378,138 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
         return total_loss / num_batches if num_batches > 0 else float('inf')
 
 
+def initialize_results_file(study_name: str, n_trials: int, dataset_file: str):
+    """
+    Initialize the tuning results file with header information.
+    
+    Args:
+        study_name: Name of the optimization study
+        n_trials: Number of trials to run
+        dataset_file: Path to dataset file
+    """
+    results_file = Path("scripts/models/tunning_results.txt")
+    
+    # Create directory if it doesn't exist
+    results_file.parent.mkdir(parents=True, exist_ok=True)
+    
+    # Prepare header
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    header_lines = [
+        f"{'#' * 80}",
+        f"# SCOTUS AI Hyperparameter Optimization Results",
+        f"# Study: {study_name}",
+        f"# Started: {timestamp}",
+        f"# Number of trials: {n_trials}",
+        f"# Dataset: {dataset_file}",
+        f"{'#' * 80}",
+        "",
+    ]
+    
+    # Write header to file (overwrite mode to start fresh)
+    try:
+        with open(results_file, 'w', encoding='utf-8') as f:
+            f.write('\n'.join(header_lines) + '\n')
+    except Exception as e:
+        logger = get_logger(__name__)
+        logger.warning(f"Failed to initialize results file: {e}")
+
+
+def append_trial_results(trial: Trial, val_loss: float, hyperparams: Dict[str, Any] = None):
+    """
+    Append trial results to the tuning results file.
+    
+    Args:
+        trial: Optuna trial object
+        val_loss: Validation loss achieved
+        hyperparams: Trial hyperparameters (optional, will be extracted from trial if not provided)
+    """
+    # Create the results file path
+    results_file = Path("scripts/models/tunning_results.txt")
+    
+    # Create directory if it doesn't exist
+    results_file.parent.mkdir(parents=True, exist_ok=True)
+    
+    # Get hyperparameters if not provided
+    if hyperparams is None:
+        hyperparams = trial.params
+    
+    # Prepare trial results text
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    # Format results
+    result_lines = [
+        f"=" * 80,
+        f"Trial #{trial.number} - {timestamp}",
+        f"Validation Loss: {val_loss:.6f}",
+        f"Trial State: {trial.state.name}",
+        f"Parameters:",
+    ]
+    
+    # Add hyperparameters
+    for key, value in hyperparams.items():
+        result_lines.append(f"  {key}: {value}")
+    
+    result_lines.extend([
+        f"Duration: {trial.duration.total_seconds():.2f} seconds" if trial.duration else "Duration: N/A",
+        "",  # Empty line for separation
+    ])
+    
+    # Write to file (append mode)
+    try:
+        with open(results_file, 'a', encoding='utf-8') as f:
+            f.write('\n'.join(result_lines) + '\n')
+    except Exception as e:
+        logger = get_logger(__name__)
+        logger.warning(f"Failed to append trial results to file: {e}")
+
+
+def append_optimization_summary(study: optuna.Study):
+    """
+    Append optimization summary to the results file.
+    
+    Args:
+        study: Completed Optuna study
+    """
+    results_file = Path("scripts/models/tunning_results.txt")
+    
+    # Prepare summary
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    summary_lines = [
+        f"{'#' * 80}",
+        f"# OPTIMIZATION SUMMARY - {timestamp}",
+        f"{'#' * 80}",
+        f"Total trials: {len(study.trials)}",
+        f"Completed trials: {len([t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE])}",
+        f"Pruned trials: {len([t for t in study.trials if t.state == optuna.trial.TrialState.PRUNED])}",
+        f"Failed trials: {len([t for t in study.trials if t.state == optuna.trial.TrialState.FAIL])}",
+        "",
+        f"BEST TRIAL: #{study.best_trial.number}",
+        f"Best validation loss: {study.best_value:.6f}",
+        f"Best parameters:",
+    ]
+    
+    # Add best parameters
+    for key, value in study.best_params.items():
+        summary_lines.append(f"  {key}: {value}")
+    
+    summary_lines.extend([
+        "",
+        f"Study completed at: {timestamp}",
+        f"{'#' * 80}",
+        "",
+    ])
+    
+    # Write to file (append mode)
+    try:
+        with open(results_file, 'a', encoding='utf-8') as f:
+            f.write('\n'.join(summary_lines) + '\n')
+    except Exception as e:
+        logger = get_logger(__name__)
+        logger.warning(f"Failed to append optimization summary to file: {e}")
+
+
 def objective(trial: Trial, base_config: ModelConfig, dataset_file: str) -> float:
     """
     Objective function for Optuna optimization.
@@ -384,18 +533,26 @@ def objective(trial: Trial, base_config: ModelConfig, dataset_file: str) -> floa
         val_loss = trainer.train_model_for_optimization(dataset_file)
         
         logger.info(f"Trial {trial.number} completed with validation loss: {val_loss:.4f}")
+        
+        # Append trial results to file
+        append_trial_results(trial, val_loss)
+        
         return val_loss
         
     except optuna.TrialPruned:
         logger.info(f"Trial {trial.number} was pruned")
+        # Also log pruned trials
+        append_trial_results(trial, float('inf'))
         raise
     except Exception as e:
         logger.error(f"Trial {trial.number} failed with error: {e}")
+        # Log failed trials
+        append_trial_results(trial, float('inf'))
         return float('inf')
 
 
 def run_hyperparameter_optimization(
-    n_trials: int = 50,
+    n_trials: int = None,
     study_name: str = None,
     dataset_file: str = None,
     storage: str = None,
@@ -424,6 +581,9 @@ def run_hyperparameter_optimization(
     if dataset_file is None:
         dataset_file = base_config.dataset_file
     
+    if n_trials is None:
+        n_trials = base_config.optuna_n_trials
+    
     if study_name is None:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         study_name = f"scotus_optimization_{timestamp}"
@@ -434,13 +594,19 @@ def run_hyperparameter_optimization(
     logger.info(f"   📁 Dataset: {dataset_file}")
     logger.info(f"   💾 Storage: {storage or 'in-memory'}")
     
+    # Initialize results file with header
+    initialize_results_file(study_name, n_trials, dataset_file)
+    
     # Create study
     study = optuna.create_study(
         study_name=study_name,
         direction='minimize',  # Minimize validation loss
         storage=storage,
         load_if_exists=True,
-        pruner=optuna.pruners.MedianPruner(n_startup_trials=5, n_warmup_steps=3)
+        pruner=optuna.pruners.MedianPruner(
+            n_startup_trials=base_config.optuna_pruner_startup_trials, 
+            n_warmup_steps=base_config.optuna_pruner_warmup_steps
+        )
     )
     
     # Run optimization
@@ -460,6 +626,9 @@ def run_hyperparameter_optimization(
     
     for key, value in study.best_params.items():
         logger.info(f"      {key}: {value}")
+    
+    # Append final summary to results file
+    append_optimization_summary(study)
     
     return study
 
@@ -583,10 +752,15 @@ def save_best_config(study: optuna.Study, output_file: str = "best_config.env"):
 def main():
     """Main function for command-line usage."""
     
+    # Load config to get defaults
+    base_config = ModelConfig()
+    
     parser = argparse.ArgumentParser(description="Hyperparameter optimization for SCOTUS voting model")
-    parser.add_argument("--n-trials", type=int, default=50, help="Number of optimization trials")
+    parser.add_argument("--n-trials", type=int, default=base_config.optuna_n_trials, 
+                       help=f"Number of optimization trials (default: {base_config.optuna_n_trials})")
     parser.add_argument("--study-name", type=str, help="Name for the optimization study")
-    parser.add_argument("--dataset-file", type=str, help="Path to dataset file")
+    parser.add_argument("--dataset-file", type=str, default=base_config.dataset_file,
+                       help=f"Path to dataset file (default: {base_config.dataset_file})")
     parser.add_argument("--storage", type=str, help="Storage backend (e.g., sqlite:///study.db)")
     parser.add_argument("--n-jobs", type=int, default=1, help="Number of parallel jobs")
     parser.add_argument("--timeout", type=int, help="Timeout in seconds")

@@ -126,6 +126,52 @@ class ModelConfig:
         self.max_justices_per_case = int(os.getenv('MAX_JUSTICES_PER_CASE', '15'))
         self.skip_missing_descriptions = os.getenv('SKIP_MISSING_DESCRIPTIONS', 'true').lower() == 'true'
         self.skip_missing_biographies = os.getenv('SKIP_MISSING_BIOGRAPHIES', 'true').lower() == 'true'
+        
+        # Hyperparameter Optimization
+        self.optuna_n_trials = int(os.getenv('OPTUNA_N_TRIALS', '50'))
+        self.optuna_max_trial_time = int(os.getenv('OPTUNA_MAX_TRIAL_TIME', '300'))
+        self.optuna_max_epochs = int(os.getenv('OPTUNA_MAX_EPOCHS', '10'))
+        self.optuna_min_epochs = int(os.getenv('OPTUNA_MIN_EPOCHS', '2'))
+        self.optuna_early_stop_patience = int(os.getenv('OPTUNA_EARLY_STOP_PATIENCE', '3'))
+        self.optuna_max_train_samples = int(os.getenv('OPTUNA_MAX_TRAIN_SAMPLES', '500'))
+        self.optuna_max_val_samples = int(os.getenv('OPTUNA_MAX_VAL_SAMPLES', '100'))
+        self.optuna_pruner_startup_trials = int(os.getenv('OPTUNA_PRUNER_STARTUP_TRIALS', '5'))
+        self.optuna_pruner_warmup_steps = int(os.getenv('OPTUNA_PRUNER_WARMUP_STEPS', '3'))
+        
+        # Hyperparameter Search Spaces
+        self.optuna_hidden_dim_options = self._parse_int_list(os.getenv('OPTUNA_HIDDEN_DIM_OPTIONS', '256,512,768,1024'))
+        self.optuna_dropout_rate_range = self._parse_float_range(os.getenv('OPTUNA_DROPOUT_RATE_RANGE', '0.1,0.5,0.1'))
+        self.optuna_attention_heads_options = self._parse_int_list(os.getenv('OPTUNA_ATTENTION_HEADS_OPTIONS', '2,4,6,8,12,16'))
+        self.optuna_justice_attention_options = self._parse_bool_list(os.getenv('OPTUNA_JUSTICE_ATTENTION_OPTIONS', 'true,false'))
+        self.optuna_learning_rate_range = self._parse_float_range_with_log(os.getenv('OPTUNA_LEARNING_RATE_RANGE', '1e-5,1e-3,true'))
+        self.optuna_batch_size_options = self._parse_int_list(os.getenv('OPTUNA_BATCH_SIZE_OPTIONS', '8,16,32'))
+        self.optuna_weight_decay_range = self._parse_float_range_with_log(os.getenv('OPTUNA_WEIGHT_DECAY_RANGE', '1e-4,1e-1,true'))
+    
+    def _parse_int_list(self, value: str) -> list:
+        """Parse comma-separated integers."""
+        return [int(x.strip()) for x in value.split(',')]
+    
+    def _parse_bool_list(self, value: str) -> list:
+        """Parse comma-separated booleans."""
+        return [x.strip().lower() == 'true' for x in value.split(',')]
+    
+    def _parse_float_range(self, value: str) -> tuple:
+        """Parse float range as min,max,step."""
+        parts = [float(x.strip()) for x in value.split(',')]
+        if len(parts) == 3:
+            return (parts[0], parts[1], parts[2])
+        elif len(parts) == 2:
+            return (parts[0], parts[1], None)
+        else:
+            raise ValueError(f"Invalid float range format: {value}")
+    
+    def _parse_float_range_with_log(self, value: str) -> tuple:
+        """Parse float range as min,max,log_scale."""
+        parts = value.split(',')
+        if len(parts) == 3:
+            return (float(parts[0].strip()), float(parts[1].strip()), parts[2].strip().lower() == 'true')
+        else:
+            raise ValueError(f"Invalid float range with log format: {value}")
     
     def get(self, key: str, default: Any = None) -> Any:
         """
@@ -241,6 +287,26 @@ class ModelConfig:
             'max_justices_per_case': self.max_justices_per_case,
             'skip_missing_descriptions': self.skip_missing_descriptions,
             'skip_missing_biographies': self.skip_missing_biographies,
+            
+            # Hyperparameter Optimization
+            'optuna_n_trials': self.optuna_n_trials,
+            'optuna_max_trial_time': self.optuna_max_trial_time,
+            'optuna_max_epochs': self.optuna_max_epochs,
+            'optuna_min_epochs': self.optuna_min_epochs,
+            'optuna_early_stop_patience': self.optuna_early_stop_patience,
+            'optuna_max_train_samples': self.optuna_max_train_samples,
+            'optuna_max_val_samples': self.optuna_max_val_samples,
+            'optuna_pruner_startup_trials': self.optuna_pruner_startup_trials,
+            'optuna_pruner_warmup_steps': self.optuna_pruner_warmup_steps,
+            
+            # Hyperparameter Search Spaces
+            'optuna_hidden_dim_options': self.optuna_hidden_dim_options,
+            'optuna_dropout_rate_range': self.optuna_dropout_rate_range,
+            'optuna_attention_heads_options': self.optuna_attention_heads_options,
+            'optuna_justice_attention_options': self.optuna_justice_attention_options,
+            'optuna_learning_rate_range': self.optuna_learning_rate_range,
+            'optuna_batch_size_options': self.optuna_batch_size_options,
+            'optuna_weight_decay_range': self.optuna_weight_decay_range,
         }
     
     def print_config(self):
