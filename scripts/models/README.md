@@ -81,7 +81,17 @@ python scripts/models/model_trainer.py --dataset data/processed/case_dataset.jso
 
 ### Hyperparameter Optimization
 
-The system includes advanced hyperparameter optimization using Optuna:
+The system includes advanced hyperparameter optimization using Optuna with a **combined optimization objective**:
+
+**Optimization Metric**: `(KL Divergence Loss + (1 - F1-Score Macro)) / 2`
+
+This balanced approach optimizes both:
+- **Probabilistic Accuracy** (KL Divergence Loss): How well the model predicts probability distributions
+- **Classification Performance** (F1-Score Macro): Balanced performance across all 4 classes:
+  - Majority In Favor
+  - Majority Against  
+  - Majority Absent
+  - Other
 
 ```bash
 # Run hyperparameter optimization

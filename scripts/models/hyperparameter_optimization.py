@@ -51,10 +51,11 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
         
     def train_model_for_optimization(self, dataset_file: str = None) -> float:
         """
-        Train model with trial-specific hyperparameters and return validation loss.
+        Train model with trial-specific hyperparameters and return combined optimization metric.
         
         Returns:
-            Best validation loss achieved during training
+            Combined metric: (KL Divergence Loss + (1 - F1-Score Macro)) / 2
+            This balances probabilistic accuracy (loss) with classification performance (F1)
         """
         start_time = time.time()
         max_trial_time = self.base_config.optuna_max_trial_time
@@ -80,6 +81,22 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
             hyperparams = self._suggest_hyperparameters()
             self.logger.info(f"Trial hyperparameters: {hyperparams}")
             
+            # Log which parameters are tuned vs fixed
+            tuned_params = []
+            fixed_params = []
+            
+            for param_name in ['hidden_dim', 'dropout_rate', 'num_attention_heads', 'use_justice_attention', 'learning_rate', 'batch_size', 'weight_decay', 'unfreeze_epoch']:
+                tune_flag = getattr(self.base_config, f'tune_{param_name}')
+                if tune_flag:
+                    tuned_params.append(f"{param_name}={hyperparams[param_name]}")
+                else:
+                    fixed_params.append(f"{param_name}={hyperparams[param_name]}")
+            
+            if tuned_params:
+                self.logger.info(f"Tuned parameters: {', '.join(tuned_params)}")
+            if fixed_params:
+                self.logger.info(f"Fixed parameters: {', '.join(fixed_params)}")
+            
             self.logger.info("Initializing model...")
             # Initialize model with trial hyperparameters
             model = SCOTUSVotingModel(
@@ -98,6 +115,10 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
             
             model.to(self.device)
             self.logger.info("Model moved to device")
+            
+            # Override the unfreeze epoch for this trial
+            trial_unfreeze_epoch = hyperparams['unfreeze_epoch']
+            self.logger.info(f"Trial will unfreeze sentence transformers at epoch: {trial_unfreeze_epoch}")
             
             self.logger.info("Preparing datasets...")
             # Prepare datasets
@@ -152,6 +173,23 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
                 weight_decay=hyperparams['weight_decay']
             )
             
+            # Setup sentence transformer fine-tuning if enabled
+            sentence_transformer_optimizer = None
+            if self.base_config.enable_sentence_transformer_finetuning and trial_unfreeze_epoch >= 0:
+                # Create separate optimizer for sentence transformers
+                sentence_transformer_params = []
+                if self.base_config.unfreeze_bio_model:
+                    sentence_transformer_params.extend(model.bio_model.parameters())
+                if self.base_config.unfreeze_description_model:
+                    sentence_transformer_params.extend(model.description_model.parameters())
+                
+                if sentence_transformer_params:
+                    sentence_transformer_optimizer = torch.optim.AdamW(
+                        sentence_transformer_params, 
+                        lr=self.base_config.sentence_transformer_learning_rate, 
+                        weight_decay=hyperparams['weight_decay']
+                    )
+            
             # Setup loss function (fixed to KL Divergence for optimization)
             criterion = nn.KLDivLoss(reduction='batchmean')
             
@@ -163,7 +201,7 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
             self.logger.info("Starting training loop...")
             # Training loop with early stopping
             model.train()
-            best_val_loss = float('inf')
+            best_combined_metric = float('inf')
             patience_counter = 0
             
             max_epochs = self.base_config.optuna_max_epochs
@@ -173,7 +211,23 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
                 if max_trial_time > 0 and time.time() - start_time > max_trial_time:
                     self.logger.warning(f"Trial timeout after {max_trial_time} seconds")
                     break
+                
+                # Check if we should unfreeze sentence transformers at this epoch
+                if (self.base_config.enable_sentence_transformer_finetuning and 
+                    trial_unfreeze_epoch == epoch and
+                    sentence_transformer_optimizer is not None):
                     
+                    self.logger.info(f"🔓 Unfreezing sentence transformers at epoch {epoch + 1}")
+                    model.unfreeze_models_selectively(
+                        unfreeze_bio=self.base_config.unfreeze_bio_model,
+                        unfreeze_description=self.base_config.unfreeze_description_model
+                    )
+                    
+                    # Log the status
+                    status = model.get_sentence_transformer_status()
+                    self.logger.info(f"   Bio model trainable: {status['bio_model_trainable']}")
+                    self.logger.info(f"   Description model trainable: {status['description_model_trainable']}")
+                
                 self.logger.info(f"Starting epoch {epoch+1}/{max_epochs}")
                 # Training phase
                 model.train()
@@ -192,6 +246,8 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
                 for batch_idx, batch in train_pbar:
                     try:
                         optimizer.zero_grad()
+                        if sentence_transformer_optimizer is not None:
+                            sentence_transformer_optimizer.zero_grad()
                         
                         batch_predictions = []
                         batch_targets = batch['targets'].to(self.device)
@@ -220,6 +276,11 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
                         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
                         
                         optimizer.step()
+                        if sentence_transformer_optimizer is not None:
+                            # Check if sentence transformers are actually unfrozen before stepping
+                            status = model.get_sentence_transformer_status()
+                            if status['any_trainable']:
+                                sentence_transformer_optimizer.step()
                         
                         train_loss += loss.item()
                         num_batches += 1
@@ -243,22 +304,22 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
                 
                 # Validation phase
                 self.logger.info(f"Starting validation for epoch {epoch+1}")
-                val_loss = self._evaluate_model_for_optimization(model, val_loader, criterion)
+                combined_metric = self._evaluate_model_for_optimization(model, val_loader, criterion)
                 
-                # Learning rate scheduling
-                scheduler.step(val_loss)
+                # Learning rate scheduling (using combined metric)
+                scheduler.step(combined_metric)
                 
                 # Early stopping check
-                if val_loss < best_val_loss:
-                    best_val_loss = val_loss
+                if combined_metric < best_combined_metric:
+                    best_combined_metric = combined_metric
                     patience_counter = 0
                 else:
                     patience_counter += 1
                 
-                self.logger.info(f"Epoch {epoch+1} completed - Train: {avg_train_loss:.4f}, Val: {val_loss:.4f}")
+                self.logger.info(f"Epoch {epoch+1} completed - Train Loss: {avg_train_loss:.4f}, Combined Metric: {combined_metric:.4f}")
                 
                 # Report intermediate value to Optuna
-                self.trial.report(val_loss, epoch)
+                self.trial.report(combined_metric, epoch)
                 
                 # Check if trial should be pruned
                 if self.trial.should_prune():
@@ -270,8 +331,8 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
                     self.logger.info(f"Early stopping at epoch {epoch+1}")
                     break
             
-            self.logger.info(f"Trial completed with best validation loss: {best_val_loss:.4f}")
-            return best_val_loss
+            self.logger.info(f"Trial completed with best combined metric: {best_combined_metric:.4f}")
+            return best_combined_metric
             
         except Exception as e:
             self.logger.error(f"Error in trial: {e}")
@@ -338,11 +399,21 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
         return hyperparams
     
     def _evaluate_model_for_optimization(self, model: SCOTUSVotingModel, data_loader, criterion) -> float:
-        """Evaluate model for optimization (faster version)."""
+        """
+        Evaluate model for optimization using combined loss and F1-Score Macro.
+        
+        Returns:
+            Combined metric: (KL Divergence Loss + (1 - F1-Score Macro)) / 2
+            This ensures both metrics are in the same direction (lower is better)
+        """
         model.eval()
         total_loss = 0.0
         num_batches = 0
         first_batch_logged = False
+        
+        # For F1-Score calculation
+        all_predictions = []
+        all_targets = []
         
         with torch.no_grad():
             for batch_idx, batch in enumerate(data_loader):
@@ -366,6 +437,14 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
                     log_predictions = torch.log_softmax(predictions_tensor, dim=1)
                     # Targets are already probability distributions, no need to normalize
                     loss = criterion(log_predictions, batch_targets)
+                    
+                    # Store predictions and targets for F1-Score calculation
+                    # Convert to class predictions (argmax) for F1-Score
+                    predicted_classes = torch.argmax(predictions_tensor, dim=1).cpu().numpy()
+                    target_classes = torch.argmax(batch_targets, dim=1).cpu().numpy()
+                    
+                    all_predictions.extend(predicted_classes)
+                    all_targets.extend(target_classes)
                     
                     # Log predictions vs targets for first batch only
                     if not first_batch_logged and batch_idx == 0:
@@ -393,7 +472,7 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
                             # Show which class has highest prediction vs target
                             pred_class = pred.argmax()
                             target_class = target.argmax()
-                            class_names = ["In Favor", "Against", "Absent", "Other"]
+                            class_names = ["Majority In Favor", "Majority Against", "Majority Absent", "Other"]
                             self.logger.info(f"  Pred Class: {class_names[pred_class]} ({pred[pred_class]:.4f})")
                             self.logger.info(f"  True Class: {class_names[target_class]} ({target[target_class]:.4f})")
                             self.logger.info("")
@@ -408,7 +487,77 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
                     continue
         
         model.train()
-        return total_loss / num_batches if num_batches > 0 else float('inf')
+        
+        if num_batches == 0:
+            return float('inf')
+        
+        # Calculate average loss
+        avg_loss = total_loss / num_batches
+        
+        # Calculate F1-Score Macro
+        f1_macro = self._calculate_f1_macro(all_predictions, all_targets)
+        
+        # Combine metrics: (Loss + (1 - F1)) / 2
+        # This ensures both metrics are minimized (lower is better)
+        combined_metric = (avg_loss + (1.0 - f1_macro)) / 2.0
+        
+        self.logger.info(f"Evaluation metrics - Loss: {avg_loss:.4f}, F1-Macro: {f1_macro:.4f}, Combined: {combined_metric:.4f}")
+        
+        return combined_metric
+    
+    def _calculate_f1_macro(self, predictions: list, targets: list) -> float:
+        """
+        Calculate F1-Score Macro for 4 classes.
+        
+        Args:
+            predictions: List of predicted class indices
+            targets: List of target class indices
+            
+        Returns:
+            F1-Score Macro (average of per-class F1 scores)
+        """
+        from sklearn.metrics import f1_score
+        import numpy as np
+        
+        # Convert to numpy arrays
+        y_pred = np.array(predictions)
+        y_true = np.array(targets)
+        
+        # Class names for logging
+        class_names = ["Majority In Favor", "Majority Against", "Majority Absent", "Other"]
+        
+        # Calculate F1-Score for each class
+        f1_scores = []
+        
+        for class_idx in range(4):  # 4 classes: 0, 1, 2, 3
+            # Create binary classification for this class
+            y_true_binary = (y_true == class_idx).astype(int)
+            y_pred_binary = (y_pred == class_idx).astype(int)
+            
+            # Calculate F1 for this class
+            if np.sum(y_true_binary) == 0 and np.sum(y_pred_binary) == 0:
+                # No true positives and no predicted positives - perfect for this class
+                f1_class = 1.0
+            elif np.sum(y_true_binary) == 0:
+                # No true positives but some predicted positives - precision = 0
+                f1_class = 0.0
+            elif np.sum(y_pred_binary) == 0:
+                # No predicted positives but some true positives - recall = 0
+                f1_class = 0.0
+            else:
+                # Standard F1 calculation
+                f1_class = f1_score(y_true_binary, y_pred_binary, zero_division=0.0)
+            
+            f1_scores.append(f1_class)
+            self.logger.debug(f"F1-Score for {class_names[class_idx]}: {f1_class:.4f}")
+        
+        # Calculate macro average
+        f1_macro = np.mean(f1_scores)
+        
+        self.logger.debug(f"Individual F1 scores: {[f'{score:.4f}' for score in f1_scores]}")
+        self.logger.debug(f"F1-Score Macro: {f1_macro:.4f}")
+        
+        return f1_macro
 
     def _log_tuning_configuration(self):
         """Log the tuning configuration for debugging purposes."""
@@ -460,13 +609,13 @@ def initialize_results_file(study_name: str, n_trials: int, dataset_file: str):
         logger.warning(f"Failed to initialize results file: {e}")
 
 
-def append_trial_results(trial: Trial, val_loss: float, hyperparams: Dict[str, Any] = None, trial_status: str = "COMPLETED"):
+def append_trial_results(trial: Trial, combined_metric: float, hyperparams: Dict[str, Any] = None, trial_status: str = "COMPLETED"):
     """
     Append trial results to the tuning results file.
     
     Args:
         trial: Optuna trial object
-        val_loss: Validation loss achieved
+        combined_metric: Combined optimization metric achieved
         hyperparams: Trial hyperparameters (optional, will be extracted from trial if not provided)
         trial_status: Status of the trial (COMPLETED, PRUNED, FAILED)
     """
@@ -487,7 +636,7 @@ def append_trial_results(trial: Trial, val_loss: float, hyperparams: Dict[str, A
     result_lines = [
         f"=" * 80,
         f"Trial #{trial.number} - {timestamp}",
-        f"Validation Loss: {val_loss:.6f}",
+        f"Combined Metric (Loss + (1-F1))/2: {combined_metric:.6f}",
         f"Trial Status: {trial_status}",
         f"Parameters:",
     ]
@@ -531,7 +680,7 @@ def append_optimization_summary(study: optuna.Study):
         f"Failed trials: {len([t for t in study.trials if t.state == optuna.trial.TrialState.FAIL])}",
         "",
         f"BEST TRIAL: #{study.best_trial.number}",
-        f"Best validation loss: {study.best_value:.6f}",
+        f"Best combined metric (Loss + (1-F1))/2: {study.best_value:.6f}",
         f"Best parameters:",
     ]
     
@@ -565,7 +714,8 @@ def objective(trial: Trial, base_config: ModelConfig, dataset_file: str) -> floa
         dataset_file: Path to dataset file
         
     Returns:
-        Validation loss to minimize
+        Combined metric to minimize: (KL Divergence Loss + (1 - F1-Score Macro)) / 2
+        This balances probabilistic accuracy with classification performance
     """
     logger = get_logger(__name__)
     logger.info(f"Starting trial {trial.number}")
@@ -574,15 +724,15 @@ def objective(trial: Trial, base_config: ModelConfig, dataset_file: str) -> floa
         # Create trainer for this trial
         trainer = OptunaModelTrainer(trial, base_config)
         
-        # Train model and get validation loss
-        val_loss = trainer.train_model_for_optimization(dataset_file)
+        # Train model and get combined metric
+        combined_metric = trainer.train_model_for_optimization(dataset_file)
         
-        logger.info(f"Trial {trial.number} completed with validation loss: {val_loss:.4f}")
+        logger.info(f"Trial {trial.number} completed with combined metric: {combined_metric:.4f}")
         
         # Append trial results to file
-        append_trial_results(trial, val_loss, trial_status="COMPLETED")
+        append_trial_results(trial, combined_metric, trial_status="COMPLETED")
         
-        return val_loss
+        return combined_metric
         
     except optuna.TrialPruned:
         logger.info(f"Trial {trial.number} was pruned")
@@ -645,7 +795,7 @@ def run_hyperparameter_optimization(
     # Create study
     study = optuna.create_study(
         study_name=study_name,
-        direction='minimize',  # Minimize validation loss
+        direction='minimize',  # Minimize combined metric: (Loss + (1-F1))/2
         storage=storage,
         load_if_exists=True,
         pruner=optuna.pruners.MedianPruner(
@@ -666,7 +816,7 @@ def run_hyperparameter_optimization(
     # Print results
     logger.info(f"🎉 Optimization completed!")
     logger.info(f"   🏆 Best trial: {study.best_trial.number}")
-    logger.info(f"   📈 Best validation loss: {study.best_value:.4f}")
+    logger.info(f"   📈 Best combined metric: {study.best_value:.4f}")
     logger.info(f"   ⚙️  Best parameters:")
     
     for key, value in study.best_params.items():
@@ -698,8 +848,9 @@ def save_best_config(study: optuna.Study, output_file: str = "best_config.env"):
         "# SCOTUS AI Model Configuration - Optimized with Optuna",
         f"# Study: {study.study_name}",
         f"# Best trial: {study.best_trial.number}",
-        f"# Best validation loss: {study.best_value:.6f}",
+        f"# Best combined metric (Loss + (1-F1))/2: {study.best_value:.6f}",
         f"# Optimization date: {datetime.now().isoformat()}",
+        f"# Note: Optimized using combined KL Divergence Loss and F1-Score Macro",
         "",
         "# Model Architecture",
         f"BIO_MODEL_NAME={base_config.bio_model_name}",
