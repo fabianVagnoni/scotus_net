@@ -112,6 +112,13 @@ class ModelConfig:
         self.use_mixed_precision = os.getenv('USE_MIXED_PRECISION', 'false').lower() == 'true'
         self.gradient_accumulation_steps = int(os.getenv('GRADIENT_ACCUMULATION_STEPS', '1'))
         
+        # Sentence Transformer Fine-tuning
+        self.enable_sentence_transformer_finetuning = os.getenv('ENABLE_SENTENCE_TRANSFORMER_FINETUNING', 'true').lower() == 'true'
+        self.unfreeze_sentence_transformers_epoch = int(os.getenv('UNFREEZE_SENTENCE_TRANSFORMERS_EPOCH', '2'))
+        self.sentence_transformer_learning_rate = float(os.getenv('SENTENCE_TRANSFORMER_LEARNING_RATE', '1e-5'))
+        self.unfreeze_bio_model = os.getenv('UNFREEZE_BIO_MODEL', 'true').lower() == 'true'
+        self.unfreeze_description_model = os.getenv('UNFREEZE_DESCRIPTION_MODEL', 'true').lower() == 'true'
+        
         # Random Seeds
         self.random_seed = int(os.getenv('RANDOM_SEED', '42'))
         self.torch_seed = int(os.getenv('TORCH_SEED', '42'))
@@ -146,6 +153,17 @@ class ModelConfig:
         self.optuna_learning_rate_range = self._parse_float_range_with_log(os.getenv('OPTUNA_LEARNING_RATE_RANGE', '1e-5,1e-3,true'))
         self.optuna_batch_size_options = self._parse_int_list(os.getenv('OPTUNA_BATCH_SIZE_OPTIONS', '8,16,32'))
         self.optuna_weight_decay_range = self._parse_float_range_with_log(os.getenv('OPTUNA_WEIGHT_DECAY_RANGE', '1e-4,1e-1,true'))
+        self.optuna_unfreeze_epoch_options = self._parse_int_list(os.getenv('OPTUNA_UNFREEZE_EPOCH_OPTIONS', '-1,0,1,2,3,5'))
+        
+        # Hyperparameter Tuning Control
+        self.tune_hidden_dim = os.getenv('TUNE_HIDDEN_DIM', 'true').lower() == 'true'
+        self.tune_dropout_rate = os.getenv('TUNE_DROPOUT_RATE', 'true').lower() == 'true'
+        self.tune_num_attention_heads = os.getenv('TUNE_NUM_ATTENTION_HEADS', 'true').lower() == 'true'
+        self.tune_use_justice_attention = os.getenv('TUNE_USE_JUSTICE_ATTENTION', 'true').lower() == 'true'
+        self.tune_learning_rate = os.getenv('TUNE_LEARNING_RATE', 'true').lower() == 'true'
+        self.tune_batch_size = os.getenv('TUNE_BATCH_SIZE', 'true').lower() == 'true'
+        self.tune_weight_decay = os.getenv('TUNE_WEIGHT_DECAY', 'true').lower() == 'true'
+        self.tune_unfreeze_epoch = os.getenv('TUNE_UNFREEZE_EPOCH', 'true').lower() == 'true'
     
     def _parse_int_list(self, value: str) -> list:
         """Parse comma-separated integers."""
@@ -273,6 +291,13 @@ class ModelConfig:
             'use_mixed_precision': self.use_mixed_precision,
             'gradient_accumulation_steps': self.gradient_accumulation_steps,
             
+            # Sentence Transformer Fine-tuning
+            'enable_sentence_transformer_finetuning': self.enable_sentence_transformer_finetuning,
+            'unfreeze_sentence_transformers_epoch': self.unfreeze_sentence_transformers_epoch,
+            'sentence_transformer_learning_rate': self.sentence_transformer_learning_rate,
+            'unfreeze_bio_model': self.unfreeze_bio_model,
+            'unfreeze_description_model': self.unfreeze_description_model,
+            
             # Random Seeds
             'random_seed': self.random_seed,
             'torch_seed': self.torch_seed,
@@ -307,6 +332,17 @@ class ModelConfig:
             'optuna_learning_rate_range': self.optuna_learning_rate_range,
             'optuna_batch_size_options': self.optuna_batch_size_options,
             'optuna_weight_decay_range': self.optuna_weight_decay_range,
+            'optuna_unfreeze_epoch_options': self.optuna_unfreeze_epoch_options,
+            
+            # Hyperparameter Tuning Control
+            'tune_hidden_dim': self.tune_hidden_dim,
+            'tune_dropout_rate': self.tune_dropout_rate,
+            'tune_num_attention_heads': self.tune_num_attention_heads,
+            'tune_use_justice_attention': self.tune_use_justice_attention,
+            'tune_learning_rate': self.tune_learning_rate,
+            'tune_batch_size': self.tune_batch_size,
+            'tune_weight_decay': self.tune_weight_decay,
+            'tune_unfreeze_epoch': self.tune_unfreeze_epoch,
         }
     
     def print_config(self):

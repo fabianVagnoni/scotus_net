@@ -81,15 +81,70 @@ python scripts/models/model_trainer.py --dataset data/processed/case_dataset.jso
 
 ### Hyperparameter Optimization
 
+The system includes advanced hyperparameter optimization using Optuna:
+
 ```bash
-# Run optimization with 50 trials
+# Run hyperparameter optimization
 python scripts/models/hyperparameter_optimization.py --n-trials 50
 
-# Distributed optimization with storage
+# Run with custom study name and storage
 python scripts/models/hyperparameter_optimization.py \
     --n-trials 100 \
-    --storage sqlite:///optuna_study.db \
-    --study-name scotus_optimization
+    --study-name "scotus_optimization_v2" \
+    --storage "sqlite:///optimization.db"
+```
+
+### Selective Parameter Tuning
+
+You can control which hyperparameters to tune by modifying the `TUNE_*` variables in `config.env`:
+
+```bash
+# Example 1: Only tune learning rate and dropout (architecture fixed)
+TUNE_LEARNING_RATE=true
+TUNE_DROPOUT_RATE=true
+TUNE_HIDDEN_DIM=false
+TUNE_NUM_ATTENTION_HEADS=false
+TUNE_USE_JUSTICE_ATTENTION=false
+TUNE_BATCH_SIZE=false
+TUNE_WEIGHT_DECAY=false
+
+# Example 2: Only tune architecture (training params fixed)
+TUNE_HIDDEN_DIM=true
+TUNE_NUM_ATTENTION_HEADS=true
+TUNE_USE_JUSTICE_ATTENTION=true
+TUNE_LEARNING_RATE=false
+TUNE_DROPOUT_RATE=false
+TUNE_BATCH_SIZE=false
+TUNE_WEIGHT_DECAY=false
+
+# Example 3: Tune everything (default)
+TUNE_HIDDEN_DIM=true
+TUNE_DROPOUT_RATE=true
+TUNE_NUM_ATTENTION_HEADS=true
+TUNE_USE_JUSTICE_ATTENTION=true
+TUNE_LEARNING_RATE=true
+TUNE_BATCH_SIZE=true
+TUNE_WEIGHT_DECAY=true
+```
+
+Benefits of selective tuning:
+- **Faster optimization**: Fewer parameters = faster trials
+- **Focused experiments**: Test specific hypotheses about model components
+- **Resource efficiency**: Optimize only the most impactful parameters
+- **Ablation studies**: Understand the contribution of different hyperparameters
+
+The optimization will automatically log which parameters are being tuned vs fixed:
+
+```
+🎛️  Hyperparameter tuning configuration:
+   ✅ Tuned: Hidden Dimension
+   🔒 Fixed: Dropout Rate  
+   ✅ Tuned: Attention Heads
+   🔒 Fixed: Justice Attention
+   ✅ Tuned: Learning Rate
+   🔒 Fixed: Batch Size
+   🔒 Fixed: Weight Decay
+   📈 Total parameters to tune: 3/7
 ```
 
 ### Model Prediction

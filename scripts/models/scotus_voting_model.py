@@ -62,6 +62,9 @@ class SCOTUSVotingModel(nn.Module):
         self.bio_model = SentenceTransformer(bio_model_name, device=device)
         self.description_model = SentenceTransformer(description_model_name, device=device)
         
+        # Initially freeze sentence transformers (will be unfrozen during training if configured)
+        self.freeze_sentence_transformers()
+        
         # Verify embedding dimensions match and create projection layers if needed
         bio_actual_dim = self.bio_model.get_sentence_embedding_dimension()
         desc_actual_dim = self.description_model.get_sentence_embedding_dimension()
@@ -448,6 +451,69 @@ class SCOTUSVotingModel(nn.Module):
         return {
             'bio_paths': list(self.bio_tokenized_data.keys()),
             'description_paths': list(self.description_tokenized_data.keys())
+        }
+
+    def freeze_sentence_transformers(self):
+        """Freeze all sentence transformers."""
+        for param in self.bio_model.parameters():
+            param.requires_grad = False
+        for param in self.description_model.parameters():
+            param.requires_grad = False
+
+    def unfreeze_sentence_transformers(self):
+        """Unfreeze all sentence transformers."""
+        for param in self.bio_model.parameters():
+            param.requires_grad = True
+        for param in self.description_model.parameters():
+            param.requires_grad = True
+
+    def freeze_bio_model(self):
+        """Freeze only the biography sentence transformer."""
+        for param in self.bio_model.parameters():
+            param.requires_grad = False
+
+    def unfreeze_bio_model(self):
+        """Unfreeze only the biography sentence transformer."""
+        for param in self.bio_model.parameters():
+            param.requires_grad = True
+
+    def freeze_description_model(self):
+        """Freeze only the description sentence transformer."""
+        for param in self.description_model.parameters():
+            param.requires_grad = False
+
+    def unfreeze_description_model(self):
+        """Unfreeze only the description sentence transformer."""
+        for param in self.description_model.parameters():
+            param.requires_grad = True
+
+    def unfreeze_models_selectively(self, unfreeze_bio: bool = True, unfreeze_description: bool = True):
+        """
+        Selectively unfreeze sentence transformer models.
+        
+        Args:
+            unfreeze_bio: Whether to unfreeze the biography model
+            unfreeze_description: Whether to unfreeze the description model
+        """
+        if unfreeze_bio:
+            self.unfreeze_bio_model()
+        if unfreeze_description:
+            self.unfreeze_description_model()
+
+    def get_sentence_transformer_status(self) -> Dict[str, bool]:
+        """
+        Get the frozen/unfrozen status of sentence transformers.
+        
+        Returns:
+            Dictionary with model names and their trainable status
+        """
+        bio_trainable = any(param.requires_grad for param in self.bio_model.parameters())
+        desc_trainable = any(param.requires_grad for param in self.description_model.parameters())
+        
+        return {
+            'bio_model_trainable': bio_trainable,
+            'description_model_trainable': desc_trainable,
+            'any_trainable': bio_trainable or desc_trainable
         }
 
 

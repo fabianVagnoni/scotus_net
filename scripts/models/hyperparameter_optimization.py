@@ -279,30 +279,63 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
     
     def _suggest_hyperparameters(self) -> Dict[str, Any]:
         """Suggest hyperparameters for the current trial."""
-        # Get dropout rate suggestion
-        dropout_min, dropout_max, dropout_step = self.base_config.optuna_dropout_rate_range
-        dropout_kwargs = {'step': dropout_step} if dropout_step is not None else {}
+        hyperparams = {}
         
-        # Get learning rate suggestion
-        lr_min, lr_max, lr_log = self.base_config.optuna_learning_rate_range
-        lr_kwargs = {'log': lr_log} if lr_log else {}
+        # Model Architecture - Hidden Dimension
+        if self.base_config.tune_hidden_dim:
+            hyperparams['hidden_dim'] = self.trial.suggest_categorical('hidden_dim', self.base_config.optuna_hidden_dim_options)
+        else:
+            hyperparams['hidden_dim'] = self.base_config.hidden_dim
         
-        # Get weight decay suggestion
-        wd_min, wd_max, wd_log = self.base_config.optuna_weight_decay_range
-        wd_kwargs = {'log': wd_log} if wd_log else {}
+        # Regularization - Dropout Rate
+        if self.base_config.tune_dropout_rate:
+            dropout_min, dropout_max, dropout_step = self.base_config.optuna_dropout_rate_range
+            dropout_kwargs = {'step': dropout_step} if dropout_step is not None else {}
+            hyperparams['dropout_rate'] = self.trial.suggest_float('dropout_rate', dropout_min, dropout_max, **dropout_kwargs)
+        else:
+            hyperparams['dropout_rate'] = self.base_config.dropout_rate
         
-        return {
-            # Model Architecture
-            'hidden_dim': self.trial.suggest_categorical('hidden_dim', self.base_config.optuna_hidden_dim_options),
-            'dropout_rate': self.trial.suggest_float('dropout_rate', dropout_min, dropout_max, **dropout_kwargs),
-            'num_attention_heads': self.trial.suggest_categorical('num_attention_heads', self.base_config.optuna_attention_heads_options),
-            'use_justice_attention': self.trial.suggest_categorical('use_justice_attention', self.base_config.optuna_justice_attention_options),
-            
-            # Training Parameters
-            'learning_rate': self.trial.suggest_float('learning_rate', lr_min, lr_max, **lr_kwargs),
-            'batch_size': self.trial.suggest_categorical('batch_size', self.base_config.optuna_batch_size_options),
-            'weight_decay': self.trial.suggest_float('weight_decay', wd_min, wd_max, **wd_kwargs)
-        }
+        # Attention Mechanism - Number of Heads
+        if self.base_config.tune_num_attention_heads:
+            hyperparams['num_attention_heads'] = self.trial.suggest_categorical('num_attention_heads', self.base_config.optuna_attention_heads_options)
+        else:
+            hyperparams['num_attention_heads'] = self.base_config.num_attention_heads
+        
+        # Attention Mechanism - Use Justice Attention
+        if self.base_config.tune_use_justice_attention:
+            hyperparams['use_justice_attention'] = self.trial.suggest_categorical('use_justice_attention', self.base_config.optuna_justice_attention_options)
+        else:
+            hyperparams['use_justice_attention'] = self.base_config.use_justice_attention
+        
+        # Training Parameters - Learning Rate
+        if self.base_config.tune_learning_rate:
+            lr_min, lr_max, lr_log = self.base_config.optuna_learning_rate_range
+            lr_kwargs = {'log': lr_log} if lr_log else {}
+            hyperparams['learning_rate'] = self.trial.suggest_float('learning_rate', lr_min, lr_max, **lr_kwargs)
+        else:
+            hyperparams['learning_rate'] = self.base_config.learning_rate
+        
+        # Training Parameters - Batch Size
+        if self.base_config.tune_batch_size:
+            hyperparams['batch_size'] = self.trial.suggest_categorical('batch_size', self.base_config.optuna_batch_size_options)
+        else:
+            hyperparams['batch_size'] = self.base_config.batch_size
+        
+        # Regularization - Weight Decay
+        if self.base_config.tune_weight_decay:
+            wd_min, wd_max, wd_log = self.base_config.optuna_weight_decay_range
+            wd_kwargs = {'log': wd_log} if wd_log else {}
+            hyperparams['weight_decay'] = self.trial.suggest_float('weight_decay', wd_min, wd_max, **wd_kwargs)
+        else:
+            hyperparams['weight_decay'] = self.base_config.weight_decay
+        
+        # Sentence Transformer Fine-tuning - Unfreeze Epoch
+        if self.base_config.tune_unfreeze_epoch:
+            hyperparams['unfreeze_epoch'] = self.trial.suggest_categorical('unfreeze_epoch', self.base_config.optuna_unfreeze_epoch_options)
+        else:
+            hyperparams['unfreeze_epoch'] = self.base_config.unfreeze_sentence_transformers_epoch
+        
+        return hyperparams
     
     def _evaluate_model_for_optimization(self, model: SCOTUSVotingModel, data_loader, criterion) -> float:
         """Evaluate model for optimization (faster version)."""
@@ -376,6 +409,18 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
         
         model.train()
         return total_loss / num_batches if num_batches > 0 else float('inf')
+
+    def _log_tuning_configuration(self):
+        """Log the tuning configuration for debugging purposes."""
+        self.logger.info("Tuning configuration:")
+        self.logger.info(f"  - Hidden Dimension: {'Tuned' if self.base_config.tune_hidden_dim else 'Fixed'}")
+        self.logger.info(f"  - Dropout Rate: {'Tuned' if self.base_config.tune_dropout_rate else 'Fixed'}")
+        self.logger.info(f"  - Number of Attention Heads: {'Tuned' if self.base_config.tune_num_attention_heads else 'Fixed'}")
+        self.logger.info(f"  - Use Justice Attention: {'Tuned' if self.base_config.tune_use_justice_attention else 'Fixed'}")
+        self.logger.info(f"  - Learning Rate: {'Tuned' if self.base_config.tune_learning_rate else 'Fixed'}")
+        self.logger.info(f"  - Batch Size: {'Tuned' if self.base_config.tune_batch_size else 'Fixed'}")
+        self.logger.info(f"  - Weight Decay: {'Tuned' if self.base_config.tune_weight_decay else 'Fixed'}")
+        self.logger.info(f"  - Unfreeze Epoch: {'Tuned' if self.base_config.tune_unfreeze_epoch else 'Fixed'}")
 
 
 def initialize_results_file(study_name: str, n_trials: int, dataset_file: str):
@@ -746,7 +791,7 @@ def save_best_config(study: optuna.Study, output_file: str = "best_config.env"):
     with open(output_file, 'w') as f:
         f.write('\n'.join(config_lines))
     
-    logger.info(f"�� Best configuration saved to: {output_file}")
+    logger.info(f" Best configuration saved to: {output_file}")
 
 
 def main():

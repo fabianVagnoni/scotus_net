@@ -1,0 +1,680 @@
+################################################################################
+# SCOTUS AI Hyperparameter Optimization Results
+# Study: scotus_optimization_20250625_071903
+# Started: 2025-06-25 07:19:03
+# Number of trials: 50
+# Dataset: data/processed/case_dataset.json
+################################################################################
+
+================================================================================
+Trial #0 - 2025-06-25 07:25:24
+Validation Loss: 0.276235
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 256
+  dropout_rate: 0.5
+  num_attention_heads: 4
+  use_justice_attention: True
+  learning_rate: 0.000210307274144357
+  batch_size: 8
+  weight_decay: 0.002507771703703737
+
+================================================================================
+Trial #1 - 2025-06-25 07:31:41
+Validation Loss: 0.283997
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 1024
+  dropout_rate: 0.1
+  num_attention_heads: 6
+  use_justice_attention: False
+  learning_rate: 0.00024018849326148655
+  batch_size: 8
+  weight_decay: 0.00023108261672871017
+
+================================================================================
+Trial #2 - 2025-06-25 07:37:49
+Validation Loss: 0.262425
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 256
+  dropout_rate: 0.2
+  num_attention_heads: 8
+  use_justice_attention: False
+  learning_rate: 3.857112871889062e-05
+  batch_size: 16
+  weight_decay: 0.009663400670803917
+
+================================================================================
+Trial #3 - 2025-06-25 07:44:06
+Validation Loss: 0.276231
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 768
+  dropout_rate: 0.5
+  num_attention_heads: 32
+  use_justice_attention: False
+  learning_rate: 1.4708278076430469e-05
+  batch_size: 8
+  weight_decay: 0.003065983856117491
+
+================================================================================
+Trial #4 - 2025-06-25 07:48:51
+Validation Loss: 0.276538
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 1024
+  dropout_rate: 0.1
+  num_attention_heads: 16
+  use_justice_attention: False
+  learning_rate: 0.0008902768759352965
+  batch_size: 8
+  weight_decay: 0.006634825948358354
+
+================================================================================
+Trial #5 - 2025-06-25 07:55:09
+Validation Loss: 0.273724
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 768
+  dropout_rate: 0.1
+  num_attention_heads: 6
+  use_justice_attention: False
+  learning_rate: 3.3897693198952826e-05
+  batch_size: 8
+  weight_decay: 0.01878250286163659
+
+================================================================================
+Trial #6 - 2025-06-25 08:01:26
+Validation Loss: inf
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 768
+  dropout_rate: 0.1
+  num_attention_heads: 16
+  use_justice_attention: False
+  learning_rate: 0.0001021745806992011
+  batch_size: 8
+  weight_decay: 0.012296347295179678
+
+================================================================================
+Trial #7 - 2025-06-25 08:07:49
+Validation Loss: 0.268435
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 512
+  dropout_rate: 0.1
+  num_attention_heads: 8
+  use_justice_attention: True
+  learning_rate: 1.0664465477553808e-05
+  batch_size: 8
+  weight_decay: 0.02276749669973532
+
+================================================================================
+Trial #8 - 2025-06-25 08:14:01
+Validation Loss: 0.262990
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 768
+  dropout_rate: 0.4
+  num_attention_heads: 4
+  use_justice_attention: True
+  learning_rate: 9.739632108411852e-05
+  batch_size: 16
+  weight_decay: 0.05518472309752567
+
+================================================================================
+Trial #9 - 2025-06-25 08:20:20
+Validation Loss: 0.273524
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 1024
+  dropout_rate: 0.1
+  num_attention_heads: 4
+  use_justice_attention: False
+  learning_rate: 5.957503545605789e-05
+  batch_size: 8
+  weight_decay: 0.07744993865401074
+
+================================================================================
+Trial #10 - 2025-06-25 08:26:33
+Validation Loss: 0.261316
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 256
+  dropout_rate: 0.30000000000000004
+  num_attention_heads: 8
+  use_justice_attention: True
+  learning_rate: 2.9047851823289305e-05
+  batch_size: 16
+  weight_decay: 0.0006754941664079527
+
+================================================================================
+Trial #11 - 2025-06-25 08:32:46
+Validation Loss: 0.262671
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 256
+  dropout_rate: 0.30000000000000004
+  num_attention_heads: 8
+  use_justice_attention: True
+  learning_rate: 2.7123634600629605e-05
+  batch_size: 16
+  weight_decay: 0.0005561833834187448
+
+================================================================================
+Trial #12 - 2025-06-25 08:38:58
+Validation Loss: 0.268300
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 256
+  dropout_rate: 0.30000000000000004
+  num_attention_heads: 8
+  use_justice_attention: True
+  learning_rate: 3.00097201532163e-05
+  batch_size: 16
+  weight_decay: 0.0011694354247316831
+
+================================================================================
+Trial #13 - 2025-06-25 08:45:10
+Validation Loss: 0.260316
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 256
+  dropout_rate: 0.2
+  num_attention_heads: 8
+  use_justice_attention: True
+  learning_rate: 5.061712511735025e-05
+  batch_size: 16
+  weight_decay: 0.00010141938471915933
+
+================================================================================
+Trial #14 - 2025-06-25 08:51:23
+Validation Loss: 0.263668
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 256
+  dropout_rate: 0.2
+  num_attention_heads: 8
+  use_justice_attention: True
+  learning_rate: 1.797604450088015e-05
+  batch_size: 16
+  weight_decay: 0.00013085864362728322
+
+================================================================================
+Trial #15 - 2025-06-25 08:56:03
+Validation Loss: 0.262711
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 512
+  dropout_rate: 0.2
+  num_attention_heads: 32
+  use_justice_attention: True
+  learning_rate: 8.22259119510684e-05
+  batch_size: 16
+  weight_decay: 0.0004213794498360032
+
+================================================================================
+Trial #16 - 2025-06-25 09:02:15
+Validation Loss: 0.261977
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 256
+  dropout_rate: 0.4
+  num_attention_heads: 8
+  use_justice_attention: True
+  learning_rate: 0.0001984474956739002
+  batch_size: 16
+  weight_decay: 0.00010660024171238878
+
+================================================================================
+Trial #17 - 2025-06-25 09:08:27
+Validation Loss: 0.262591
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 256
+  dropout_rate: 0.4
+  num_attention_heads: 8
+  use_justice_attention: True
+  learning_rate: 5.416122886666987e-05
+  batch_size: 16
+  weight_decay: 0.0010286127626081246
+
+================================================================================
+Trial #18 - 2025-06-25 09:13:09
+Validation Loss: 0.278272
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 256
+  dropout_rate: 0.30000000000000004
+  num_attention_heads: 8
+  use_justice_attention: True
+  learning_rate: 0.000723530696372513
+  batch_size: 16
+  weight_decay: 0.00039888255618504326
+
+================================================================================
+Trial #19 - 2025-06-25 09:19:22
+Validation Loss: 0.262507
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 512
+  dropout_rate: 0.2
+  num_attention_heads: 6
+  use_justice_attention: True
+  learning_rate: 2.185615901778318e-05
+  batch_size: 16
+  weight_decay: 0.001320297893988421
+
+================================================================================
+Trial #20 - 2025-06-25 09:25:34
+Validation Loss: 0.263736
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 256
+  dropout_rate: 0.30000000000000004
+  num_attention_heads: 16
+  use_justice_attention: True
+  learning_rate: 0.00013645694825393246
+  batch_size: 16
+  weight_decay: 0.0002106194612902566
+
+================================================================================
+Trial #21 - 2025-06-25 09:30:14
+Validation Loss: 0.265927
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 256
+  dropout_rate: 0.4
+  num_attention_heads: 8
+  use_justice_attention: True
+  learning_rate: 0.00039464881740340787
+  batch_size: 16
+  weight_decay: 0.00012368626510265285
+
+================================================================================
+Trial #22 - 2025-06-25 09:36:27
+Validation Loss: 0.261729
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 256
+  dropout_rate: 0.4
+  num_attention_heads: 8
+  use_justice_attention: True
+  learning_rate: 0.00017007156972349575
+  batch_size: 16
+  weight_decay: 0.00022923112732238193
+
+================================================================================
+Trial #23 - 2025-06-25 09:42:39
+Validation Loss: 0.262099
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 256
+  dropout_rate: 0.4
+  num_attention_heads: 8
+  use_justice_attention: True
+  learning_rate: 5.1566000743325303e-05
+  batch_size: 16
+  weight_decay: 0.00023492744272904321
+
+================================================================================
+Trial #24 - 2025-06-25 09:47:20
+Validation Loss: 0.263479
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 256
+  dropout_rate: 0.2
+  num_attention_heads: 8
+  use_justice_attention: True
+  learning_rate: 0.000149714718677485
+  batch_size: 16
+  weight_decay: 0.000697604905586516
+
+================================================================================
+Trial #25 - 2025-06-25 09:53:32
+Validation Loss: 0.262412
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 256
+  dropout_rate: 0.30000000000000004
+  num_attention_heads: 32
+  use_justice_attention: True
+  learning_rate: 0.00030231571989252856
+  batch_size: 16
+  weight_decay: 0.0002898849770262435
+
+================================================================================
+Trial #26 - 2025-06-25 09:59:44
+Validation Loss: inf
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 256
+  dropout_rate: 0.5
+  num_attention_heads: 8
+  use_justice_attention: True
+  learning_rate: 0.00044163684097175927
+  batch_size: 16
+  weight_decay: 0.0018576655659814005
+
+================================================================================
+Trial #27 - 2025-06-25 10:05:57
+Validation Loss: 0.263448
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 1024
+  dropout_rate: 0.4
+  num_attention_heads: 8
+  use_justice_attention: True
+  learning_rate: 6.625521210165694e-05
+  batch_size: 16
+  weight_decay: 0.00014245011514658939
+
+================================================================================
+Trial #28 - 2025-06-25 10:12:09
+Validation Loss: 0.255604
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 512
+  dropout_rate: 0.2
+  num_attention_heads: 8
+  use_justice_attention: True
+  learning_rate: 4.095416464415462e-05
+  batch_size: 16
+  weight_decay: 0.0007208351279131757
+
+================================================================================
+Trial #29 - 2025-06-25 10:18:21
+Validation Loss: 0.262059
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 512
+  dropout_rate: 0.2
+  num_attention_heads: 4
+  use_justice_attention: True
+  learning_rate: 4.16067281215907e-05
+  batch_size: 16
+  weight_decay: 0.004646675506301217
+
+================================================================================
+Trial #30 - 2025-06-25 10:24:33
+Validation Loss: 0.260564
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 512
+  dropout_rate: 0.2
+  num_attention_heads: 16
+  use_justice_attention: True
+  learning_rate: 2.220278396278786e-05
+  batch_size: 16
+  weight_decay: 0.0020495708410278265
+
+================================================================================
+Trial #31 - 2025-06-25 10:30:46
+Validation Loss: 0.261924
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 512
+  dropout_rate: 0.2
+  num_attention_heads: 16
+  use_justice_attention: True
+  learning_rate: 2.161766469486432e-05
+  batch_size: 16
+  weight_decay: 0.0021281831924434193
+
+================================================================================
+Trial #32 - 2025-06-25 10:36:58
+Validation Loss: 0.262510
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 512
+  dropout_rate: 0.2
+  num_attention_heads: 16
+  use_justice_attention: True
+  learning_rate: 1.3599119729644491e-05
+  batch_size: 16
+  weight_decay: 0.000809720292930822
+
+================================================================================
+Trial #33 - 2025-06-25 10:43:10
+Validation Loss: 0.261650
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 512
+  dropout_rate: 0.30000000000000004
+  num_attention_heads: 16
+  use_justice_attention: True
+  learning_rate: 4.6087001018559804e-05
+  batch_size: 16
+  weight_decay: 0.001750852736168678
+
+================================================================================
+Trial #34 - 2025-06-25 10:49:23
+Validation Loss: 0.258917
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 512
+  dropout_rate: 0.2
+  num_attention_heads: 6
+  use_justice_attention: True
+  learning_rate: 2.6787234047265614e-05
+  batch_size: 16
+  weight_decay: 0.0030251602936531997
+
+================================================================================
+Trial #35 - 2025-06-25 10:55:31
+Validation Loss: 0.262120
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 512
+  dropout_rate: 0.2
+  num_attention_heads: 6
+  use_justice_attention: False
+  learning_rate: 2.2422132811321494e-05
+  batch_size: 16
+  weight_decay: 0.003790445802654536
+
+================================================================================
+Trial #36 - 2025-06-25 11:01:54
+Validation Loss: inf
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 512
+  dropout_rate: 0.2
+  num_attention_heads: 6
+  use_justice_attention: True
+  learning_rate: 3.7900889034896136e-05
+  batch_size: 8
+  weight_decay: 0.006300294596307667
+
+================================================================================
+Trial #37 - 2025-06-25 11:08:01
+Validation Loss: inf
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 512
+  dropout_rate: 0.1
+  num_attention_heads: 6
+  use_justice_attention: False
+  learning_rate: 1.4526621419490517e-05
+  batch_size: 16
+  weight_decay: 0.002600032506939317
+
+================================================================================
+Trial #38 - 2025-06-25 11:14:23
+Validation Loss: inf
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 512
+  dropout_rate: 0.1
+  num_attention_heads: 6
+  use_justice_attention: True
+  learning_rate: 7.258941020177286e-05
+  batch_size: 8
+  weight_decay: 0.005833482474085089
+
+================================================================================
+Trial #39 - 2025-06-25 11:20:31
+Validation Loss: 0.265175
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 512
+  dropout_rate: 0.2
+  num_attention_heads: 16
+  use_justice_attention: False
+  learning_rate: 1.7934786540987995e-05
+  batch_size: 16
+  weight_decay: 0.01019168287800039
+
+================================================================================
+Trial #40 - 2025-06-25 11:26:53
+Validation Loss: inf
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 768
+  dropout_rate: 0.1
+  num_attention_heads: 32
+  use_justice_attention: True
+  learning_rate: 1.0189031382029686e-05
+  batch_size: 8
+  weight_decay: 0.0034907142982614154
+
+================================================================================
+Trial #41 - 2025-06-25 11:33:05
+Validation Loss: 0.264160
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 1024
+  dropout_rate: 0.30000000000000004
+  num_attention_heads: 6
+  use_justice_attention: True
+  learning_rate: 3.155105725370311e-05
+  batch_size: 16
+  weight_decay: 0.0005090308205557229
+
+================================================================================
+Trial #42 - 2025-06-25 11:39:17
+Validation Loss: 0.262029
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 512
+  dropout_rate: 0.2
+  num_attention_heads: 16
+  use_justice_attention: True
+  learning_rate: 2.6135184682484884e-05
+  batch_size: 16
+  weight_decay: 0.0014721507817233703
+
+================================================================================
+Trial #43 - 2025-06-25 11:45:31
+Validation Loss: 0.261755
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 768
+  dropout_rate: 0.2
+  num_attention_heads: 4
+  use_justice_attention: True
+  learning_rate: 3.5451161833316445e-05
+  batch_size: 16
+  weight_decay: 0.0008614275142236102
+
+================================================================================
+Trial #44 - 2025-06-25 11:51:43
+Validation Loss: 0.262775
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 512
+  dropout_rate: 0.30000000000000004
+  num_attention_heads: 8
+  use_justice_attention: True
+  learning_rate: 4.3978882265590695e-05
+  batch_size: 16
+  weight_decay: 0.0025009020240986547
+
+================================================================================
+Trial #45 - 2025-06-25 11:57:51
+Validation Loss: 0.261772
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 1024
+  dropout_rate: 0.2
+  num_attention_heads: 8
+  use_justice_attention: False
+  learning_rate: 1.833400639643838e-05
+  batch_size: 16
+  weight_decay: 0.0003261293771502382
+
+================================================================================
+Trial #46 - 2025-06-25 12:04:03
+Validation Loss: 0.264149
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 512
+  dropout_rate: 0.1
+  num_attention_heads: 6
+  use_justice_attention: True
+  learning_rate: 2.660927189737367e-05
+  batch_size: 16
+  weight_decay: 0.040752486576171025
+
+================================================================================
+Trial #47 - 2025-06-25 12:10:24
+Validation Loss: inf
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 768
+  dropout_rate: 0.30000000000000004
+  num_attention_heads: 32
+  use_justice_attention: True
+  learning_rate: 0.00010402627280682097
+  batch_size: 8
+  weight_decay: 0.0005366277033138438
+
+================================================================================
+Trial #48 - 2025-06-25 12:16:36
+Validation Loss: 0.264575
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 512
+  dropout_rate: 0.2
+  num_attention_heads: 4
+  use_justice_attention: True
+  learning_rate: 1.2025418815587734e-05
+  batch_size: 16
+  weight_decay: 0.014907969575274705
+
+================================================================================
+Trial #49 - 2025-06-25 12:22:48
+Validation Loss: 0.262125
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 512
+  dropout_rate: 0.30000000000000004
+  num_attention_heads: 8
+  use_justice_attention: True
+  learning_rate: 5.766392431129596e-05
+  batch_size: 16
+  weight_decay: 0.008007486895863669
+
+################################################################################
+# OPTIMIZATION SUMMARY - 2025-06-25 12:22:48
+################################################################################
+Total trials: 50
+Completed trials: 50
+Pruned trials: 0
+Failed trials: 0
+
+BEST TRIAL: #28
+Best validation loss: 0.255604
+Best parameters:
+  hidden_dim: 512
+  dropout_rate: 0.2
+  num_attention_heads: 8
+  use_justice_attention: True
+  learning_rate: 4.095416464415462e-05
+  batch_size: 16
+  weight_decay: 0.0007208351279131757
+
+Study completed at: 2025-06-25 12:22:48
+################################################################################
+

@@ -251,6 +251,24 @@ class SCOTUSModelTrainer:
         
         optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
         
+        # Setup sentence transformer fine-tuning if enabled
+        sentence_transformer_optimizer = None
+        if self.config.enable_sentence_transformer_finetuning:
+            self.logger.info(f"Sentence transformer fine-tuning enabled. Will unfreeze at epoch {self.config.unfreeze_sentence_transformers_epoch}")
+            # Create separate optimizer for sentence transformers (will be activated when unfrozen)
+            sentence_transformer_params = []
+            if self.config.unfreeze_bio_model:
+                sentence_transformer_params.extend(model.bio_model.parameters())
+            if self.config.unfreeze_description_model:
+                sentence_transformer_params.extend(model.description_model.parameters())
+            
+            if sentence_transformer_params:
+                sentence_transformer_optimizer = torch.optim.AdamW(
+                    sentence_transformer_params, 
+                    lr=self.config.sentence_transformer_learning_rate, 
+                    weight_decay=weight_decay
+                )
+        
         # Setup loss function based on configuration
         loss_function = self.config.loss_function
         if loss_function == 'kl_div':
@@ -280,6 +298,22 @@ class SCOTUSModelTrainer:
         max_patience = self.config.patience
         
         for epoch in range(num_epochs):
+            # Check if we should unfreeze sentence transformers at this epoch
+            if (self.config.enable_sentence_transformer_finetuning and 
+                self.config.unfreeze_sentence_transformers_epoch == epoch and
+                sentence_transformer_optimizer is not None):
+                
+                self.logger.info(f"🔓 Unfreezing sentence transformers at epoch {epoch + 1}")
+                model.unfreeze_models_selectively(
+                    unfreeze_bio=self.config.unfreeze_bio_model,
+                    unfreeze_description=self.config.unfreeze_description_model
+                )
+                
+                # Log the status
+                status = model.get_sentence_transformer_status()
+                self.logger.info(f"   Bio model trainable: {status['bio_model_trainable']}")
+                self.logger.info(f"   Description model trainable: {status['description_model_trainable']}")
+            
             # Training phase
             model.train()
             train_loss = 0.0
@@ -288,6 +322,8 @@ class SCOTUSModelTrainer:
             for batch_idx, batch in enumerate(train_loader):
                 try:
                     optimizer.zero_grad()
+                    if sentence_transformer_optimizer is not None:
+                        sentence_transformer_optimizer.zero_grad()
                     
                     batch_predictions = []
                     batch_targets = batch['targets'].to(self.device)
@@ -326,6 +362,11 @@ class SCOTUSModelTrainer:
                     torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=self.config.max_grad_norm)
                     
                     optimizer.step()
+                    if sentence_transformer_optimizer is not None:
+                        # Check if sentence transformers are actually unfrozen before stepping
+                        status = model.get_sentence_transformer_status()
+                        if status['any_trainable']:
+                            sentence_transformer_optimizer.step()
                     
                     train_loss += loss.item()
                     num_batches += 1
