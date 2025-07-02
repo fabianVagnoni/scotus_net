@@ -268,6 +268,24 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
                         # Compute loss using modular loss system (pass epoch for annealing)
                         loss = criterion(predictions_tensor, batch_targets, epoch=epoch)
                         
+                        # Check for NaN loss and provide debugging information
+                        if torch.isnan(loss):
+                            self.logger.error(f"NaN loss detected in batch {batch_idx}!")
+                            self.logger.error(f"Predictions tensor: {predictions_tensor}")
+                            self.logger.error(f"Targets tensor: {batch_targets}")
+                            self.logger.error(f"Predictions stats - Min: {predictions_tensor.min()}, Max: {predictions_tensor.max()}, Mean: {predictions_tensor.mean()}")
+                            self.logger.error(f"Targets stats - Min: {batch_targets.min()}, Max: {batch_targets.max()}, Mean: {batch_targets.mean()}")
+                            
+                            # Check for NaN in model parameters
+                            nan_params = []
+                            for name, param in model.named_parameters():
+                                if torch.isnan(param).any():
+                                    nan_params.append(name)
+                            if nan_params:
+                                self.logger.error(f"NaN found in model parameters: {nan_params}")
+                            
+                            raise ValueError(f"NaN loss encountered in batch {batch_idx}")
+                        
                         # Backward pass
                         loss.backward()
                         

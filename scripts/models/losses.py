@@ -86,7 +86,13 @@ class KLDivLoss(BaseLoss):
         """
         # Apply log_softmax to predictions for KL divergence
         log_predictions = F.log_softmax(predictions, dim=1)
-        return self.criterion(log_predictions, targets)
+        
+        # Add small epsilon to targets for numerical stability (avoid log(0))
+        epsilon = 1e-8
+        stable_targets = targets + epsilon
+        stable_targets = stable_targets / stable_targets.sum(dim=1, keepdim=True)  # Renormalize
+        
+        return self.criterion(log_predictions, stable_targets)
     
     def get_config(self) -> Dict[str, Any]:
         return {'type': 'kl_div', 'reduction': self.reduction}

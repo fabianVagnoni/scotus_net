@@ -141,6 +141,18 @@ class SCOTUSModelTrainer:
                 self.logger.warning(f"Skipping case {case_id}: Invalid voting percentages format: {voting_percentages}")
                 skipped_bad_target += 1
                 continue
+            
+            # Skip cases with -1 values (unclear case disposition)
+            if any(val == -1 for val in voting_percentages):
+                self.logger.warning(f"Skipping case {case_id}: Contains -1 values (unclear disposition): {voting_percentages}")
+                skipped_bad_target += 1
+                continue
+            
+            # Validate that all values are valid probabilities (0-1 range)
+            if any(val < 0 or val > 1 for val in voting_percentages):
+                self.logger.warning(f"Skipping case {case_id}: Invalid probability values: {voting_percentages}")
+                skipped_bad_target += 1
+                continue
 
             # Skip cases without case description path
             if not case_description_path or not case_description_path.strip():
