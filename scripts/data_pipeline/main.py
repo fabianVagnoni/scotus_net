@@ -33,8 +33,8 @@ import time
 from pathlib import Path
 from typing import List, Optional
 
-# Add src to path for imports
-sys.path.append('src/data_pipeline')
+# Add scripts to path for imports
+sys.path.append('scripts/data_pipeline')
 
 def print_header(title: str, char: str = "="):
     """Print a formatted header."""
@@ -324,7 +324,7 @@ def step_scrape_justices(output_file: str = "data/raw/justices.json"):
     
     args = ["--quiet", "--output", output_file]
     
-    return run_script("src/data_pipeline/scraper_justices.py", args,
+    return run_script("scripts/data_pipeline/scraper_justices.py", args,
                      "Scraping justice information from Wikipedia")
 
 def step_scrape_bios(justices_file: str = "data/raw/justices.json",
@@ -338,7 +338,7 @@ def step_scrape_bios(justices_file: str = "data/raw/justices.json",
         "--output", output_dir
     ]
     
-    return run_script("src/data_pipeline/scraper_bios.py", args,
+    return run_script("scripts/data_pipeline/scraper_bios.py", args,
                      "Scraping justice biographies from Wikipedia")
 
 def step_download_scdb_data(output_file: str = "data/raw/SCDB_2024_01_justiceCentered_Vote.csv"):
@@ -350,7 +350,7 @@ def step_download_scdb_data(output_file: str = "data/raw/SCDB_2024_01_justiceCen
         "--output", output_file
     ]
     
-    return run_script("src/data_pipeline/scraper_scdb.py", args,
+    return run_script("scripts/data_pipeline/scraper_scdb.py", args,
                      "Downloading Supreme Court Database justice vote data")
 
 def step_process_cases_metadata(input_file: str = "data/raw/SCDB_2024_01_justiceCentered_Vote.csv",
@@ -364,7 +364,7 @@ def step_process_cases_metadata(input_file: str = "data/raw/SCDB_2024_01_justice
         "--output", output_file
     ]
     
-    return run_script("src/data_pipeline/process_cases_metadata.py", args,
+    return run_script("scripts/data_pipeline/process_cases_metadata.py", args,
                      "Processing Supreme Court database CSV")
 
 def step_scrape_case_descriptions(metadata_file: str = "data/processed/cases_metadata.csv",
@@ -383,7 +383,7 @@ def step_scrape_case_descriptions(metadata_file: str = "data/processed/cases_met
     if limit:
         args.extend(["--limit", str(limit)])
     
-    return run_script("src/data_pipeline/scraper_case_descriptions.py", args,
+    return run_script("scripts/data_pipeline/scraper_case_descriptions.py", args,
                      "Scraping case descriptions from Justia with Gemini AI filtering (resume-enabled)")
 
 # PROCESSING STEPS (Data Processing)
@@ -401,7 +401,7 @@ def step_process_bios(justices_metadata: str = "data/raw/justices.json",
         "--metadata", justices_metadata
     ]
     
-    return run_script("src/data_pipeline/process_bios.py", args,
+    return run_script("scripts/data_pipeline/process_bios.py", args,
                      "Processing biographies with metadata enrichment")
 
 def step_create_case_metadata(input_file: str = "data/processed/cases_metadata.csv",
@@ -415,7 +415,7 @@ def step_create_case_metadata(input_file: str = "data/processed/cases_metadata.c
         "--output", output_dir
     ]
     
-    return run_script("src/data_pipeline/case_metadata_creation.py", args,
+    return run_script("scripts/data_pipeline/case_metadata_creation.py", args,
                      "Creating natural language case metadata")
 
 def step_create_case_descriptions(metadata_file: str = "data/processed/cases_metadata.csv",
@@ -431,7 +431,7 @@ def step_create_case_descriptions(metadata_file: str = "data/processed/cases_met
         "--output", output_dir
     ]
     
-    return run_script("src/data_pipeline/case_descriptions_creation.py", args,
+    return run_script("scripts/data_pipeline/case_descriptions_creation.py", args,
                      "Combining metadata with AI descriptions")
 
 def step_build_final_dataset(csv_file: str = "data/processed/cases_metadata.csv",
@@ -451,7 +451,7 @@ def step_build_final_dataset(csv_file: str = "data/processed/cases_metadata.csv"
         "--output", output_file
     ]
     
-    return run_script("src/data_pipeline/build_case_dataset.py", args,
+    return run_script("scripts/data_pipeline/build_case_dataset.py", args,
                      "Building JSON dataset with file paths and voting data")
 
 def run_full_pipeline(from_step: int = 1, quick_mode: bool = False, interactive: bool = True):
@@ -563,6 +563,66 @@ def run_full_pipeline(from_step: int = 1, quick_mode: bool = False, interactive:
     
     return True
 
+def run_multiple_steps(steps: List[str]):
+    """Run multiple specific pipeline steps."""
+    print_header(f"🎯 RUNNING MULTIPLE STEPS: {', '.join(steps).upper()}")
+    
+    step_mapping = {
+        "scrape-justices": (1, "Scrape Justice Metadata", step_scrape_justices),
+        "scrape-bios": (2, "Scrape Justice Biographies", step_scrape_bios),
+        "download-scdb": (3, "Download SCDB Data", step_download_scdb_data),
+        "process-cases": (4, "Process Cases Metadata", step_process_cases_metadata),
+        "scrape-cases": (5, "Scrape Case Descriptions", step_scrape_case_descriptions),
+        "process-bios": (6, "Process Justice Biographies", step_process_bios),
+        "case-metadata": (7, "Create Case Metadata", step_create_case_metadata),
+        "case-descriptions": (8, "Create Case Descriptions", step_create_case_descriptions),
+        "dataset": (9, "Build Final Dataset", step_build_final_dataset)
+    }
+    
+    # Validate all steps exist
+    invalid_steps = [step for step in steps if step not in step_mapping]
+    if invalid_steps:
+        print(f"❌ Invalid steps: {', '.join(invalid_steps)}")
+        print(f"Available steps: {', '.join(step_mapping.keys())}")
+        return False
+    
+    # Sort steps by their number for logical execution order
+    sorted_steps = sorted([(step_mapping[step], step) for step in steps], key=lambda x: x[0][0])
+    
+    print(f"\n🚀 Executing {len(sorted_steps)} pipeline steps in order...")
+    
+    completed_steps = 0
+    start_time = time.time()
+    
+    for (step_num, step_name, step_func), step_key in sorted_steps:
+        try:
+            print_step(step_num, 9, step_name)
+            success = step_func()
+            
+            if success == "interrupted":
+                print(f"\n🛑 PIPELINE INTERRUPTED at Step {step_num} ({step_name})")
+                print(f"⚠️  The process was stopped due to API quota/rate limits.")
+                print(f"📊 Progress: Completed {completed_steps}/{len(sorted_steps)} steps before interruption")
+                return "interrupted"
+            elif not success:
+                print(f"\n❌ Step {step_num} ({step_name}) failed. Stopping pipeline.")
+                return False
+            
+            completed_steps += 1
+            print(f"✅ Step {step_num}/9 completed successfully\n")
+            
+        except Exception as e:
+            print(f"\n❌ Step {step_num} ({step_name}) failed with error: {e}")
+            return False
+    
+    # Completion summary
+    total_time = time.time() - start_time
+    print_header("🎉 MULTIPLE STEPS COMPLETED SUCCESSFULLY!", "=")
+    print(f"⏱️  Total execution time: {total_time:.1f} seconds ({total_time/60:.1f} minutes)")
+    print(f"🏁 Completed {completed_steps}/{len(sorted_steps)} steps successfully")
+    
+    return True
+
 def run_single_step(step: str):
     """Run a single pipeline step."""
     print_header(f"🎯 RUNNING SINGLE STEP: {step.upper()}")
@@ -586,19 +646,43 @@ def run_single_step(step: str):
         print(f"Available steps: {', '.join(step_mapping.keys())}")
         return False
 
+def run_preset(preset: str):
+    """Run a preset combination of steps."""
+    print_header(f"🎯 RUNNING PRESET: {preset.upper()}")
+    
+    preset_mapping = {
+        "rebuild-metadata": ["process-cases", "case-metadata"],
+        "rebuild-dataset": ["process-cases", "dataset"],
+        "metadata-and-dataset": ["process-cases", "case-metadata", "dataset"],
+        "final-processing": ["case-metadata", "case-descriptions", "dataset"],
+        "scrape-data": ["scrape-justices", "scrape-bios", "download-scdb", "scrape-cases"],
+        "process-all": ["process-cases", "process-bios", "case-metadata", "case-descriptions", "dataset"]
+    }
+    
+    if preset in preset_mapping:
+        steps = preset_mapping[preset]
+        print(f"📋 Preset '{preset}' includes steps: {', '.join(steps)}")
+        return run_multiple_steps(steps)
+    else:
+        print(f"❌ Unknown preset: {preset}")
+        print(f"Available presets: {', '.join(preset_mapping.keys())}")
+        return False
+
 def main():
     parser = argparse.ArgumentParser(
         description="SCOTUS AI Data Pipeline - Complete data processing orchestrator FROM SCRATCH",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python main.py                     # Interactive mode - check existing data and ask user
-  python main.py --non-interactive   # Run full pipeline from scratch (no prompts)
-  python main.py --from-step 5       # Start from step 5 (skip interactive check)
-  python main.py --step scrape-bios  # Run only biography scraping
-  python main.py --step dataset      # Run only final dataset creation
-  python main.py --quick             # Quick mode (reduced processing)
-  python main.py --check             # Only check data status
+  python main.py                          # Interactive mode - check existing data and ask user
+  python main.py --non-interactive        # Run full pipeline from scratch (no prompts)
+  python main.py --from-step 5            # Start from step 5 (skip interactive check)
+  python main.py --step scrape-bios       # Run only biography scraping
+  python main.py --step dataset           # Run only final dataset creation
+  python main.py --steps process-cases,dataset  # Run multiple specific steps
+  python main.py --preset rebuild-dataset # Run preset combination of steps
+  python main.py --quick                  # Quick mode (reduced processing)
+  python main.py --check                  # Only check data status
   
 Complete Pipeline Steps:
   1. scrape-justices   - Scrape justice metadata from Wikipedia
@@ -611,6 +695,14 @@ Complete Pipeline Steps:
   8. case-descriptions - Create complete case descriptions
   9. dataset          - Build final JSON dataset
 
+Available Presets:
+  rebuild-metadata      - process-cases + case-metadata
+  rebuild-dataset       - process-cases + dataset
+  metadata-and-dataset  - process-cases + case-metadata + dataset
+  final-processing      - case-metadata + case-descriptions + dataset
+  scrape-data          - scrape-justices + scrape-bios + download-scdb + scrape-cases
+  process-all          - process-cases + process-bios + case-metadata + case-descriptions + dataset
+
 Requirements:
   - Python packages: tqdm, openai (pip install tqdm openai)
   - Environment: OPENAI_API_KEY for AI filtering (in .env file)
@@ -622,6 +714,18 @@ Requirements:
         choices=["scrape-justices", "scrape-bios", "download-scdb", "process-cases", "scrape-cases", 
                 "process-bios", "case-metadata", "case-descriptions", "dataset"],
         help="Run a single pipeline step only"
+    )
+    
+    parser.add_argument(
+        "--steps",
+        help="Run multiple specific steps (comma-separated), e.g., 'process-cases,dataset'"
+    )
+    
+    parser.add_argument(
+        "--preset",
+        choices=["rebuild-metadata", "rebuild-dataset", "metadata-and-dataset", "final-processing", 
+                "scrape-data", "process-all"],
+        help="Run a preset combination of steps"
     )
     
     parser.add_argument(
@@ -652,6 +756,17 @@ Requirements:
     
     args = parser.parse_args()
     
+    # Validate mutually exclusive arguments
+    exclusive_args = [args.step, args.steps, args.preset, args.from_step != 1]
+    if sum(bool(arg) for arg in exclusive_args) > 1:
+        print("❌ Error: Cannot use --step, --steps, --preset, or --from-step together")
+        print("Choose one approach:")
+        print("  --step STEP_NAME        : Run single step")
+        print("  --steps STEP1,STEP2     : Run multiple specific steps")
+        print("  --preset PRESET_NAME    : Run preset combination")
+        print("  --from-step N           : Run full pipeline from step N")
+        return False
+    
     # Handle check mode
     if args.check:
         check_data_status()
@@ -660,6 +775,15 @@ Requirements:
     # Handle single step mode
     if args.step:
         return run_single_step(args.step)
+    
+    # Handle multiple steps mode
+    if args.steps:
+        steps_list = [step.strip() for step in args.steps.split(',')]
+        return run_multiple_steps(steps_list)
+    
+    # Handle preset mode
+    if args.preset:
+        return run_preset(args.preset)
     
     # Handle full pipeline mode
     interactive_mode = not args.non_interactive

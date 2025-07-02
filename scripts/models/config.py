@@ -89,6 +89,12 @@ class ModelConfig:
         self.loss_function = os.getenv('LOSS_FUNCTION', 'kl_div')
         self.kl_reduction = os.getenv('KL_REDUCTION', 'batchmean')
         
+        # Focal Loss Parameters
+        self.focal_gamma_initial = float(os.getenv('FOCAL_GAMMA_INITIAL', '2.0'))
+        self.focal_gamma_final = float(os.getenv('FOCAL_GAMMA_FINAL', '1.0'))
+        self.focal_gamma_decay_rate = float(os.getenv('FOCAL_GAMMA_DECAY_RATE', '0.1'))
+        self.focal_weight_power = float(os.getenv('FOCAL_WEIGHT_POWER', '1.0'))
+        
         # Validation and Evaluation
         self.validation_frequency = int(os.getenv('VALIDATION_FREQUENCY', '10'))
         self.evaluate_on_test = os.getenv('EVALUATE_ON_TEST', 'true').lower() == 'true'
@@ -267,6 +273,12 @@ class ModelConfig:
             # Loss Function
             'loss_function': self.loss_function,
             'kl_reduction': self.kl_reduction,
+            
+            # Focal Loss Parameters
+            'focal_gamma_initial': self.focal_gamma_initial,
+            'focal_gamma_final': self.focal_gamma_final,
+            'focal_gamma_decay_rate': self.focal_gamma_decay_rate,
+            'focal_weight_power': self.focal_weight_power,
             
             # Validation and Evaluation
             'validation_frequency': self.validation_frequency,

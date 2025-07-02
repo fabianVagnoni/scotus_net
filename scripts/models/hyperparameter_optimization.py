@@ -31,6 +31,7 @@ from torch.utils.data import DataLoader
 from scripts.models.config import ModelConfig
 from scripts.utils.logger import get_logger
 from scripts.utils.holdout_test_set import HoldoutTestSetManager
+from scripts.models.losses import create_scotus_loss_function
 
 
 class OptunaModelTrainer(SCOTUSModelTrainer):
@@ -190,8 +191,8 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
                         weight_decay=hyperparams['weight_decay']
                     )
             
-            # Setup loss function (fixed to KL Divergence for optimization)
-            criterion = nn.KLDivLoss(reduction='batchmean')
+            # Setup loss function using the new modular system
+            criterion = create_scotus_loss_function(self.base_config.loss_function, self.base_config)
             
             # Learning rate scheduler
             scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
@@ -264,10 +265,8 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
                         # Stack predictions and compute loss
                         predictions_tensor = torch.stack(batch_predictions)
                         
-                        # Apply log_softmax for KL divergence loss
-                        log_predictions = torch.log_softmax(predictions_tensor, dim=1)
-                        # Targets are already probability distributions, no need to normalize
-                        loss = criterion(log_predictions, batch_targets)
+                        # Compute loss using modular loss system (pass epoch for annealing)
+                        loss = criterion(predictions_tensor, batch_targets, epoch=epoch)
                         
                         # Backward pass
                         loss.backward()
@@ -433,10 +432,8 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
                     # Stack predictions and compute loss
                     predictions_tensor = torch.stack(batch_predictions)
                     
-                    # Apply log_softmax for KL divergence loss
-                    log_predictions = torch.log_softmax(predictions_tensor, dim=1)
-                    # Targets are already probability distributions, no need to normalize
-                    loss = criterion(log_predictions, batch_targets)
+                    # Compute loss using modular loss system
+                    loss = criterion(predictions_tensor, batch_targets)
                     
                     # Store predictions and targets for F1-Score calculation
                     # Convert to class predictions (argmax) for F1-Score

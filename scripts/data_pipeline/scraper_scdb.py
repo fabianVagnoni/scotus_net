@@ -16,8 +16,8 @@ import argparse
 from pathlib import Path
 import sys
 
-# Add src to path for utils import
-sys.path.append('src')
+# Add scripts to path for utils import
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from utils.progress import tqdm, HAS_TQDM
 
 def download_scdb_data(output_file: str = "data/raw/SCDB_2024_01_justiceCentered_Vote.csv", verbose: bool = True, quiet: bool = False):

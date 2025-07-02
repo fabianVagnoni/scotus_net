@@ -18,6 +18,7 @@ from .scotus_voting_model import SCOTUSVotingModel, SCOTUSDataset, collate_fn
 from ..utils.logger import get_logger
 from ..utils.holdout_test_set import HoldoutTestSetManager
 from .config import config
+from .losses import create_scotus_loss_function
 
 
 class SCOTUSModelTrainer:
@@ -269,21 +270,13 @@ class SCOTUSModelTrainer:
                     weight_decay=weight_decay
                 )
         
-        # Setup loss function based on configuration
+        # Setup loss function using the new modular system
         loss_function = self.config.loss_function
-        if loss_function == 'kl_div':
-            kl_reduction = self.config.kl_reduction
-            criterion = nn.KLDivLoss(reduction=kl_reduction)
-        elif loss_function == 'mse':
-            criterion = nn.MSELoss()
-        elif loss_function == 'cross_entropy':
-            criterion = nn.CrossEntropyLoss()
-        else:
-            raise ValueError(f"Unsupported loss function: {loss_function}")
+        criterion = create_scotus_loss_function(loss_function, self.config)
         
         self.logger.info(f"Using loss function: {loss_function}")
-        if loss_function == 'kl_div':
-            self.logger.info(f"KL divergence reduction: {kl_reduction}")
+        loss_config = criterion.get_config()
+        self.logger.info(f"Loss configuration: {loss_config}")
         
         # Learning rate scheduler
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
@@ -340,20 +333,8 @@ class SCOTUSModelTrainer:
                     # Stack predictions and compute loss
                     predictions_tensor = torch.stack(batch_predictions)
                     
-                    # Apply appropriate transformations based on loss function
-                    if loss_function == 'kl_div':
-                        # Apply log_softmax to predictions for KL divergence
-                        log_predictions = F.log_softmax(predictions_tensor, dim=1)
-                        loss = criterion(log_predictions, batch_targets)
-                    elif loss_function == 'mse':
-                        # For MSE, use raw predictions and targets
-                        loss = criterion(predictions_tensor, batch_targets)
-                    elif loss_function == 'cross_entropy':
-                        # For cross-entropy, convert targets to class indices (argmax)
-                        target_classes = torch.argmax(batch_targets, dim=1)
-                        loss = criterion(predictions_tensor, target_classes)
-                    else:
-                        raise ValueError(f"Unsupported loss function: {loss_function}")
+                    # Compute loss using modular loss system (pass epoch for annealing)
+                    loss = criterion(predictions_tensor, batch_targets, epoch=epoch)
                     
                     # Backward pass
                     loss.backward()
@@ -440,21 +421,8 @@ class SCOTUSModelTrainer:
                     # Stack predictions and compute loss
                     predictions_tensor = torch.stack(batch_predictions)
                     
-                    # Apply appropriate transformations based on loss function (same as training)
-                    loss_function = self.config.loss_function
-                    if loss_function == 'kl_div':
-                        # Apply log_softmax to predictions for KL divergence
-                        log_predictions = F.log_softmax(predictions_tensor, dim=1)
-                        loss = criterion(log_predictions, batch_targets)
-                    elif loss_function == 'mse':
-                        # For MSE, use raw predictions and targets
-                        loss = criterion(predictions_tensor, batch_targets)
-                    elif loss_function == 'cross_entropy':
-                        # For cross-entropy, convert targets to class indices (argmax)
-                        target_classes = torch.argmax(batch_targets, dim=1)
-                        loss = criterion(predictions_tensor, target_classes)
-                    else:
-                        raise ValueError(f"Unsupported loss function: {loss_function}")
+                    # Compute loss using modular loss system
+                    loss = criterion(predictions_tensor, batch_targets)
                     
                     total_loss += loss.item()
                     num_batches += 1
@@ -536,16 +504,9 @@ class SCOTUSModelTrainer:
             num_workers=self.config.num_workers
         )
         
-        # Setup loss function
+        # Setup loss function using the new modular system
         loss_function = self.config.loss_function
-        if loss_function == 'kl_div':
-            criterion = nn.KLDivLoss(reduction=self.config.kl_reduction)
-        elif loss_function == 'mse':
-            criterion = nn.MSELoss()
-        elif loss_function == 'cross_entropy':
-            criterion = nn.CrossEntropyLoss()
-        else:
-            raise ValueError(f"Unsupported loss function: {loss_function}")
+        criterion = create_scotus_loss_function(loss_function, self.config)
         
         # Evaluate
         holdout_loss = self.evaluate_model(model, holdout_loader, criterion)

@@ -93,23 +93,17 @@ def create_case_description(row):
     case_origin_state = decode_value(row.get('caseOriginState'), STATE_CODES, "Unknown state")
     issue_area = decode_value(row.get('issueArea'), ISSUE_AREA_CODES, "Unknown issue area")
     
-    # Voting information
-    votes_favor = int(row.get('votes_in_favor', 0))
-    votes_against = int(row.get('votes_against', 0))
-    votes_absent = int(row.get('votes_absent', 0))
-    pct_favor = row.get('pct_in_favor', 0) * 100
-    pct_against = row.get('pct_against', 0) * 100
+    # Voting information - handle -1 values for unclear cases
+    votes_favor = row.get('votes_in_favor', 0)
+    votes_against = row.get('votes_against', 0)
+    votes_absent = row.get('votes_absent', 0)
+    pct_favor = row.get('pct_in_favor', 0)
+    pct_against = row.get('pct_against', 0)
     
-    # Determine case outcome
-    if votes_favor > votes_against:
-        outcome = "ruled in favor of the petitioner"
-        margin = "unanimous" if votes_against == 0 else f"{votes_favor}-{votes_against}"
-    elif votes_against > votes_favor:
-        outcome = "ruled against the petitioner"
-        margin = f"{votes_against}-{votes_favor}"
-    else:
-        outcome = "resulted in a tie"
-        margin = f"{votes_favor}-{votes_against}"
+    # Handle case disposition information
+    case_disposition = row.get('caseDisposition', 'Unknown')
+    maj_votes = row.get('majVotes', 0)
+    min_votes = row.get('minVotes', 0)
     
     # Create the description
     description = f"""Case: {case_name} ({citation})
@@ -130,6 +124,42 @@ The case originated from {case_origin}"""
         description += f" in {case_origin_state}"
     
     description += f""". The primary issue area was {issue_area}."""
+    
+    # Add voting outcome information
+    if votes_favor == -1 or votes_against == -1 or votes_absent == -1:
+        # Unclear case disposition
+        description += f"""
+
+The case outcome could not be clearly determined from the available data (case disposition: {case_disposition}). The court's decision on this case falls into an unclear category."""
+    else:
+        # Clear case disposition - determine outcome
+        if votes_favor > votes_against:
+            outcome = "ruled in favor of the petitioner"
+            margin = "unanimous" if votes_against == 0 else f"{votes_favor}-{votes_against}"
+        elif votes_against > votes_favor:
+            outcome = "ruled against the petitioner"
+            margin = f"{votes_against}-{votes_favor}"
+        else:
+            outcome = "resulted in a tie"
+            margin = f"{votes_favor}-{votes_against}"
+        
+        pct_favor_display = pct_favor * 100 if pct_favor != -1 else 0
+        pct_against_display = pct_against * 100 if pct_against != -1 else 0
+        
+        description += f"""
+
+The Supreme Court {outcome} by a {margin} margin. The voting breakdown was:
+- {votes_favor} justices voted in favor of the petitioner ({pct_favor_display:.1f}%)
+- {votes_against} justices voted against the petitioner ({pct_against_display:.1f}%)"""
+        
+        if votes_absent > 0:
+            pct_absent = row.get('pct_absent', 0) * 100 if row.get('pct_absent', 0) != -1 else 0
+            description += f"""
+- {votes_absent} justices were absent or recused ({pct_absent:.1f}%)"""
+        
+        description += f"""
+
+The majority opinion comprised {maj_votes} justices, while {min_votes} justices were in the minority (case disposition code: {case_disposition})."""
     
     return description
 

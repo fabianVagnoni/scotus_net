@@ -7,8 +7,8 @@ from pathlib import Path
 from typing import Dict, Optional
 import sys
 
-# Add src to path for utils import
-sys.path.append('src')
+# Add scripts to path for utils import
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from utils.progress import tqdm, HAS_TQDM
 
 def load_justices_metadata(metadata_file: str) -> Dict:

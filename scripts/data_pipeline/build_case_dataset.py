@@ -218,10 +218,9 @@ def build_dataset(csv_file: str, case_metadata_dir: str, case_descriptions_dir: 
         for row in reader:
             case_id = row['caseIssuesId']
             us_cite = row['usCite']
-            pct_in_favor = float(row['pct_in_favor']) if row['pct_in_favor'] else 0.0
-            pct_against = float(row['pct_against']) if row['pct_against'] else 0.0
-            pct_absent = float(row['pct_absent']) if row['pct_absent'] else 0.0
-            pct_other = float(row['pct_other']) if row['pct_other'] else 0.0
+            pct_in_favor = float(row['pct_in_favor']) if row['pct_in_favor'] != '' and row['pct_in_favor'] != '-1' else -1.0
+            pct_against = float(row['pct_against']) if row['pct_against'] != '' and row['pct_against'] != '-1' else -1.0
+            pct_absent = float(row['pct_absent']) if row['pct_absent'] != '' and row['pct_absent'] != '-1' else -1.0
             justice_votes = row['justice_votes']
             
             # Skip if we've already processed this case ID
@@ -247,7 +246,7 @@ def build_dataset(csv_file: str, case_metadata_dir: str, case_descriptions_dir: 
             dataset[case_id] = [
                 justice_bio_paths,  # List of paths to justice bios
                 case_description_path,  # Path to case description
-                [pct_in_favor, pct_against, pct_absent, pct_other]  # Convert to percentages
+                [pct_in_favor, pct_against, pct_absent]  # Voting percentages (or -1 for unclear cases)
             ]
             
             processed_cases += 1
