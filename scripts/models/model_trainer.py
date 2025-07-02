@@ -136,8 +136,8 @@ class SCOTUSModelTrainer:
                 skipped_bad_format += 1
                 continue
             
-            # Ensure voting percentages is a list of 4 floats
-            if not isinstance(voting_percentages, list) or len(voting_percentages) != 4:
+            # Ensure voting percentages is a list of 3 floats
+            if not isinstance(voting_percentages, list) or len(voting_percentages) != 3:
                 self.logger.warning(f"Skipping case {case_id}: Invalid voting percentages format: {voting_percentages}")
                 skipped_bad_target += 1
                 continue

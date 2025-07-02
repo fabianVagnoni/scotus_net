@@ -459,17 +459,17 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
                             target = batch_targets[i].cpu().numpy()
                             
                             self.logger.info(f"Sample {i+1} (Case ID: {case_id}):")
-                            self.logger.info(f"  Predicted:  [{pred[0]:.4f}, {pred[1]:.4f}, {pred[2]:.4f}, {pred[3]:.4f}]")
-                            self.logger.info(f"  Target:     [{target[0]:.4f}, {target[1]:.4f}, {target[2]:.4f}, {target[3]:.4f}]")
+                            self.logger.info(f"  Predicted:  [{pred[0]:.4f}, {pred[1]:.4f}, {pred[2]:.4f}]")
+                            self.logger.info(f"  Target:     [{target[0]:.4f}, {target[1]:.4f}, {target[2]:.4f}]")
                             
                             # Calculate and show the difference
                             diff = pred - target
-                            self.logger.info(f"  Difference: [{diff[0]:+.4f}, {diff[1]:+.4f}, {diff[2]:+.4f}, {diff[3]:+.4f}]")
+                            self.logger.info(f"  Difference: [{diff[0]:+.4f}, {diff[1]:+.4f}, {diff[2]:+.4f}]")
                             
                             # Show which class has highest prediction vs target
                             pred_class = pred.argmax()
                             target_class = target.argmax()
-                            class_names = ["Majority In Favor", "Majority Against", "Majority Absent", "Other"]
+                            class_names = ["Majority In Favor", "Majority Against", "Majority Absent"]
                             self.logger.info(f"  Pred Class: {class_names[pred_class]} ({pred[pred_class]:.4f})")
                             self.logger.info(f"  True Class: {class_names[target_class]} ({target[target_class]:.4f})")
                             self.logger.info("")
@@ -504,7 +504,7 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
     
     def _calculate_f1_macro(self, predictions: list, targets: list) -> float:
         """
-        Calculate F1-Score Macro for 4 classes.
+        Calculate F1-Score Macro for 3 classes.
         
         Args:
             predictions: List of predicted class indices
@@ -521,12 +521,12 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
         y_true = np.array(targets)
         
         # Class names for logging
-        class_names = ["Majority In Favor", "Majority Against", "Majority Absent", "Other"]
+        class_names = ["Majority In Favor", "Majority Against", "Majority Absent"]
         
         # Calculate F1-Score for each class
         f1_scores = []
         
-        for class_idx in range(4):  # 4 classes: 0, 1, 2, 3
+        for class_idx in range(3):  # 3 classes: 0, 1, 2
             # Create binary classification for this class
             y_true_binary = (y_true == class_idx).astype(int)
             y_pred_binary = (y_pred == class_idx).astype(int)

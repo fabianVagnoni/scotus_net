@@ -16,7 +16,7 @@ class SCOTUSVotingModel(nn.Module):
     1. Legal sentence transformer for case descriptions
     2. General sentence transformer for justice biographies
     3. Concatenate embeddings and pass through FC layer
-    4. Output 4 neurons with softmax for voting percentages
+    4. Output 3 neurons with softmax for voting percentages
     """
     
     def __init__(
@@ -108,7 +108,7 @@ class SCOTUSVotingModel(nn.Module):
             nn.Linear(hidden_dim, hidden_dim // 2),
             nn.ReLU(),
             nn.Dropout(dropout_rate),
-            nn.Linear(hidden_dim // 2, 4)  # 4 output neurons for voting percentages
+            nn.Linear(hidden_dim // 2, 3)  # 3 output neurons for voting percentages
         )
         
         # Layer normalization
@@ -281,7 +281,7 @@ class SCOTUSVotingModel(nn.Module):
             justice_bio_paths: List of paths to justice biography files (for pre-tokenized lookup)
             
         Returns:
-            Tensor of shape (4,) with voting percentage predictions
+            Tensor of shape (3,) with voting percentage predictions
         """
         # Encode case description
         case_embedding = self.encode_case_description(case_description_path)
@@ -345,7 +345,7 @@ class SCOTUSVotingModel(nn.Module):
             justice_bio_paths: List of paths to justice biography files
             
         Returns:
-            Tensor of shape (4,) with voting percentage predictions (probabilities)
+            Tensor of shape (3,) with voting percentage predictions (probabilities)
             
         Note:
             This method requires all files to be pre-tokenized in the .pkl files.
@@ -365,7 +365,7 @@ class SCOTUSVotingModel(nn.Module):
             justice_bio_paths: List of paths to justice biography files
             
         Returns:
-            Tensor of shape (4,) with raw logits
+            Tensor of shape (3,) with raw logits
         """
         return self.forward(case_description_path, justice_bio_paths)
     
@@ -379,7 +379,7 @@ class SCOTUSVotingModel(nn.Module):
             return_probabilities: If True, returns probabilities; if False, returns raw logits
             
         Returns:
-            Tensor of shape (batch_size, 4) with predictions
+            Tensor of shape (batch_size, 3) with predictions
         """
         batch_predictions = []
         
