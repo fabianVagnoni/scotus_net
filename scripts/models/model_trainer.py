@@ -109,12 +109,13 @@ class SCOTUSModelTrainer:
         
         return bio_tokenized_file, description_tokenized_file
     
-    def prepare_dataset_dict(self, dataset: Dict) -> Dict[str, List]:
+    def prepare_dataset_dict(self, dataset: Dict, verbose: bool = True) -> Dict[str, List]:
         """
         Convert dataset to the format expected by SCOTUSDataset, skipping invalid entries.
         
         Args:
             dataset: Dataset with case_id as keys and case data as values
+            verbose: If True, log individual case skips as warnings. If False, only log summary.
             
         Returns:
             Dictionary with case_id as keys and [justice_bio_paths, case_description_path, voting_percentages] as values
@@ -132,38 +133,56 @@ class SCOTUSModelTrainer:
             elif len(case_data) == 4:
                 justice_bio_paths, case_description_path, voting_percentages, _ = case_data
             else:
-                self.logger.warning(f"Skipping case {case_id}: Unexpected case data format with {len(case_data)} elements.")
+                if verbose:
+                    self.logger.warning(f"Skipping case {case_id}: Unexpected case data format with {len(case_data)} elements.")
+                else:
+                    self.logger.debug(f"Skipping case {case_id}: Unexpected case data format with {len(case_data)} elements.")
                 skipped_bad_format += 1
                 continue
             
             # Ensure voting percentages is a list of 3 floats
             if not isinstance(voting_percentages, list) or len(voting_percentages) != 3:
-                self.logger.warning(f"Skipping case {case_id}: Invalid voting percentages format: {voting_percentages}")
+                if verbose:
+                    self.logger.warning(f"Skipping case {case_id}: Invalid voting percentages format: {voting_percentages}")
+                else:
+                    self.logger.debug(f"Skipping case {case_id}: Invalid voting percentages format")
                 skipped_bad_target += 1
                 continue
             
             # Skip cases with -1 values (unclear case disposition)
             if any(val == -1 for val in voting_percentages):
-                self.logger.warning(f"Skipping case {case_id}: Contains -1 values (unclear disposition): {voting_percentages}")
+                if verbose:
+                    self.logger.warning(f"Skipping case {case_id}: Contains -1 values (unclear disposition): {voting_percentages}")
+                else:
+                    self.logger.debug(f"Skipping case {case_id}: Contains -1 values (unclear disposition)")
                 skipped_bad_target += 1
                 continue
             
             # Validate that all values are valid probabilities (0-1 range)
             if any(val < 0 or val > 1 for val in voting_percentages):
-                self.logger.warning(f"Skipping case {case_id}: Invalid probability values: {voting_percentages}")
+                if verbose:
+                    self.logger.warning(f"Skipping case {case_id}: Invalid probability values: {voting_percentages}")
+                else:
+                    self.logger.debug(f"Skipping case {case_id}: Invalid probability values")
                 skipped_bad_target += 1
                 continue
 
             # Skip cases without case description path
             if not case_description_path or not case_description_path.strip():
-                self.logger.warning(f"Skipping case {case_id}: Missing case description path.")
+                if verbose:
+                    self.logger.warning(f"Skipping case {case_id}: Missing case description path.")
+                else:
+                    self.logger.debug(f"Skipping case {case_id}: Missing case description path.")
                 skipped_missing_desc += 1
                 continue
             
             # Filter out empty/None justice bio paths and skip if none are left
             filtered_bio_paths = [path for path in justice_bio_paths if path and path.strip()]
             if not filtered_bio_paths:
-                self.logger.warning(f"Skipping case {case_id}: No valid justice biography paths provided.")
+                if verbose:
+                    self.logger.warning(f"Skipping case {case_id}: No valid justice biography paths provided.")
+                else:
+                    self.logger.debug(f"Skipping case {case_id}: No valid justice biography paths provided.")
                 skipped_missing_bio += 1
                 continue
             
@@ -171,13 +190,20 @@ class SCOTUSModelTrainer:
         
         total_cases = len(dataset)
         total_skipped = skipped_missing_desc + skipped_missing_bio + skipped_bad_format + skipped_bad_target
+        
+        # Always log the summary
         self.logger.info(f"Dataset preparation summary for {total_cases} initial cases:")
         self.logger.info(f"  - Prepared {len(prepared_dataset)} cases for use.")
-        self.logger.info(f"  - Skipped {total_skipped} cases in total:")
-        self.logger.info(f"    - {skipped_missing_desc} with missing descriptions.")
-        self.logger.info(f"    - {skipped_missing_bio} with no valid justice bios.")
-        self.logger.info(f"    - {skipped_bad_target} with invalid target format.")
-        self.logger.info(f"    - {skipped_bad_format} with unexpected data format.")
+        if total_skipped > 0:
+            self.logger.info(f"  - Skipped {total_skipped} cases in total:")
+            if skipped_missing_desc > 0:
+                self.logger.info(f"    - {skipped_missing_desc} with missing descriptions.")
+            if skipped_missing_bio > 0:
+                self.logger.info(f"    - {skipped_missing_bio} with no valid justice bios.")
+            if skipped_bad_target > 0:
+                self.logger.info(f"    - {skipped_bad_target} with invalid target format.")
+            if skipped_bad_format > 0:
+                self.logger.info(f"    - {skipped_bad_format} with unexpected data format.")
         
         return prepared_dataset
         

@@ -133,8 +133,8 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
             
             self.logger.info("Preparing datasets...")
             # Prepare datasets
-            train_dataset_dict = self.prepare_dataset_dict(train_dataset)
-            val_dataset_dict = self.prepare_dataset_dict(val_dataset)
+            train_dataset_dict = self.prepare_dataset_dict(train_dataset, verbose=False)
+            val_dataset_dict = self.prepare_dataset_dict(val_dataset, verbose=False)
             
             if not train_dataset_dict or not val_dataset_dict:
                 raise ValueError("No valid training or validation cases found")
