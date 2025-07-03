@@ -516,6 +516,205 @@ class SCOTUSVotingModel(nn.Module):
             'any_trainable': bio_trainable or desc_trainable
         }
 
+    def get_sentence_transformer_layer_info(self) -> Dict[str, Any]:
+        """
+        Get information about the layers in sentence transformers.
+        
+        Returns:
+            Dictionary with layer information for both models
+        """
+        bio_layer_info = self._get_transformer_layer_info(self.bio_model)
+        desc_layer_info = self._get_transformer_layer_info(self.description_model)
+        
+        return {
+            'bio_model': bio_layer_info,
+            'description_model': desc_layer_info
+        }
+
+    def _get_transformer_layer_info(self, sentence_transformer) -> Dict[str, Any]:
+        """
+        Get layer information for a sentence transformer.
+        
+        Args:
+            sentence_transformer: SentenceTransformer model
+            
+        Returns:
+            Dictionary with layer information
+        """
+        # Access the underlying transformer model
+        # SentenceTransformer typically has an auto_model attribute
+        if hasattr(sentence_transformer, 'auto_model'):
+            transformer_model = sentence_transformer.auto_model
+        elif hasattr(sentence_transformer, '_modules'):
+            # Find the transformer component
+            for module in sentence_transformer._modules.values():
+                if hasattr(module, 'encoder') and hasattr(module.encoder, 'layer'):
+                    transformer_model = module
+                    break
+            else:
+                return {'error': 'Could not find transformer model'}
+        else:
+            return {'error': 'Could not access transformer model'}
+        
+        # Get layer information
+        layer_info = {
+            'total_layers': 0,
+            'layer_names': [],
+            'encoder_layers': 0,
+            'has_encoder': False,
+            'model_type': type(transformer_model).__name__
+        }
+        
+        # Check for encoder layers (most common structure)
+        if hasattr(transformer_model, 'encoder') and hasattr(transformer_model.encoder, 'layer'):
+            layer_info['has_encoder'] = True
+            layer_info['encoder_layers'] = len(transformer_model.encoder.layer)
+            layer_info['total_layers'] = layer_info['encoder_layers']
+            
+            # Get layer names
+            for i, layer in enumerate(transformer_model.encoder.layer):
+                layer_info['layer_names'].append(f'encoder.layer.{i}')
+        
+        # Also check for other layer structures
+        for name, module in transformer_model.named_modules():
+            if 'layer' in name.lower() and hasattr(module, 'parameters'):
+                if name not in layer_info['layer_names']:
+                    layer_info['layer_names'].append(name)
+        
+        return layer_info
+
+    def unfreeze_final_layers(self, n_layers: int, unfreeze_bio: bool = True, unfreeze_description: bool = True):
+        """
+        Unfreeze only the final N layers of sentence transformers.
+        
+        Args:
+            n_layers: Number of final layers to unfreeze (0 = unfreeze all)
+            unfreeze_bio: Whether to unfreeze bio model layers
+            unfreeze_description: Whether to unfreeze description model layers
+        """
+        if unfreeze_bio:
+            self._unfreeze_model_final_layers(self.bio_model, n_layers)
+        
+        if unfreeze_description:
+            self._unfreeze_model_final_layers(self.description_model, n_layers)
+
+    def _unfreeze_model_final_layers(self, sentence_transformer, n_layers: int):
+        """
+        Unfreeze final N layers of a sentence transformer.
+        
+        Args:
+            sentence_transformer: SentenceTransformer model
+            n_layers: Number of final layers to unfreeze (0 = unfreeze all)
+        """
+        # First, freeze everything
+        for param in sentence_transformer.parameters():
+            param.requires_grad = False
+        
+        if n_layers == 0:
+            # Unfreeze all layers
+            for param in sentence_transformer.parameters():
+                param.requires_grad = True
+            return
+        
+        # Access the underlying transformer model
+        if hasattr(sentence_transformer, 'auto_model'):
+            transformer_model = sentence_transformer.auto_model
+        elif hasattr(sentence_transformer, '_modules'):
+            # Find the transformer component
+            for module in sentence_transformer._modules.values():
+                if hasattr(module, 'encoder') and hasattr(module.encoder, 'layer'):
+                    transformer_model = module
+                    break
+            else:
+                return
+        else:
+            return
+        
+        # Unfreeze final N layers
+        if hasattr(transformer_model, 'encoder') and hasattr(transformer_model.encoder, 'layer'):
+            total_layers = len(transformer_model.encoder.layer)
+            start_layer = max(0, total_layers - n_layers)
+            
+            # Unfreeze the final N layers
+            for i in range(start_layer, total_layers):
+                for param in transformer_model.encoder.layer[i].parameters():
+                    param.requires_grad = True
+            
+            # Also unfreeze the pooler and final classification layers if they exist
+            if hasattr(transformer_model, 'pooler'):
+                for param in transformer_model.pooler.parameters():
+                    param.requires_grad = True
+            
+            # Unfreeze any final layers outside the encoder
+            for name, module in transformer_model.named_modules():
+                if name in ['cls', 'classifier', 'pooler', 'dense']:
+                    for param in module.parameters():
+                        param.requires_grad = True
+
+    def get_layer_trainable_status(self) -> Dict[str, Any]:
+        """
+        Get detailed trainable status of layers in sentence transformers.
+        
+        Returns:
+            Dictionary with detailed layer status
+        """
+        bio_status = self._get_model_layer_status(self.bio_model, 'bio_model')
+        desc_status = self._get_model_layer_status(self.description_model, 'description_model')
+        
+        return {
+            'bio_model': bio_status,
+            'description_model': desc_status
+        }
+
+    def _get_model_layer_status(self, sentence_transformer, model_name: str) -> Dict[str, Any]:
+        """
+        Get layer-wise trainable status for a sentence transformer.
+        
+        Args:
+            sentence_transformer: SentenceTransformer model
+            model_name: Name of the model for logging
+            
+        Returns:
+            Dictionary with layer status
+        """
+        status = {
+            'total_trainable_params': 0,
+            'total_params': 0,
+            'trainable_layers': [],
+            'frozen_layers': []
+        }
+        
+        # Access the underlying transformer model
+        if hasattr(sentence_transformer, 'auto_model'):
+            transformer_model = sentence_transformer.auto_model
+        elif hasattr(sentence_transformer, '_modules'):
+            # Find the transformer component
+            for module in sentence_transformer._modules.values():
+                if hasattr(module, 'encoder') and hasattr(module.encoder, 'layer'):
+                    transformer_model = module
+                    break
+            else:
+                return status
+        else:
+            return status
+        
+        # Check layer-wise status
+        if hasattr(transformer_model, 'encoder') and hasattr(transformer_model.encoder, 'layer'):
+            for i, layer in enumerate(transformer_model.encoder.layer):
+                layer_name = f'encoder.layer.{i}'
+                layer_trainable = any(param.requires_grad for param in layer.parameters())
+                layer_param_count = sum(param.numel() for param in layer.parameters())
+                
+                if layer_trainable:
+                    status['trainable_layers'].append(layer_name)
+                    status['total_trainable_params'] += layer_param_count
+                else:
+                    status['frozen_layers'].append(layer_name)
+                
+                status['total_params'] += layer_param_count
+        
+        return status
+
 
 class SCOTUSDataset(torch.utils.data.Dataset):
     """

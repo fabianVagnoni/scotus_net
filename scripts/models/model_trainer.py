@@ -302,22 +302,19 @@ class SCOTUSModelTrainer:
         patience_counter = 0
         max_patience = self.config.patience
         
+        # Track unfreezing status
+        first_unfreeze_done = False
+        second_unfreeze_done = False
+        
         for epoch in range(num_epochs):
-            # Check if we should unfreeze sentence transformers at this epoch
-            if (self.config.enable_sentence_transformer_finetuning and 
-                self.config.unfreeze_sentence_transformers_epoch == epoch and
-                sentence_transformer_optimizer is not None):
-                
-                self.logger.info(f"🔓 Unfreezing sentence transformers at epoch {epoch + 1}")
-                model.unfreeze_models_selectively(
-                    unfreeze_bio=self.config.unfreeze_bio_model,
-                    unfreeze_description=self.config.unfreeze_description_model
+            # Handle progressive unfreezing strategy
+            if self.config.enable_sentence_transformer_finetuning:
+                unfreeze_done = self._handle_progressive_unfreezing(
+                    model, epoch, optimizer, sentence_transformer_optimizer,
+                    first_unfreeze_done, second_unfreeze_done
                 )
-                
-                # Log the status
-                status = model.get_sentence_transformer_status()
-                self.logger.info(f"   Bio model trainable: {status['bio_model_trainable']}")
-                self.logger.info(f"   Description model trainable: {status['description_model_trainable']}")
+                first_unfreeze_done = unfreeze_done.get('first_unfreeze_done', first_unfreeze_done)
+                second_unfreeze_done = unfreeze_done.get('second_unfreeze_done', second_unfreeze_done)
             
             # Training phase
             model.train()
@@ -445,6 +442,139 @@ class SCOTUSModelTrainer:
         
         model.train()
         return total_loss / num_batches if num_batches > 0 else float('inf')
+    
+    def _handle_progressive_unfreezing(self, model, epoch, optimizer, sentence_transformer_optimizer, 
+                                     first_unfreeze_done, second_unfreeze_done):
+        """
+        Handle progressive unfreezing strategy with learning rate reduction.
+        
+        Args:
+            model: The SCOTUS model
+            epoch: Current epoch
+            optimizer: Main optimizer
+            sentence_transformer_optimizer: Sentence transformer optimizer
+            first_unfreeze_done: Whether first unfreezing has been done
+            second_unfreeze_done: Whether second unfreezing has been done
+            
+        Returns:
+            Dictionary with updated unfreezing status
+        """
+        status = {
+            'first_unfreeze_done': first_unfreeze_done,
+            'second_unfreeze_done': second_unfreeze_done
+        }
+        
+        # First unfreezing step
+        if (self.config.unfreeze_sentence_transformers_epoch == epoch and 
+            not first_unfreeze_done and sentence_transformer_optimizer is not None):
+            
+            self.logger.info(f"🔓 First unfreezing step at epoch {epoch + 1}")
+            
+            # Progressive unfreezing: unfreeze final N layers (or all if N=0)
+            n_layers = self.config.initial_layers_to_unfreeze
+            if n_layers == 0:
+                self.logger.info(f"   Unfreezing all layers")
+                model.unfreeze_models_selectively(
+                    unfreeze_bio=self.config.unfreeze_bio_model,
+                    unfreeze_description=self.config.unfreeze_description_model
+                )
+            else:
+                self.logger.info(f"   Unfreezing final {n_layers} layers")
+                model.unfreeze_final_layers(
+                    n_layers=n_layers,
+                    unfreeze_bio=self.config.unfreeze_bio_model,
+                    unfreeze_description=self.config.unfreeze_description_model
+                )
+            
+            # Apply learning rate reduction
+            if self.config.reduce_main_lr_on_unfreeze:
+                self._reduce_learning_rate(optimizer, self.config.lr_reduction_factor_first_unfreeze)
+                self.logger.info(f"   Reduced main optimizer LR by factor {self.config.lr_reduction_factor_first_unfreeze}")
+            
+            if sentence_transformer_optimizer is not None:
+                self._reduce_learning_rate(sentence_transformer_optimizer, self.config.lr_reduction_factor_first_unfreeze)
+                self.logger.info(f"   Reduced sentence transformer optimizer LR by factor {self.config.lr_reduction_factor_first_unfreeze}")
+            
+            # Log the status
+            self._log_unfreezing_status(model, "First unfreezing step")
+            
+            status['first_unfreeze_done'] = True
+        
+        # Second unfreezing step (only if second unfreezing is enabled)
+        if (self.config.second_unfreeze_epoch != -1 and  # Check that second unfreezing is enabled
+            self.config.second_unfreeze_epoch == epoch and 
+            not second_unfreeze_done and 
+            sentence_transformer_optimizer is not None):
+            
+            self.logger.info(f"🔓 Second unfreezing step at epoch {epoch + 1}")
+            self.logger.info(f"   Unfreezing all remaining layers")
+            
+            # Unfreeze all layers
+            model.unfreeze_models_selectively(
+                unfreeze_bio=self.config.unfreeze_bio_model,
+                unfreeze_description=self.config.unfreeze_description_model
+            )
+            
+            # Apply learning rate reduction
+            if self.config.reduce_main_lr_on_unfreeze:
+                self._reduce_learning_rate(optimizer, self.config.lr_reduction_factor_second_unfreeze)
+                self.logger.info(f"   Reduced main optimizer LR by factor {self.config.lr_reduction_factor_second_unfreeze}")
+            
+            if sentence_transformer_optimizer is not None:
+                self._reduce_learning_rate(sentence_transformer_optimizer, self.config.lr_reduction_factor_second_unfreeze)
+                self.logger.info(f"   Reduced sentence transformer optimizer LR by factor {self.config.lr_reduction_factor_second_unfreeze}")
+            
+            # Log the status
+            self._log_unfreezing_status(model, "Second unfreezing step")
+            
+            status['second_unfreeze_done'] = True
+        
+        return status
+    
+    def _reduce_learning_rate(self, optimizer, reduction_factor):
+        """
+        Reduce learning rate for an optimizer.
+        
+        Args:
+            optimizer: PyTorch optimizer
+            reduction_factor: Factor to multiply learning rate by
+        """
+        for param_group in optimizer.param_groups:
+            old_lr = param_group['lr']
+            new_lr = old_lr * reduction_factor
+            param_group['lr'] = new_lr
+            self.logger.debug(f"   LR reduced from {old_lr:.2e} to {new_lr:.2e}")
+    
+    def _log_unfreezing_status(self, model, step_name):
+        """
+        Log the unfreezing status after a step.
+        
+        Args:
+            model: The SCOTUS model
+            step_name: Name of the unfreezing step
+        """
+        # Get basic status
+        status = model.get_sentence_transformer_status()
+        self.logger.info(f"   {step_name} completed:")
+        self.logger.info(f"     Bio model trainable: {status['bio_model_trainable']}")
+        self.logger.info(f"     Description model trainable: {status['description_model_trainable']}")
+        
+        # Get detailed layer status
+        try:
+            layer_status = model.get_layer_trainable_status()
+            
+            for model_name, model_status in layer_status.items():
+                if model_status['trainable_layers']:
+                    self.logger.info(f"     {model_name} trainable layers: {len(model_status['trainable_layers'])}")
+                    self.logger.info(f"     {model_name} trainable params: {model_status['total_trainable_params']:,}")
+                    
+                    # Show which layers are trainable
+                    if len(model_status['trainable_layers']) <= 10:
+                        self.logger.info(f"       Trainable layers: {', '.join(model_status['trainable_layers'])}")
+                    else:
+                        self.logger.info(f"       Trainable layers: {', '.join(model_status['trainable_layers'][:5])} ... {', '.join(model_status['trainable_layers'][-5:])}")
+        except Exception as e:
+            self.logger.debug(f"Could not get detailed layer status: {e}")
     
     def evaluate_on_holdout_test_set(self, model_path: str = None) -> Dict:
         """

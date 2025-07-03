@@ -86,17 +86,21 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
             tuned_params = []
             fixed_params = []
             
-            for param_name in ['hidden_dim', 'dropout_rate', 'num_attention_heads', 'use_justice_attention', 'learning_rate', 'batch_size', 'weight_decay', 'unfreeze_epoch']:
-                tune_flag = getattr(self.base_config, f'tune_{param_name}')
+            for param_name in ['hidden_dim', 'dropout_rate', 'num_attention_heads', 'learning_rate', 'batch_size', 'weight_decay', 'use_progressive_unfreezing', 'initial_layers_to_unfreeze', 'lr_reduction_factor_first', 'lr_reduction_factor_second']:
+                tune_flag = getattr(self.base_config, f'tune_{param_name}', False)
                 if tune_flag:
                     tuned_params.append(f"{param_name}={hyperparams[param_name]}")
                 else:
-                    fixed_params.append(f"{param_name}={hyperparams[param_name]}")
+                    if param_name in hyperparams:
+                        fixed_params.append(f"{param_name}={hyperparams[param_name]}")
             
             if tuned_params:
                 self.logger.info(f"Tuned parameters: {', '.join(tuned_params)}")
             if fixed_params:
                 self.logger.info(f"Fixed parameters: {', '.join(fixed_params)}")
+            
+            # Create trial-specific config
+            trial_config = self._create_trial_config(hyperparams)
             
             self.logger.info("Initializing model...")
             # Initialize model with trial hyperparameters
@@ -119,7 +123,13 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
             
             # Override the unfreeze epoch for this trial
             trial_unfreeze_epoch = hyperparams['unfreeze_epoch']
-            self.logger.info(f"Trial will unfreeze sentence transformers at epoch: {trial_unfreeze_epoch}")
+            self.logger.info(f"Trial unfreezing strategy:")
+            if trial_config.initial_layers_to_unfreeze == 0 and trial_config.second_unfreeze_epoch == -1:
+                self.logger.info(f"  - Traditional unfreezing at epoch {trial_unfreeze_epoch} (all layers at once)")
+            elif trial_config.second_unfreeze_epoch == -1:
+                self.logger.info(f"  - Partial unfreezing at epoch {trial_unfreeze_epoch} (final {trial_config.initial_layers_to_unfreeze} layers only)")
+            else:
+                self.logger.info(f"  - Progressive unfreezing: {trial_config.initial_layers_to_unfreeze} layers at epoch {trial_unfreeze_epoch}, all layers at epoch {trial_config.second_unfreeze_epoch}")
             
             self.logger.info("Preparing datasets...")
             # Prepare datasets
@@ -205,6 +215,10 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
             best_combined_metric = float('inf')
             patience_counter = 0
             
+            # Track unfreezing status for trial
+            first_unfreeze_done = False
+            second_unfreeze_done = False
+            
             max_epochs = self.base_config.optuna_max_epochs
             
             for epoch in range(max_epochs):
@@ -213,21 +227,14 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
                     self.logger.warning(f"Trial timeout after {max_trial_time} seconds")
                     break
                 
-                # Check if we should unfreeze sentence transformers at this epoch
-                if (self.base_config.enable_sentence_transformer_finetuning and 
-                    trial_unfreeze_epoch == epoch and
-                    sentence_transformer_optimizer is not None):
-                    
-                    self.logger.info(f"🔓 Unfreezing sentence transformers at epoch {epoch + 1}")
-                    model.unfreeze_models_selectively(
-                        unfreeze_bio=self.base_config.unfreeze_bio_model,
-                        unfreeze_description=self.base_config.unfreeze_description_model
+                # Handle progressive unfreezing strategy for this trial
+                if self.base_config.enable_sentence_transformer_finetuning:
+                    unfreeze_status = self._handle_trial_progressive_unfreezing(
+                        model, epoch, optimizer, sentence_transformer_optimizer,
+                        first_unfreeze_done, second_unfreeze_done, trial_config
                     )
-                    
-                    # Log the status
-                    status = model.get_sentence_transformer_status()
-                    self.logger.info(f"   Bio model trainable: {status['bio_model_trainable']}")
-                    self.logger.info(f"   Description model trainable: {status['description_model_trainable']}")
+                    first_unfreeze_done = unfreeze_status.get('first_unfreeze_done', first_unfreeze_done)
+                    second_unfreeze_done = unfreeze_status.get('second_unfreeze_done', second_unfreeze_done)
                 
                 self.logger.info(f"Starting epoch {epoch+1}/{max_epochs}")
                 # Training phase
@@ -409,11 +416,210 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
         
         # Sentence Transformer Fine-tuning - Unfreeze Epoch
         if self.base_config.tune_unfreeze_epoch:
-            hyperparams['unfreeze_epoch'] = self.trial.suggest_categorical('unfreeze_epoch', self.base_config.optuna_unfreeze_epoch_options)
+            # Use a fallback since OPTUNA_UNFREEZE_EPOCH_OPTIONS is deprecated in favor of progressive unfreezing
+            fallback_options = [-1, 0, 1, 2, 3, 5]  # Legacy options for backward compatibility
+            hyperparams['unfreeze_epoch'] = self.trial.suggest_categorical('unfreeze_epoch', fallback_options)
         else:
             hyperparams['unfreeze_epoch'] = self.base_config.unfreeze_sentence_transformers_epoch
         
+        # Progressive Unfreezing Strategy
+        if self.base_config.tune_use_progressive_unfreezing:
+            hyperparams['use_progressive_unfreezing'] = self.trial.suggest_categorical('use_progressive_unfreezing', self.base_config.optuna_use_progressive_unfreezing_options)
+        else:
+            hyperparams['use_progressive_unfreezing'] = self.base_config.use_progressive_unfreezing
+        
+        if self.base_config.tune_initial_layers_to_unfreeze:
+            hyperparams['initial_layers_to_unfreeze'] = self.trial.suggest_categorical('initial_layers_to_unfreeze', self.base_config.optuna_initial_layers_to_unfreeze_options)
+        else:
+            hyperparams['initial_layers_to_unfreeze'] = self.base_config.initial_layers_to_unfreeze
+        
+        if self.base_config.tune_second_unfreeze_epoch:
+            hyperparams['second_unfreeze_epoch'] = self.trial.suggest_categorical('second_unfreeze_epoch', self.base_config.optuna_second_unfreeze_epoch_options)
+        else:
+            hyperparams['second_unfreeze_epoch'] = self.base_config.second_unfreeze_epoch
+        
+        if self.base_config.tune_only_partial_unfreezing:
+            hyperparams['only_partial_unfreezing'] = self.trial.suggest_categorical('only_partial_unfreezing', self.base_config.optuna_only_partial_unfreezing_options)
+        else:
+            hyperparams['only_partial_unfreezing'] = self.base_config.only_partial_unfreezing
+        
+        # Learning Rate Reduction Strategy
+        if self.base_config.tune_lr_reduction_factor_first:
+            lr_first_min, lr_first_max, lr_first_step = self.base_config.optuna_lr_reduction_factor_first_range
+            lr_first_kwargs = {'step': lr_first_step} if lr_first_step is not None else {}
+            hyperparams['lr_reduction_factor_first'] = self.trial.suggest_float('lr_reduction_factor_first', lr_first_min, lr_first_max, **lr_first_kwargs)
+        else:
+            hyperparams['lr_reduction_factor_first'] = self.base_config.lr_reduction_factor_first_unfreeze
+        
+        if self.base_config.tune_lr_reduction_factor_second:
+            lr_second_min, lr_second_max, lr_second_step = self.base_config.optuna_lr_reduction_factor_second_range
+            lr_second_kwargs = {'step': lr_second_step} if lr_second_step is not None else {}
+            hyperparams['lr_reduction_factor_second'] = self.trial.suggest_float('lr_reduction_factor_second', lr_second_min, lr_second_max, **lr_second_kwargs)
+        else:
+            hyperparams['lr_reduction_factor_second'] = self.base_config.lr_reduction_factor_second_unfreeze
+        
         return hyperparams
+    
+    def _create_trial_config(self, hyperparams: Dict[str, Any]):
+        """
+        Create a trial-specific configuration object with the suggested hyperparameters.
+        
+        Args:
+            hyperparams: Dictionary of hyperparameters for this trial
+            
+        Returns:
+            Modified configuration object
+        """
+        # Create a copy-like object with trial-specific values
+        class TrialConfig:
+            def __init__(self, base_config, hyperparams):
+                # Copy all attributes from base config
+                for attr in dir(base_config):
+                    if not attr.startswith('_'):
+                        setattr(self, attr, getattr(base_config, attr))
+                
+                # Override with trial-specific values
+                self.unfreeze_sentence_transformers_epoch = hyperparams.get('unfreeze_epoch', base_config.unfreeze_sentence_transformers_epoch)
+                self.use_progressive_unfreezing = hyperparams.get('use_progressive_unfreezing', base_config.use_progressive_unfreezing)
+                self.initial_layers_to_unfreeze = hyperparams.get('initial_layers_to_unfreeze', base_config.initial_layers_to_unfreeze)
+                self.second_unfreeze_epoch = hyperparams.get('second_unfreeze_epoch', base_config.second_unfreeze_epoch)
+                self.only_partial_unfreezing = hyperparams.get('only_partial_unfreezing', base_config.only_partial_unfreezing)
+                self.lr_reduction_factor_first_unfreeze = hyperparams.get('lr_reduction_factor_first', base_config.lr_reduction_factor_first_unfreeze)
+                self.lr_reduction_factor_second_unfreeze = hyperparams.get('lr_reduction_factor_second', base_config.lr_reduction_factor_second_unfreeze)
+        
+        return TrialConfig(self.base_config, hyperparams)
+    
+    def _handle_trial_progressive_unfreezing(self, model, epoch, optimizer, sentence_transformer_optimizer, 
+                                           first_unfreeze_done, second_unfreeze_done, trial_config):
+        """
+        Handle progressive unfreezing for a specific trial with trial-specific configuration.
+        
+        Args:
+            model: The SCOTUS model
+            epoch: Current epoch
+            optimizer: Main optimizer
+            sentence_transformer_optimizer: Sentence transformer optimizer
+            first_unfreeze_done: Whether first unfreezing has been done
+            second_unfreeze_done: Whether second unfreezing has been done
+            trial_config: Trial-specific configuration
+            
+        Returns:
+            Dictionary with updated unfreezing status
+        """
+        status = {
+            'first_unfreeze_done': first_unfreeze_done,
+            'second_unfreeze_done': second_unfreeze_done
+        }
+        
+        # First unfreezing step
+        if (trial_config.unfreeze_sentence_transformers_epoch == epoch and 
+            not first_unfreeze_done and sentence_transformer_optimizer is not None):
+            
+            self.logger.info(f"🔓 First unfreezing step at epoch {epoch + 1}")
+            
+            # Progressive unfreezing: unfreeze final N layers (or all if N=0)
+            n_layers = trial_config.initial_layers_to_unfreeze
+            if n_layers == 0:
+                self.logger.info(f"   Unfreezing all layers")
+                model.unfreeze_models_selectively(
+                    unfreeze_bio=trial_config.unfreeze_bio_model,
+                    unfreeze_description=trial_config.unfreeze_description_model
+                )
+            else:
+                self.logger.info(f"   Unfreezing final {n_layers} layers")
+                model.unfreeze_final_layers(
+                    n_layers=n_layers,
+                    unfreeze_bio=trial_config.unfreeze_bio_model,
+                    unfreeze_description=trial_config.unfreeze_description_model
+                )
+            
+            # Apply learning rate reduction
+            if trial_config.reduce_main_lr_on_unfreeze:
+                self._reduce_learning_rate(optimizer, trial_config.lr_reduction_factor_first_unfreeze)
+                self.logger.info(f"   Reduced main optimizer LR by factor {trial_config.lr_reduction_factor_first_unfreeze}")
+            
+            if sentence_transformer_optimizer is not None:
+                self._reduce_learning_rate(sentence_transformer_optimizer, trial_config.lr_reduction_factor_first_unfreeze)
+                self.logger.info(f"   Reduced sentence transformer optimizer LR by factor {trial_config.lr_reduction_factor_first_unfreeze}")
+            
+            # Log the status
+            self._log_trial_unfreezing_status(model, "First unfreezing step")
+            
+            status['first_unfreeze_done'] = True
+        
+        # Second unfreezing step (only if second unfreezing is enabled)
+        if (trial_config.second_unfreeze_epoch != -1 and  # Check that second unfreezing is enabled
+            trial_config.second_unfreeze_epoch == epoch and 
+            not second_unfreeze_done and 
+            sentence_transformer_optimizer is not None):
+            
+            self.logger.info(f"🔓 Second unfreezing step at epoch {epoch + 1}")
+            self.logger.info(f"   Unfreezing all remaining layers")
+            
+            # Unfreeze all layers
+            model.unfreeze_models_selectively(
+                unfreeze_bio=trial_config.unfreeze_bio_model,
+                unfreeze_description=trial_config.unfreeze_description_model
+            )
+            
+            # Apply learning rate reduction
+            if trial_config.reduce_main_lr_on_unfreeze:
+                self._reduce_learning_rate(optimizer, trial_config.lr_reduction_factor_second_unfreeze)
+                self.logger.info(f"   Reduced main optimizer LR by factor {trial_config.lr_reduction_factor_second_unfreeze}")
+            
+            if sentence_transformer_optimizer is not None:
+                self._reduce_learning_rate(sentence_transformer_optimizer, trial_config.lr_reduction_factor_second_unfreeze)
+                self.logger.info(f"   Reduced sentence transformer optimizer LR by factor {trial_config.lr_reduction_factor_second_unfreeze}")
+            
+            # Log the status
+            self._log_trial_unfreezing_status(model, "Second unfreezing step")
+            
+            status['second_unfreeze_done'] = True
+        
+        return status
+    
+    def _reduce_learning_rate(self, optimizer, reduction_factor):
+        """
+        Reduce learning rate for an optimizer.
+        
+        Args:
+            optimizer: PyTorch optimizer
+            reduction_factor: Factor to multiply learning rate by
+        """
+        for param_group in optimizer.param_groups:
+            old_lr = param_group['lr']
+            new_lr = old_lr * reduction_factor
+            param_group['lr'] = new_lr
+    
+    def _log_trial_unfreezing_status(self, model, step_name):
+        """
+        Log the unfreezing status after a step for a trial.
+        
+        Args:
+            model: The SCOTUS model
+            step_name: Name of the unfreezing step
+        """
+        # Get basic status
+        status = model.get_sentence_transformer_status()
+        self.logger.info(f"   {step_name} completed:")
+        self.logger.info(f"     Bio model trainable: {status['bio_model_trainable']}")
+        self.logger.info(f"     Description model trainable: {status['description_model_trainable']}")
+        
+        # Get detailed layer status
+        try:
+            layer_status = model.get_layer_trainable_status()
+            
+            for model_name, model_status in layer_status.items():
+                if model_status['trainable_layers']:
+                    self.logger.info(f"     {model_name} trainable layers: {len(model_status['trainable_layers'])}")
+                    
+                    # Show which layers are trainable (abbreviated for trials)
+                    if len(model_status['trainable_layers']) <= 3:
+                        self.logger.info(f"       Trainable layers: {', '.join(model_status['trainable_layers'])}")
+                    else:
+                        self.logger.info(f"       Trainable layers: {', '.join(model_status['trainable_layers'][:2])} ... {model_status['trainable_layers'][-1]}")
+        except Exception as e:
+            self.logger.debug(f"Could not get detailed layer status: {e}")
     
     def _evaluate_model_for_optimization(self, model: SCOTUSVotingModel, data_loader, criterion) -> float:
         """
@@ -585,6 +791,10 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
         self.logger.info(f"  - Batch Size: {'Tuned' if self.base_config.tune_batch_size else 'Fixed'}")
         self.logger.info(f"  - Weight Decay: {'Tuned' if self.base_config.tune_weight_decay else 'Fixed'}")
         self.logger.info(f"  - Unfreeze Epoch: {'Tuned' if self.base_config.tune_unfreeze_epoch else 'Fixed'}")
+        self.logger.info(f"  - Initial Layers to Unfreeze: {'Tuned' if self.base_config.tune_initial_layers_to_unfreeze else 'Fixed'}")
+        self.logger.info(f"  - Second Unfreeze Epoch: {'Tuned' if self.base_config.tune_second_unfreeze_epoch else 'Fixed'}")
+        self.logger.info(f"  - LR Reduction Factor (First): {'Tuned' if self.base_config.tune_lr_reduction_factor_first else 'Fixed'}")
+        self.logger.info(f"  - LR Reduction Factor (Second): {'Tuned' if self.base_config.tune_lr_reduction_factor_second else 'Fixed'}")
 
 
 def initialize_results_file(study_name: str, n_trials: int, dataset_file: str):
@@ -936,6 +1146,15 @@ def save_best_config(study: optuna.Study, output_file: str = "best_config.env"):
         "# Advanced Training",
         f"USE_MIXED_PRECISION={str(base_config.use_mixed_precision).lower()}",
         f"GRADIENT_ACCUMULATION_STEPS={base_config.gradient_accumulation_steps}",
+        "",
+        "# Progressive Unfreezing Strategy (Optimized)",
+        f"INITIAL_LAYERS_TO_UNFREEZE={best_params.get('initial_layers_to_unfreeze', base_config.initial_layers_to_unfreeze)}",
+        f"SECOND_UNFREEZE_EPOCH={best_params.get('second_unfreeze_epoch', base_config.second_unfreeze_epoch)}",
+        "",
+        "# Learning Rate Reduction Strategy (Optimized)",
+        f"LR_REDUCTION_FACTOR_FIRST_UNFREEZE={best_params.get('lr_reduction_factor_first', base_config.lr_reduction_factor_first_unfreeze)}",
+        f"LR_REDUCTION_FACTOR_SECOND_UNFREEZE={best_params.get('lr_reduction_factor_second', base_config.lr_reduction_factor_second_unfreeze)}",
+        f"REDUCE_MAIN_LR_ON_UNFREEZE={str(base_config.reduce_main_lr_on_unfreeze).lower()}",
         "",
         "# Random Seeds",
         f"RANDOM_SEED={base_config.random_seed}",

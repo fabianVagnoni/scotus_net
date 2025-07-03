@@ -125,6 +125,17 @@ class ModelConfig:
         self.unfreeze_bio_model = os.getenv('UNFREEZE_BIO_MODEL', 'true').lower() == 'true'
         self.unfreeze_description_model = os.getenv('UNFREEZE_DESCRIPTION_MODEL', 'true').lower() == 'true'
         
+        # Progressive Unfreezing Strategy
+        self.use_progressive_unfreezing = os.getenv('USE_PROGRESSIVE_UNFREEZING', 'true').lower() == 'true'
+        self.initial_layers_to_unfreeze = int(os.getenv('INITIAL_LAYERS_TO_UNFREEZE', '3'))
+        self.second_unfreeze_epoch = int(os.getenv('SECOND_UNFREEZE_EPOCH', '5'))
+        self.only_partial_unfreezing = os.getenv('ONLY_PARTIAL_UNFREEZING', 'false').lower() == 'true'
+        
+        # Learning Rate Reduction Strategy
+        self.lr_reduction_factor_first_unfreeze = float(os.getenv('LR_REDUCTION_FACTOR_FIRST_UNFREEZE', '0.5'))
+        self.lr_reduction_factor_second_unfreeze = float(os.getenv('LR_REDUCTION_FACTOR_SECOND_UNFREEZE', '0.3'))
+        self.reduce_main_lr_on_unfreeze = os.getenv('REDUCE_MAIN_LR_ON_UNFREEZE', 'true').lower() == 'true'
+        
         # Random Seeds
         self.random_seed = int(os.getenv('RANDOM_SEED', '42'))
         self.torch_seed = int(os.getenv('TORCH_SEED', '42'))
@@ -159,7 +170,16 @@ class ModelConfig:
         self.optuna_learning_rate_range = self._parse_float_range_with_log(os.getenv('OPTUNA_LEARNING_RATE_RANGE', '1e-5,1e-3,true'))
         self.optuna_batch_size_options = self._parse_int_list(os.getenv('OPTUNA_BATCH_SIZE_OPTIONS', '8,16,32'))
         self.optuna_weight_decay_range = self._parse_float_range_with_log(os.getenv('OPTUNA_WEIGHT_DECAY_RANGE', '1e-4,1e-1,true'))
-        self.optuna_unfreeze_epoch_options = self._parse_int_list(os.getenv('OPTUNA_UNFREEZE_EPOCH_OPTIONS', '-1,0,1,2,3,5'))
+        
+        # Progressive Unfreezing Search Spaces
+        self.optuna_use_progressive_unfreezing_options = self._parse_bool_list(os.getenv('OPTUNA_USE_PROGRESSIVE_UNFREEZING_OPTIONS', 'true,false'))
+        self.optuna_initial_layers_to_unfreeze_options = self._parse_int_list(os.getenv('OPTUNA_INITIAL_LAYERS_TO_UNFREEZE_OPTIONS', '0,2,3,4,6'))
+        self.optuna_second_unfreeze_epoch_options = self._parse_int_list(os.getenv('OPTUNA_SECOND_UNFREEZE_EPOCH_OPTIONS', '-1,3,5,7,9'))
+        self.optuna_only_partial_unfreezing_options = self._parse_bool_list(os.getenv('OPTUNA_ONLY_PARTIAL_UNFREEZING_OPTIONS', 'true,false'))
+        
+        # Learning Rate Reduction Search Spaces
+        self.optuna_lr_reduction_factor_first_range = self._parse_float_range(os.getenv('OPTUNA_LR_REDUCTION_FACTOR_FIRST_RANGE', '0.1,0.8,0.1'))
+        self.optuna_lr_reduction_factor_second_range = self._parse_float_range(os.getenv('OPTUNA_LR_REDUCTION_FACTOR_SECOND_RANGE', '0.1,0.8,0.1'))
         
         # Hyperparameter Tuning Control
         self.tune_hidden_dim = os.getenv('TUNE_HIDDEN_DIM', 'true').lower() == 'true'
@@ -170,6 +190,16 @@ class ModelConfig:
         self.tune_batch_size = os.getenv('TUNE_BATCH_SIZE', 'true').lower() == 'true'
         self.tune_weight_decay = os.getenv('TUNE_WEIGHT_DECAY', 'true').lower() == 'true'
         self.tune_unfreeze_epoch = os.getenv('TUNE_UNFREEZE_EPOCH', 'true').lower() == 'true'
+        
+        # Progressive Unfreezing Tuning Control
+        self.tune_use_progressive_unfreezing = os.getenv('TUNE_USE_PROGRESSIVE_UNFREEZING', 'true').lower() == 'true'
+        self.tune_initial_layers_to_unfreeze = os.getenv('TUNE_INITIAL_LAYERS_TO_UNFREEZE', 'true').lower() == 'true'
+        self.tune_second_unfreeze_epoch = os.getenv('TUNE_SECOND_UNFREEZE_EPOCH', 'true').lower() == 'true'
+        self.tune_only_partial_unfreezing = os.getenv('TUNE_ONLY_PARTIAL_UNFREEZING', 'true').lower() == 'true'
+        
+        # Learning Rate Reduction Tuning Control
+        self.tune_lr_reduction_factor_first = os.getenv('TUNE_LR_REDUCTION_FACTOR_FIRST', 'true').lower() == 'true'
+        self.tune_lr_reduction_factor_second = os.getenv('TUNE_LR_REDUCTION_FACTOR_SECOND', 'true').lower() == 'true'
     
     def _parse_int_list(self, value: str) -> list:
         """Parse comma-separated integers."""
@@ -310,6 +340,15 @@ class ModelConfig:
             'unfreeze_bio_model': self.unfreeze_bio_model,
             'unfreeze_description_model': self.unfreeze_description_model,
             
+            # Progressive Unfreezing Strategy
+            'initial_layers_to_unfreeze': self.initial_layers_to_unfreeze,
+            'second_unfreeze_epoch': self.second_unfreeze_epoch,
+            
+            # Learning Rate Reduction Strategy
+            'lr_reduction_factor_first_unfreeze': self.lr_reduction_factor_first_unfreeze,
+            'lr_reduction_factor_second_unfreeze': self.lr_reduction_factor_second_unfreeze,
+            'reduce_main_lr_on_unfreeze': self.reduce_main_lr_on_unfreeze,
+            
             # Random Seeds
             'random_seed': self.random_seed,
             'torch_seed': self.torch_seed,
@@ -344,7 +383,16 @@ class ModelConfig:
             'optuna_learning_rate_range': self.optuna_learning_rate_range,
             'optuna_batch_size_options': self.optuna_batch_size_options,
             'optuna_weight_decay_range': self.optuna_weight_decay_range,
-            'optuna_unfreeze_epoch_options': self.optuna_unfreeze_epoch_options,
+            
+            # Progressive Unfreezing Search Spaces
+            'optuna_use_progressive_unfreezing_options': self.optuna_use_progressive_unfreezing_options,
+            'optuna_initial_layers_to_unfreeze_options': self.optuna_initial_layers_to_unfreeze_options,
+            'optuna_second_unfreeze_epoch_options': self.optuna_second_unfreeze_epoch_options,
+            'optuna_only_partial_unfreezing_options': self.optuna_only_partial_unfreezing_options,
+            
+            # Learning Rate Reduction Search Spaces
+            'optuna_lr_reduction_factor_first_range': self.optuna_lr_reduction_factor_first_range,
+            'optuna_lr_reduction_factor_second_range': self.optuna_lr_reduction_factor_second_range,
             
             # Hyperparameter Tuning Control
             'tune_hidden_dim': self.tune_hidden_dim,
@@ -355,6 +403,14 @@ class ModelConfig:
             'tune_batch_size': self.tune_batch_size,
             'tune_weight_decay': self.tune_weight_decay,
             'tune_unfreeze_epoch': self.tune_unfreeze_epoch,
+            
+            # Progressive Unfreezing Tuning Control
+            'tune_initial_layers_to_unfreeze': self.tune_initial_layers_to_unfreeze,
+            'tune_second_unfreeze_epoch': self.tune_second_unfreeze_epoch,
+            
+            # Learning Rate Reduction Tuning Control
+            'tune_lr_reduction_factor_first': self.tune_lr_reduction_factor_first,
+            'tune_lr_reduction_factor_second': self.tune_lr_reduction_factor_second,
         }
     
     def print_config(self):
