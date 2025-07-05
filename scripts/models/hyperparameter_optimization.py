@@ -731,7 +731,7 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
             self.logger.info(f"    - LR Reduction Factor: {self.base_config.lr_reduction_factor}")
 
 
-def initialize_results_file(study_name: str, n_trials: int, dataset_file: str):
+def initialize_results_file(study_name: str, n_trials: int, dataset_file: str, experiment_name: str = None):
     """
     Initialize the tuning results file with header information.
     
@@ -739,8 +739,12 @@ def initialize_results_file(study_name: str, n_trials: int, dataset_file: str):
         study_name: Name of the optimization study
         n_trials: Number of trials to run
         dataset_file: Path to dataset file
+        experiment_name: Name of the experiment (for file naming)
     """
-    results_file = Path("scripts/models/tunning_results.txt")
+    if experiment_name:
+        results_file = Path(f"scripts/models/tunning_results_{experiment_name}.txt")
+    else:
+        results_file = Path("scripts/models/tunning_results.txt")
     
     # Create directory if it doesn't exist
     results_file.parent.mkdir(parents=True, exist_ok=True)
@@ -752,6 +756,7 @@ def initialize_results_file(study_name: str, n_trials: int, dataset_file: str):
         f"{'#' * 80}",
         f"# SCOTUS AI Hyperparameter Optimization Results",
         f"# Study: {study_name}",
+        f"# Experiment: {experiment_name or 'default'}",
         f"# Started: {timestamp}",
         f"# Number of trials: {n_trials}",
         f"# Dataset: {dataset_file}",
@@ -768,7 +773,7 @@ def initialize_results_file(study_name: str, n_trials: int, dataset_file: str):
         logger.warning(f"Failed to initialize results file: {e}")
 
 
-def append_trial_results(trial: Trial, combined_metric: float, hyperparams: Dict[str, Any] = None, trial_status: str = "COMPLETED"):
+def append_trial_results(trial: Trial, combined_metric: float, hyperparams: Dict[str, Any] = None, trial_status: str = "COMPLETED", experiment_name: str = None):
     """
     Append trial results to the tuning results file.
     
@@ -777,9 +782,13 @@ def append_trial_results(trial: Trial, combined_metric: float, hyperparams: Dict
         combined_metric: Combined optimization metric achieved
         hyperparams: Trial hyperparameters (optional, will be extracted from trial if not provided)
         trial_status: Status of the trial (COMPLETED, PRUNED, FAILED)
+        experiment_name: Name of the experiment (for file naming)
     """
     # Create the results file path
-    results_file = Path("scripts/models/tunning_results.txt")
+    if experiment_name:
+        results_file = Path(f"scripts/models/tunning_results_{experiment_name}.txt")
+    else:
+        results_file = Path("scripts/models/tunning_results.txt")
     
     # Create directory if it doesn't exist
     results_file.parent.mkdir(parents=True, exist_ok=True)
@@ -817,14 +826,18 @@ def append_trial_results(trial: Trial, combined_metric: float, hyperparams: Dict
         logger.warning(f"Failed to append trial results to file: {e}")
 
 
-def append_optimization_summary(study: optuna.Study):
+def append_optimization_summary(study: optuna.Study, experiment_name: str = None):
     """
     Append optimization summary to the results file.
     
     Args:
         study: Completed Optuna study
+        experiment_name: Name of the experiment (for file naming)
     """
-    results_file = Path("scripts/models/tunning_results.txt")
+    if experiment_name:
+        results_file = Path(f"scripts/models/tunning_results_{experiment_name}.txt")
+    else:
+        results_file = Path("scripts/models/tunning_results.txt")
     
     # Prepare summary
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -863,7 +876,7 @@ def append_optimization_summary(study: optuna.Study):
         logger.warning(f"Failed to append optimization summary to file: {e}")
 
 
-def objective(trial: Trial, base_config: ModelConfig, dataset_file: str) -> float:
+def objective(trial: Trial, base_config: ModelConfig, dataset_file: str, experiment_name: str = None) -> float:
     """
     Objective function for Optuna optimization.
     
@@ -871,6 +884,7 @@ def objective(trial: Trial, base_config: ModelConfig, dataset_file: str) -> floa
         trial: Optuna trial object
         base_config: Base configuration
         dataset_file: Path to dataset file
+        experiment_name: Name of the experiment (for file naming)
         
     Returns:
         Combined metric to minimize: (KL Divergence Loss + (1 - F1-Score Macro)) / 2
@@ -889,19 +903,19 @@ def objective(trial: Trial, base_config: ModelConfig, dataset_file: str) -> floa
         logger.info(f"Trial {trial.number} completed with combined metric: {combined_metric:.4f}")
         
         # Append trial results to file
-        append_trial_results(trial, combined_metric, trial_status="COMPLETED")
+        append_trial_results(trial, combined_metric, trial_status="COMPLETED", experiment_name=experiment_name)
         
         return combined_metric
         
     except optuna.TrialPruned:
         logger.info(f"Trial {trial.number} was pruned")
         # Also log pruned trials
-        append_trial_results(trial, float('inf'), trial_status="PRUNED")
+        append_trial_results(trial, float('inf'), trial_status="PRUNED", experiment_name=experiment_name)
         raise
     except Exception as e:
         logger.error(f"Trial {trial.number} failed with error: {e}")
         # Log failed trials
-        append_trial_results(trial, float('inf'), trial_status="FAILED")
+        append_trial_results(trial, float('inf'), trial_status="FAILED", experiment_name=experiment_name)
         return float('inf')
 
 
@@ -911,7 +925,8 @@ def run_hyperparameter_optimization(
     dataset_file: str = None,
     storage: str = None,
     n_jobs: int = 1,
-    timeout: Optional[int] = None
+    timeout: Optional[int] = None,
+    experiment_name: str = None
 ) -> optuna.Study:
     """
     Run hyperparameter optimization using Optuna.
@@ -923,6 +938,7 @@ def run_hyperparameter_optimization(
         storage: Storage backend for study persistence
         n_jobs: Number of parallel jobs (1 for sequential)
         timeout: Timeout in seconds
+        experiment_name: Name of the experiment (for file naming)
         
     Returns:
         Optuna study object with results
@@ -944,12 +960,13 @@ def run_hyperparameter_optimization(
     
     logger.info(f"🔍 Starting hyperparameter optimization")
     logger.info(f"   📊 Study name: {study_name}")
+    logger.info(f"   🧪 Experiment name: {experiment_name or 'default'}")
     logger.info(f"   🎯 Number of trials: {n_trials}")
     logger.info(f"   📁 Dataset: {dataset_file}")
     logger.info(f"   💾 Storage: {storage or 'in-memory'}")
     
     # Initialize results file with header
-    initialize_results_file(study_name, n_trials, dataset_file)
+    initialize_results_file(study_name, n_trials, dataset_file, experiment_name)
     
     # Create study
     study = optuna.create_study(
@@ -965,7 +982,7 @@ def run_hyperparameter_optimization(
     
     # Run optimization
     study.optimize(
-        lambda trial: objective(trial, base_config, dataset_file),
+        lambda trial: objective(trial, base_config, dataset_file, experiment_name),
         n_trials=n_trials,
         n_jobs=n_jobs,
         timeout=timeout,
@@ -982,7 +999,7 @@ def run_hyperparameter_optimization(
         logger.info(f"      {key}: {value}")
     
     # Append final summary to results file
-    append_optimization_summary(study)
+    append_optimization_summary(study, experiment_name)
     
     return study
 
@@ -1108,7 +1125,7 @@ def save_best_config(study: optuna.Study, output_file: str = "best_config.env"):
     with open(output_file, 'w') as f:
         f.write('\n'.join(config_lines))
     
-    logger.info(f" Best configuration saved to: {output_file}")
+    logger.info(f"💾 Best configuration saved to: {output_file}")
 
 
 def main():
@@ -1121,16 +1138,23 @@ def main():
     parser.add_argument("--n-trials", type=int, default=base_config.optuna_n_trials, 
                        help=f"Number of optimization trials (default: {base_config.optuna_n_trials})")
     parser.add_argument("--study-name", type=str, help="Name for the optimization study")
+    parser.add_argument("--experiment-name", type=str, help="Name for the experiment (used in output filenames)")
     parser.add_argument("--dataset-file", type=str, default=base_config.dataset_file,
                        help=f"Path to dataset file (default: {base_config.dataset_file})")
     parser.add_argument("--storage", type=str, help="Storage backend (e.g., sqlite:///study.db)")
     parser.add_argument("--n-jobs", type=int, default=1, help="Number of parallel jobs")
     parser.add_argument("--timeout", type=int, help="Timeout in seconds")
-    parser.add_argument("--output-config", type=str, default="optimized_config.env", 
-                       help="Output file for best configuration")
+    parser.add_argument("--output-config", type=str, help="Output file for best configuration (will use experiment name if not provided)")
     parser.add_argument("--dashboard", action="store_true", help="Start Optuna dashboard after optimization")
     
     args = parser.parse_args()
+    
+    # Set default output config filename based on experiment name
+    if args.output_config is None:
+        if args.experiment_name:
+            args.output_config = f"optimized_config_{args.experiment_name}.env"
+        else:
+            args.output_config = "optimized_config.env"
     
     # Run optimization
     study = run_hyperparameter_optimization(
@@ -1139,11 +1163,17 @@ def main():
         dataset_file=args.dataset_file,
         storage=args.storage,
         n_jobs=args.n_jobs,
-        timeout=args.timeout
+        timeout=args.timeout,
+        experiment_name=args.experiment_name
     )
     
     # Save best configuration
     save_best_config(study, args.output_config)
+    
+    # Print summary with experiment name
+    print(f"\n🎯 Experiment '{args.experiment_name or 'default'}' completed!")
+    print(f"📊 Results saved to: tunning_results_{args.experiment_name}.txt" if args.experiment_name else "📊 Results saved to: tunning_results.txt")
+    print(f"⚙️  Best config saved to: {args.output_config}")
     
     # Start dashboard if requested
     if args.dashboard and args.storage:
