@@ -742,9 +742,9 @@ def initialize_results_file(study_name: str, n_trials: int, dataset_file: str, e
         experiment_name: Name of the experiment (for file naming)
     """
     if experiment_name:
-        results_file = Path(f"scripts/models/tunning_results_{experiment_name}.txt")
+        results_file = Path(f"logs/hyperparameter_tunning_logs/tunning_results_{experiment_name}.txt")
     else:
-        results_file = Path("scripts/models/tunning_results.txt")
+        results_file = Path("logs/hyperparameter_tunning_logs/tunning_results.txt")
     
     # Create directory if it doesn't exist
     results_file.parent.mkdir(parents=True, exist_ok=True)
@@ -786,9 +786,9 @@ def append_trial_results(trial: Trial, combined_metric: float, hyperparams: Dict
     """
     # Create the results file path
     if experiment_name:
-        results_file = Path(f"scripts/models/tunning_results_{experiment_name}.txt")
+        results_file = Path(f"logs/hyperparameter_tunning_logs/tunning_results_{experiment_name}.txt")
     else:
-        results_file = Path("scripts/models/tunning_results.txt")
+        results_file = Path("logs/hyperparameter_tunning_logs/tunning_results.txt")
     
     # Create directory if it doesn't exist
     results_file.parent.mkdir(parents=True, exist_ok=True)
@@ -835,9 +835,9 @@ def append_optimization_summary(study: optuna.Study, experiment_name: str = None
         experiment_name: Name of the experiment (for file naming)
     """
     if experiment_name:
-        results_file = Path(f"scripts/models/tunning_results_{experiment_name}.txt")
+        results_file = Path(f"logs/hyperparameter_tunning_logs/tunning_results_{experiment_name}.txt")
     else:
-        results_file = Path("scripts/models/tunning_results.txt")
+        results_file = Path("logs/hyperparameter_tunning_logs/tunning_results.txt")
     
     # Prepare summary
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -1152,9 +1152,9 @@ def main():
     # Set default output config filename based on experiment name
     if args.output_config is None:
         if args.experiment_name:
-            args.output_config = f"optimized_config_{args.experiment_name}.env"
+            args.output_config = f"logs/hyperparameter_tunning_logs/optimized_config_{args.experiment_name}.env"
         else:
-            args.output_config = "optimized_config.env"
+            args.output_config = "logs/hyperparameter_tunning_logs/optimized_config.env"
     
     # Run optimization
     study = run_hyperparameter_optimization(
@@ -1172,7 +1172,10 @@ def main():
     
     # Print summary with experiment name
     print(f"\n🎯 Experiment '{args.experiment_name or 'default'}' completed!")
-    print(f"📊 Results saved to: tunning_results_{args.experiment_name}.txt" if args.experiment_name else "📊 Results saved to: tunning_results.txt")
+    if args.experiment_name:
+        print(f"📊 Results saved to: logs/hyperparameter_tunning_logs/tunning_results_{args.experiment_name}.txt")
+    else:
+        print(f"📊 Results saved to: logs/hyperparameter_tunning_logs/tunning_results.txt")
     print(f"⚙️  Best config saved to: {args.output_config}")
     
     # Start dashboard if requested
