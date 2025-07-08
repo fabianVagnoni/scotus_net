@@ -115,6 +115,7 @@ RUN chmod +x /app/entrypoint.sh
 # Create a non-root user for security
 RUN useradd -m -s /bin/bash scotus && \
     chown -R scotus:scotus /app
+
 USER scotus
 
 # Health check

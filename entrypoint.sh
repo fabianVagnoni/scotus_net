@@ -4,8 +4,14 @@ set -e
 # Create required directories if they don't exist
 mkdir -p /app/data/raw /app/data/processed /app/logs /app/logs/hyperparameter_tunning_logs /app/models_output /app/.cache
 
-# Set proper permissions
-chmod -R 755 /app/data /app/logs /app/models_output /app/.cache
+# Set proper permissions only on directories we can modify
+# Skip permission changes on mounted volumes to avoid "Operation not permitted" errors
+echo "Setting up permissions..."
+# Only set permissions on directories that are typically not mounted from host
+chmod -R 755 /app/logs /app/models_output /app/.cache 2>/dev/null || echo "Note: Some permission changes skipped (this is normal for mounted volumes)"
+
+# Ensure we can write to data directories by creating them if needed, but don't change existing file permissions
+mkdir -p /app/data/raw /app/data/processed /app/data/external 2>/dev/null || true
 
 # Check if .env file exists, if not create from template
 if [ ! -f /app/.env ] && [ -f /app/env.example ]; then
