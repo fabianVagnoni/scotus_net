@@ -197,6 +197,28 @@ docker-compose up --build
 # Run specific services
 docker-compose run scotus-ai python scripts/data_pipeline/main.py
 docker-compose run scotus-ai python scripts/models/model_trainer.py
+
+# Run hyperparameter optimization
+docker-compose run scotus-ai hyperparameter-tuning --experiment-name my_experiment --n-trials 50
+```
+
+### Using Docker Run Script
+```bash
+# Build the image
+./docker-run.sh build
+
+# Run data pipeline
+./docker-run.sh data-pipeline
+
+# Train model
+./docker-run.sh train
+
+# Run hyperparameter tuning
+./docker-run.sh tune --experiment-name architecture_test --n-trials 100
+./docker-run.sh hyperparameter-tuning --experiment-name lr_test --n-trials 50
+
+# Open interactive shell
+./docker-run.sh shell
 ```
 
 ### Manual Docker Build
@@ -206,6 +228,9 @@ docker build -t scotus-ai .
 
 # Run the container
 docker run -it --gpus all -v $(pwd):/app scotus-ai
+
+# Run hyperparameter tuning directly
+docker run -it --gpus all -v $(pwd):/app scotus-ai hyperparameter-tuning --experiment-name test
 ```
 
 ## 📈 Usage Examples
@@ -269,8 +294,12 @@ The model is evaluated using:
 ## 🔍 Hyperparameter Optimization
 
 ```bash
-# Run Optuna optimization
+# Run Optuna optimization (local)
 python scripts/models/hyperparameter_optimization.py --n-trials 100
+
+# Run with Docker
+./docker-run.sh tune --experiment-name architecture_study --n-trials 100
+docker-compose run scotus-ai hyperparameter-tuning --experiment-name test --n-trials 50
 ```
 
 Key hyperparameters optimized:
@@ -279,6 +308,7 @@ Key hyperparameters optimized:
 - Dropout rates
 - Attention heads
 - Batch size
+- Fine-tuning strategy
 
 ## 🤝 Contributing
 

@@ -54,7 +54,7 @@ check_nvidia_docker() {
 # Function to create necessary directories
 create_directories() {
     print_info "Creating necessary directories..."
-    mkdir -p data/raw data/processed logs models_output cache
+    mkdir -p data/raw data/processed logs logs/hyperparameter_tunning_logs models_output cache
     print_success "Directories created"
 }
 
@@ -151,6 +151,8 @@ show_usage() {
     echo "  data-pipeline-step STEP  Run a specific pipeline step"
     echo "  encoding                 Run the encoding pipeline"
     echo "  train                    Train the model"
+    echo "  hyperparameter-tuning    Run hyperparameter optimization"
+    echo "  tune                     Alias for hyperparameter-tuning"
     echo "  check                    Check data status"
     echo "  compose [COMMAND]        Use docker-compose (optional command)"
     echo "  compose-db               Start with database services"
@@ -163,9 +165,12 @@ show_usage() {
     echo "  $0 data-pipeline                           # Run full pipeline"
     echo "  $0 data-pipeline-step scrape-justices      # Run specific step"
     echo "  $0 encoding                                 # Run encoding pipeline"
+    echo "  $0 train                                    # Train the model"
+    echo "  $0 tune --experiment-name arch_test         # Run hyperparameter tuning"
+    echo "  $0 hyperparameter-tuning --n-trials 50     # Run 50 optimization trials"
     echo "  $0 check                                    # Check status"
     echo "  $0 compose                                  # Use docker-compose"
-    echo "  $0 compose data-pipeline                    # Run pipeline with compose"
+    echo "  $0 compose hyperparameter-tuning --help    # Run tuning with compose"
     echo ""
     echo "Options:"
     echo "  -h, --help               Show this help message"
@@ -209,6 +214,25 @@ case "${1:-}" in
     train)
         shift
         run_container "train" "$@"
+        ;;
+    hyperparameter-tuning|tune)
+        if [ "$1" = "--help" ] || [ "$1" = "-h" ]; then
+            print_info "Hyperparameter Tuning Options:"
+            echo "  --experiment-name NAME    Name for the experiment (required)"
+            echo "  --n-trials N             Number of trials (default: from config)"
+            echo "  --dataset-file PATH      Path to dataset file"
+            echo "  --timeout SECONDS        Timeout in seconds"
+            echo "  --storage URL            Storage backend (e.g., sqlite:///study.db)"
+            echo ""
+            echo "Examples:"
+            echo "  $0 tune --experiment-name arch_test --n-trials 50"
+            echo "  $0 hyperparameter-tuning --experiment-name lr_study --n-trials 100"
+            echo "  $0 tune --experiment-name test --timeout 3600"
+            echo ""
+            exit 0
+        fi
+        shift
+        run_container "hyperparameter-tuning" "$@"
         ;;
     check)
         shift
