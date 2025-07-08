@@ -54,7 +54,10 @@ check_nvidia_docker() {
     fi
     
     # Test if Docker can use GPUs with the --gpus flag
-    if docker run --rm --gpus all nvidia/cuda:11.0-base nvidia-smi >/dev/null 2>&1; then
+    if docker run --rm --gpus all nvidia/cuda:12.0-base nvidia-smi >/dev/null 2>&1; then
+        print_info "Docker GPU support detected"
+        return 0
+    elif docker run --rm --gpus all nvidia/cuda:11.8-base nvidia-smi >/dev/null 2>&1; then
         print_info "Docker GPU support detected"
         return 0
     else
@@ -63,7 +66,7 @@ check_nvidia_docker() {
         print_info "1. Create/edit /etc/docker/daemon.json:"
         print_info '   {"default-runtime": "nvidia", "runtimes": {"nvidia": {"path": "/usr/bin/nvidia-container-runtime", "runtimeArgs": []}}}'
         print_info "2. Restart Docker: sudo systemctl restart docker"
-        print_info "3. Test with: docker run --rm --gpus all nvidia/cuda:11.0-base nvidia-smi"
+        print_info "3. Test with: docker run --rm --gpus all nvidia/cuda:12.0-base nvidia-smi"
         return 1
     fi
 }
