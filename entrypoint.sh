@@ -7,8 +7,25 @@ mkdir -p /app/data/raw /app/data/processed /app/logs /app/logs/hyperparameter_tu
 # Set proper permissions only on directories we can modify
 # Skip permission changes on mounted volumes to avoid "Operation not permitted" errors
 echo "Setting up permissions..."
+
+# Try to make logs directory writable (this is critical for the application)
+if [ -d "/app/logs" ]; then
+    # Try to create a test file to check if we can write to logs
+    if ! touch /app/logs/.write_test 2>/dev/null; then
+        echo "WARNING: Cannot write to /app/logs directory. Logging may not work properly."
+        echo "Consider running: sudo chown -R $(id -u):$(id -g) logs/ on the host system"
+        # Try to use a fallback logs directory
+        mkdir -p /tmp/scotus_logs 2>/dev/null || true
+        export LOG_FILE="/tmp/scotus_logs/scotus_ai.log"
+        echo "Using fallback log directory: /tmp/scotus_logs/"
+    else
+        rm -f /app/logs/.write_test 2>/dev/null || true
+        echo "Logs directory is writable"
+    fi
+fi
+
 # Only set permissions on directories that are typically not mounted from host
-chmod -R 755 /app/logs /app/models_output /app/.cache 2>/dev/null || echo "Note: Some permission changes skipped (this is normal for mounted volumes)"
+chmod -R 755 /app/models_output /app/.cache 2>/dev/null || echo "Note: Some permission changes skipped (this is normal for mounted volumes)"
 
 # Ensure we can write to data directories by creating them if needed, but don't change existing file permissions
 mkdir -p /app/data/raw /app/data/processed /app/data/external 2>/dev/null || true

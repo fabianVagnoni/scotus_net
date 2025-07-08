@@ -52,21 +52,40 @@ class Logger:
 
 
 # Global logger instance
-def get_logger(name: str = None, log_file: str = "logs/scotus_ai.log", log_level: str = "INFO"):
+def get_logger(name: str = None, log_file: str = None, log_level: str = "INFO"):
     """Get a logger instance.
     
     Args:
         name: Logger name (typically __name__ of the module).
-        log_file: Path to log file.
+        log_file: Path to log file. If None, uses environment variable LOG_FILE or default.
         log_level: Logging level.
         
     Returns:
         Logger instance.
     """
-    log_path = Path(log_file)
-    log_path.parent.mkdir(parents=True, exist_ok=True)
+    import os
     
-    return Logger(log_file=log_file, log_level=log_level).get_logger()
+    # Use provided log_file, or environment variable, or default
+    if log_file is None:
+        log_file = os.environ.get("LOG_FILE", "logs/scotus_ai.log")
+    
+    # Try to create the log directory and handle permission issues
+    try:
+        log_path = Path(log_file)
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Test if we can write to the directory
+        test_file = log_path.parent / ".write_test"
+        test_file.touch()
+        test_file.unlink()
+        
+        return Logger(log_file=log_file, log_level=log_level).get_logger()
+        
+    except (PermissionError, OSError) as e:
+        # Fallback to console-only logging if file logging fails
+        print(f"Warning: Cannot create log file {log_file}: {e}")
+        print("Falling back to console-only logging")
+        return Logger(log_file=None, log_level=log_level).get_logger()
 
 
 # Default logger

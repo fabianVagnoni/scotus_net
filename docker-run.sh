@@ -39,14 +39,75 @@ check_docker() {
 
 # Function to check if nvidia-docker is available (for GPU support)
 check_nvidia_docker() {
-    if command -v nvidia-docker >/dev/null 2>&1; then
-        print_info "NVIDIA Docker support detected"
-        return 0
-    elif docker run --rm --gpus all nvidia/cuda:11.0-base nvidia-smi >/dev/null 2>&1; then
+    # Check if NVIDIA drivers are available on the host
+    if ! command -v nvidia-smi >/dev/null 2>&1; then
+        print_warning "NVIDIA drivers not found. GPU features will be disabled."
+        print_info "Install NVIDIA drivers first if you have a GPU."
+        return 1
+    fi
+    
+    # Check if nvidia-container-runtime is available
+    if ! command -v nvidia-container-runtime >/dev/null 2>&1; then
+        print_warning "nvidia-container-runtime not found."
+        print_info "Install nvidia-container-runtime for GPU support."
+        return 1
+    fi
+    
+    # Test if Docker can use GPUs with the --gpus flag
+    if docker run --rm --gpus all nvidia/cuda:11.0-base nvidia-smi >/dev/null 2>&1; then
         print_info "Docker GPU support detected"
         return 0
     else
         print_warning "NVIDIA Docker support not available. GPU features will be disabled."
+        print_info "To enable GPU support, configure Docker daemon:"
+        print_info "1. Create/edit /etc/docker/daemon.json:"
+        print_info '   {"default-runtime": "nvidia", "runtimes": {"nvidia": {"path": "/usr/bin/nvidia-container-runtime", "runtimeArgs": []}}}'
+        print_info "2. Restart Docker: sudo systemctl restart docker"
+        print_info "3. Test with: docker run --rm --gpus all nvidia/cuda:11.0-base nvidia-smi"
+        return 1
+    fi
+}
+
+# Function to setup GPU support (helper function)
+setup_gpu_support() {
+    print_info "Setting up GPU support..."
+    print_info "This will configure Docker to use NVIDIA runtime."
+    
+    # Check if running as root or with sudo
+    if [ "$EUID" -ne 0 ]; then
+        print_error "GPU setup requires root privileges. Please run with sudo."
+        return 1
+    fi
+    
+    # Backup existing daemon.json if it exists
+    if [ -f /etc/docker/daemon.json ]; then
+        print_info "Backing up existing daemon.json..."
+        cp /etc/docker/daemon.json /etc/docker/daemon.json.backup
+    fi
+    
+    # Create daemon.json with NVIDIA runtime
+    print_info "Creating /etc/docker/daemon.json..."
+    cat > /etc/docker/daemon.json << EOF
+{
+  "default-runtime": "nvidia",
+  "runtimes": {
+    "nvidia": {
+      "path": "/usr/bin/nvidia-container-runtime",
+      "runtimeArgs": []
+    }
+  }
+}
+EOF
+    
+    print_info "Restarting Docker daemon..."
+    systemctl restart docker
+    
+    print_info "Testing GPU support..."
+    if docker run --rm --gpus all nvidia/cuda:11.0-base nvidia-smi >/dev/null 2>&1; then
+        print_success "GPU support configured successfully!"
+        return 0
+    else
+        print_error "GPU support test failed. Please check the setup."
         return 1
     fi
 }
@@ -55,6 +116,14 @@ check_nvidia_docker() {
 create_directories() {
     print_info "Creating necessary directories..."
     mkdir -p data/raw data/processed logs logs/hyperparameter_tunning_logs models_output cache
+    
+    # Ensure logs directory is writable by making it world-writable
+    # This is necessary for the container's non-root user to write log files
+    chmod 777 logs logs/hyperparameter_tunning_logs 2>/dev/null || {
+        print_warning "Could not set write permissions on logs directory"
+        print_warning "You may need to run: sudo chmod 777 logs/ logs/hyperparameter_tunning_logs/"
+    }
+    
     print_success "Directories created"
 }
 
@@ -154,6 +223,7 @@ show_usage() {
     echo "  hyperparameter-tuning    Run hyperparameter optimization"
     echo "  tune                     Alias for hyperparameter-tuning"
     echo "  check                    Check data status"
+    echo "  setup-gpu                Configure Docker for GPU support (requires sudo)"
     echo "  compose [COMMAND]        Use docker-compose (optional command)"
     echo "  compose-db               Start with database services"
     echo "  clean                    Clean up containers and images"
@@ -168,6 +238,7 @@ show_usage() {
     echo "  $0 train                                    # Train the model"
     echo "  $0 tune --experiment-name arch_test         # Run hyperparameter tuning"
     echo "  $0 hyperparameter-tuning --n-trials 50     # Run 50 optimization trials"
+    echo "  sudo $0 setup-gpu                          # Configure GPU support"
     echo "  $0 check                                    # Check status"
     echo "  $0 compose                                  # Use docker-compose"
     echo "  $0 compose hyperparameter-tuning --help    # Run tuning with compose"
@@ -237,6 +308,9 @@ case "${1:-}" in
     check)
         shift
         run_container "check" "$@"
+        ;;
+    setup-gpu)
+        setup_gpu_support
         ;;
     compose)
         shift

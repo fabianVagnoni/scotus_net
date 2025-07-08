@@ -221,6 +221,38 @@ docker-compose run scotus-ai hyperparameter-tuning --experiment-name my_experime
 ./docker-run.sh shell
 ```
 
+### GPU Support Setup
+To enable GPU acceleration for model training and hyperparameter tuning:
+
+```bash
+# Automated setup (requires sudo)
+sudo ./docker-run.sh setup-gpu
+
+# Manual setup - Create/edit /etc/docker/daemon.json:
+sudo nano /etc/docker/daemon.json
+```
+
+Add the following configuration:
+```json
+{
+  "default-runtime": "nvidia",
+  "runtimes": {
+    "nvidia": {
+      "path": "/usr/bin/nvidia-container-runtime",
+      "runtimeArgs": []
+    }
+  }
+}
+```
+
+Then restart Docker:
+```bash
+sudo systemctl restart docker
+
+# Test GPU support
+docker run --rm --gpus all nvidia/cuda:11.0-base nvidia-smi
+```
+
 ### Manual Docker Build
 ```bash
 # Build the image
