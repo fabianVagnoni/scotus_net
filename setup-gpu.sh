@@ -123,17 +123,17 @@ restart_docker() {
 test_gpu_support() {
     print_info "Testing GPU support..."
     
-    # Pull NVIDIA CUDA image if not present
-    if ! docker image inspect nvidia/cuda:11.0-base >/dev/null 2>&1; then
+    # Pull NVIDIA CUDA image if not present - using valid tag
+    if ! docker image inspect nvidia/cuda:12.2.0-base-ubuntu22.04 >/dev/null 2>&1; then
         print_info "Pulling NVIDIA CUDA test image..."
-        docker pull nvidia/cuda:11.0-base
+        docker pull nvidia/cuda:12.2.0-base-ubuntu22.04
     fi
     
     # Test GPU access
-    if docker run --rm --gpus all nvidia/cuda:11.0-base nvidia-smi >/dev/null 2>&1; then
+    if docker run --rm --gpus all nvidia/cuda:12.2.0-base-ubuntu22.04 nvidia-smi >/dev/null 2>&1; then
         print_success "GPU support test passed!"
         print_info "Running nvidia-smi in container to show GPU info:"
-        docker run --rm --gpus all nvidia/cuda:11.0-base nvidia-smi
+        docker run --rm --gpus all nvidia/cuda:12.2.0-base-ubuntu22.04 nvidia-smi
     else
         print_error "GPU support test failed. Please check the configuration."
         exit 1
