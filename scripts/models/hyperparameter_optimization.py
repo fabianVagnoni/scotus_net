@@ -1004,21 +1004,56 @@ def run_hyperparameter_optimization(
     return study
 
 
-def save_best_config(study: optuna.Study, output_file: str = "best_config.env"):
+def save_best_config(study: optuna.Study, base_config: ModelConfig, output_file: str = "best_config.env"):
     """
     Save the best hyperparameters as a new config file.
     
     Args:
         study: Completed Optuna study
+        base_config: Base configuration used for optimization
         output_file: Output configuration file path
     """
     logger = get_logger(__name__)
     
-    # Load base config to get non-optimized parameters
-    base_config = ModelConfig()
-    
     # Create new config with best parameters
     best_params = study.best_params
+    
+    # Determine which hyperparameters were studied
+    studied_params = []
+    
+    # Core model parameters
+    if base_config.tune_hidden_dim:
+        studied_params.append("HIDDEN_DIM")
+    if base_config.tune_dropout_rate:
+        studied_params.append("DROPOUT_RATE")
+    if base_config.tune_num_attention_heads:
+        studied_params.append("NUM_ATTENTION_HEADS")
+    if base_config.tune_use_justice_attention:
+        studied_params.append("USE_JUSTICE_ATTENTION")
+    if base_config.tune_learning_rate:
+        studied_params.append("LEARNING_RATE")
+    if base_config.tune_batch_size:
+        studied_params.append("BATCH_SIZE")
+    if base_config.tune_weight_decay:
+        studied_params.append("WEIGHT_DECAY")
+    
+    # Fine-tuning strategy parameters
+    if base_config.tune_fine_tuning_strategy:
+        studied_params.extend([
+            "FIRST_UNFREEZE_EPOCH",
+            "SECOND_UNFREEZE_EPOCH", 
+            "INITIAL_LAYERS_TO_UNFREEZE",
+            "LR_REDUCTION_FACTOR"
+        ])
+    
+    # Create hyperparameters studied section
+    hyperparams_section = ["# Hyperparameters studied: "]
+    if studied_params:
+        for param in studied_params:
+            hyperparams_section.append(f"#   - {param}")
+    else:
+        hyperparams_section.append("#   - None (all parameters used default values)")
+    hyperparams_section.append("")
     
     config_lines = [
         "# SCOTUS AI Model Configuration - Optimized with Optuna",
@@ -1028,6 +1063,12 @@ def save_best_config(study: optuna.Study, output_file: str = "best_config.env"):
         f"# Optimization date: {datetime.now().isoformat()}",
         f"# Note: Optimized using combined KL Divergence Loss and F1-Score Macro",
         "",
+    ]
+    
+    # Add hyperparameters studied section
+    config_lines.extend(hyperparams_section)
+    
+    config_lines.extend([
         "# Model Architecture",
         f"BIO_MODEL_NAME={base_config.bio_model_name}",
         f"DESCRIPTION_MODEL_NAME={base_config.description_model_name}",
@@ -1119,13 +1160,17 @@ def save_best_config(study: optuna.Study, output_file: str = "best_config.env"):
         f"MAX_JUSTICES_PER_CASE={base_config.max_justices_per_case}",
         f"SKIP_MISSING_DESCRIPTIONS={str(base_config.skip_missing_descriptions).lower()}",
         f"SKIP_MISSING_BIOGRAPHIES={str(base_config.skip_missing_biographies).lower()}"
-    ]
+    ])
     
     # Write config file
     with open(output_file, 'w') as f:
         f.write('\n'.join(config_lines))
     
     logger.info(f"💾 Best configuration saved to: {output_file}")
+    if studied_params:
+        logger.info(f"📊 Optimized parameters: {', '.join(studied_params)}")
+    else:
+        logger.info(f"📊 No parameters were optimized (all used default values)")
 
 
 def main():
@@ -1167,8 +1212,8 @@ def main():
         experiment_name=args.experiment_name
     )
     
-    # Save best configuration
-    save_best_config(study, args.output_config)
+    # Save best configuration (now passing base_config)
+    save_best_config(study, base_config, args.output_config)
     
     # Print summary with experiment name
     print(f"\n🎯 Experiment '{args.experiment_name or 'default'}' completed!")
