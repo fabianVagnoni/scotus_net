@@ -1,0 +1,1634 @@
+################################################################################
+# SCOTUS AI Hyperparameter Optimization Results
+# Study: scotus_optimization_20250710_113355
+# Experiment: arch_fine_interaction
+# Started: 2025-07-10 11:33:55
+# Number of trials: 100
+# Dataset: data/processed/case_dataset.json
+################################################################################
+
+================================================================================
+Trial #0 - 2025-07-10 11:55:18
+Combined Metric (Loss + (1-F1))/2: 0.336221
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 384
+  dropout_rate: 0.2
+  num_attention_heads: 16
+  use_justice_attention: True
+  learning_rate: 0.00022876379166342594
+  weight_decay: 2.053361229224936e-05
+  first_unfreeze_epoch: 4
+  second_unfreeze_epoch: 6
+  initial_layers_to_unfreeze: 3
+  lr_reduction_factor: 0.5
+
+================================================================================
+Trial #1 - 2025-07-10 12:03:00
+Combined Metric (Loss + (1-F1))/2: 0.337731
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 1024
+  dropout_rate: 0.1
+  num_attention_heads: 12
+  use_justice_attention: True
+  learning_rate: 0.0004215283553399249
+  weight_decay: 0.00013822513895700921
+  first_unfreeze_epoch: 2
+  second_unfreeze_epoch: 6
+  initial_layers_to_unfreeze: 6
+  lr_reduction_factor: 0.5
+
+================================================================================
+Trial #2 - 2025-07-10 12:17:37
+Combined Metric (Loss + (1-F1))/2: 0.328930
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 1024
+  dropout_rate: 0.15000000000000002
+  num_attention_heads: 12
+  use_justice_attention: False
+  learning_rate: 0.00036283601472387013
+  weight_decay: 1.0493585034695425e-05
+  first_unfreeze_epoch: 2
+  second_unfreeze_epoch: -1
+  initial_layers_to_unfreeze: 3
+  lr_reduction_factor: 0.5
+
+================================================================================
+Trial #3 - 2025-07-10 12:32:55
+Combined Metric (Loss + (1-F1))/2: 0.329928
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 1536
+  dropout_rate: 0.15000000000000002
+  num_attention_heads: 8
+  use_justice_attention: True
+  learning_rate: 0.0006204125996318811
+  weight_decay: 0.00014433128767200792
+  first_unfreeze_epoch: -1
+  second_unfreeze_epoch: -1
+  initial_layers_to_unfreeze: 6
+  lr_reduction_factor: 0.3
+
+================================================================================
+Trial #4 - 2025-07-10 12:59:41
+Combined Metric (Loss + (1-F1))/2: 0.308844
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 384
+  dropout_rate: 0.05
+  num_attention_heads: 16
+  use_justice_attention: False
+  learning_rate: 0.0001758021976459973
+  weight_decay: 1.3847458189842488e-05
+  first_unfreeze_epoch: 2
+  second_unfreeze_epoch: 4
+  initial_layers_to_unfreeze: 4
+  lr_reduction_factor: 0.5
+
+================================================================================
+Trial #5 - 2025-07-10 13:16:51
+Combined Metric (Loss + (1-F1))/2: 0.351824
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 1024
+  dropout_rate: 0.1
+  num_attention_heads: 16
+  use_justice_attention: False
+  learning_rate: 0.000287342391869764
+  weight_decay: 4.8527391553694014e-05
+  first_unfreeze_epoch: -1
+  second_unfreeze_epoch: 4
+  initial_layers_to_unfreeze: 6
+  lr_reduction_factor: 0.5
+
+================================================================================
+Trial #6 - 2025-07-10 13:26:20
+Combined Metric (Loss + (1-F1))/2: 0.375032
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 1024
+  dropout_rate: 0.15000000000000002
+  num_attention_heads: 16
+  use_justice_attention: True
+  learning_rate: 0.0007633100233568376
+  weight_decay: 5.760614510028121e-05
+  first_unfreeze_epoch: 2
+  second_unfreeze_epoch: 8
+  initial_layers_to_unfreeze: 3
+  lr_reduction_factor: 0.5
+
+================================================================================
+Trial #7 - 2025-07-10 13:52:57
+Combined Metric (Loss + (1-F1))/2: 0.324956
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 1536
+  dropout_rate: 0.15000000000000002
+  num_attention_heads: 16
+  use_justice_attention: False
+  learning_rate: 0.0001251035623800565
+  weight_decay: 1.5427764281446236e-05
+  first_unfreeze_epoch: 2
+  second_unfreeze_epoch: 4
+  initial_layers_to_unfreeze: 3
+  lr_reduction_factor: 0.5
+
+================================================================================
+Trial #8 - 2025-07-10 14:06:10
+Combined Metric (Loss + (1-F1))/2: 0.342706
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 1024
+  dropout_rate: 0.15000000000000002
+  num_attention_heads: 8
+  use_justice_attention: True
+  learning_rate: 0.00014808897322144817
+  weight_decay: 0.0031702452406103454
+  first_unfreeze_epoch: 2
+  second_unfreeze_epoch: -1
+  initial_layers_to_unfreeze: 4
+  lr_reduction_factor: 0.4
+
+================================================================================
+Trial #9 - 2025-07-10 14:13:44
+Combined Metric (Loss + (1-F1))/2: 0.350563
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 1536
+  dropout_rate: 0.1
+  num_attention_heads: 12
+  use_justice_attention: True
+  learning_rate: 0.0001503516305223856
+  weight_decay: 0.00014059902651668646
+  first_unfreeze_epoch: 4
+  second_unfreeze_epoch: -1
+  initial_layers_to_unfreeze: 6
+  lr_reduction_factor: 0.4
+
+================================================================================
+Trial #10 - 2025-07-10 14:25:52
+Combined Metric (Loss + (1-F1))/2: 0.349583
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 384
+  dropout_rate: 0.05
+  num_attention_heads: 16
+  use_justice_attention: False
+  learning_rate: 0.00022516406422933182
+  weight_decay: 0.0010685878118053141
+  first_unfreeze_epoch: -1
+  second_unfreeze_epoch: 4
+  initial_layers_to_unfreeze: 4
+  lr_reduction_factor: 0.4
+
+================================================================================
+Trial #11 - 2025-07-10 14:52:45
+Combined Metric (Loss + (1-F1))/2: 0.314227
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 2048
+  dropout_rate: 0.05
+  num_attention_heads: 16
+  use_justice_attention: False
+  learning_rate: 0.00011728409782343464
+  weight_decay: 1.0157632458208517e-05
+  first_unfreeze_epoch: 2
+  second_unfreeze_epoch: 4
+  initial_layers_to_unfreeze: 4
+  lr_reduction_factor: 0.3
+
+================================================================================
+Trial #12 - 2025-07-10 15:19:34
+Combined Metric (Loss + (1-F1))/2: 0.316410
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 2048
+  dropout_rate: 0.05
+  num_attention_heads: 16
+  use_justice_attention: False
+  learning_rate: 0.00018341307159518703
+  weight_decay: 3.5804703771716785e-05
+  first_unfreeze_epoch: 2
+  second_unfreeze_epoch: 4
+  initial_layers_to_unfreeze: 4
+  lr_reduction_factor: 0.3
+
+================================================================================
+Trial #13 - 2025-07-10 15:26:53
+Combined Metric (Loss + (1-F1))/2: inf
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 768
+  dropout_rate: 0.05
+  num_attention_heads: 16
+  use_justice_attention: False
+  learning_rate: 0.00010230568928021051
+  weight_decay: 0.0006391451836606358
+  first_unfreeze_epoch: 2
+  second_unfreeze_epoch: 4
+  initial_layers_to_unfreeze: 4
+  lr_reduction_factor: 0.3
+
+================================================================================
+Trial #14 - 2025-07-10 15:37:57
+Combined Metric (Loss + (1-F1))/2: inf
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 2048
+  dropout_rate: 0.05
+  num_attention_heads: 16
+  use_justice_attention: False
+  learning_rate: 0.00010563812884322323
+  weight_decay: 1.0534232624949681e-05
+  first_unfreeze_epoch: 2
+  second_unfreeze_epoch: 8
+  initial_layers_to_unfreeze: 4
+  lr_reduction_factor: 0.3
+
+================================================================================
+Trial #15 - 2025-07-10 15:45:20
+Combined Metric (Loss + (1-F1))/2: 0.353240
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 2048
+  dropout_rate: 0.05
+  num_attention_heads: 8
+  use_justice_attention: False
+  learning_rate: 0.00017427604105033735
+  weight_decay: 2.902870299844618e-05
+  first_unfreeze_epoch: 4
+  second_unfreeze_epoch: 4
+  initial_layers_to_unfreeze: 4
+  lr_reduction_factor: 0.4
+
+================================================================================
+Trial #16 - 2025-07-10 16:02:21
+Combined Metric (Loss + (1-F1))/2: inf
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 384
+  dropout_rate: 0.1
+  num_attention_heads: 16
+  use_justice_attention: False
+  learning_rate: 0.00013048368924536188
+  weight_decay: 0.00035156142916965193
+  first_unfreeze_epoch: 2
+  second_unfreeze_epoch: 4
+  initial_layers_to_unfreeze: 4
+  lr_reduction_factor: 0.4
+
+================================================================================
+Trial #17 - 2025-07-10 16:29:05
+Combined Metric (Loss + (1-F1))/2: 0.330461
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 768
+  dropout_rate: 0.2
+  num_attention_heads: 16
+  use_justice_attention: False
+  learning_rate: 0.000215330349093733
+  weight_decay: 7.354141553308191e-05
+  first_unfreeze_epoch: 2
+  second_unfreeze_epoch: 4
+  initial_layers_to_unfreeze: 4
+  lr_reduction_factor: 0.3
+
+================================================================================
+Trial #18 - 2025-07-10 16:36:30
+Combined Metric (Loss + (1-F1))/2: 0.353338
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 2048
+  dropout_rate: 0.05
+  num_attention_heads: 12
+  use_justice_attention: False
+  learning_rate: 0.0003025391617867389
+  weight_decay: 2.159135198387518e-05
+  first_unfreeze_epoch: -1
+  second_unfreeze_epoch: 6
+  initial_layers_to_unfreeze: 4
+  lr_reduction_factor: 0.4
+
+================================================================================
+Trial #19 - 2025-07-10 16:45:36
+Combined Metric (Loss + (1-F1))/2: 0.344245
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 384
+  dropout_rate: 0.1
+  num_attention_heads: 8
+  use_justice_attention: False
+  learning_rate: 0.00017704576530836092
+  weight_decay: 0.0034169303309840404
+  first_unfreeze_epoch: 4
+  second_unfreeze_epoch: 8
+  initial_layers_to_unfreeze: 4
+  lr_reduction_factor: 0.4
+
+================================================================================
+Trial #20 - 2025-07-10 16:52:55
+Combined Metric (Loss + (1-F1))/2: inf
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 384
+  dropout_rate: 0.05
+  num_attention_heads: 16
+  use_justice_attention: False
+  learning_rate: 0.00012354762976911457
+  weight_decay: 7.933506162257568e-05
+  first_unfreeze_epoch: 2
+  second_unfreeze_epoch: 4
+  initial_layers_to_unfreeze: 4
+  lr_reduction_factor: 0.3
+
+================================================================================
+Trial #21 - 2025-07-10 17:10:03
+Combined Metric (Loss + (1-F1))/2: inf
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 2048
+  dropout_rate: 0.05
+  num_attention_heads: 16
+  use_justice_attention: False
+  learning_rate: 0.00018385514282486963
+  weight_decay: 3.6134551688023623e-05
+  first_unfreeze_epoch: 2
+  second_unfreeze_epoch: 4
+  initial_layers_to_unfreeze: 4
+  lr_reduction_factor: 0.3
+
+================================================================================
+Trial #22 - 2025-07-10 17:32:04
+Combined Metric (Loss + (1-F1))/2: 0.323945
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 2048
+  dropout_rate: 0.05
+  num_attention_heads: 16
+  use_justice_attention: False
+  learning_rate: 0.00015239553080899663
+  weight_decay: 1.5782602289532757e-05
+  first_unfreeze_epoch: 2
+  second_unfreeze_epoch: 4
+  initial_layers_to_unfreeze: 4
+  lr_reduction_factor: 0.3
+
+================================================================================
+Trial #23 - 2025-07-10 17:39:28
+Combined Metric (Loss + (1-F1))/2: 0.339184
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 2048
+  dropout_rate: 0.1
+  num_attention_heads: 16
+  use_justice_attention: False
+  learning_rate: 0.00019848778392720528
+  weight_decay: 1.0138179825549601e-05
+  first_unfreeze_epoch: 2
+  second_unfreeze_epoch: 4
+  initial_layers_to_unfreeze: 4
+  lr_reduction_factor: 0.3
+
+================================================================================
+Trial #24 - 2025-07-10 18:06:25
+Combined Metric (Loss + (1-F1))/2: 0.310255
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 2048
+  dropout_rate: 0.05
+  num_attention_heads: 16
+  use_justice_attention: False
+  learning_rate: 0.00025761491341823675
+  weight_decay: 3.035899314499376e-05
+  first_unfreeze_epoch: 2
+  second_unfreeze_epoch: 4
+  initial_layers_to_unfreeze: 4
+  lr_reduction_factor: 0.3
+
+================================================================================
+Trial #25 - 2025-07-10 18:33:16
+Combined Metric (Loss + (1-F1))/2: 0.320402
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 2048
+  dropout_rate: 0.05
+  num_attention_heads: 16
+  use_justice_attention: False
+  learning_rate: 0.0002561165380998946
+  weight_decay: 2.097463612452176e-05
+  first_unfreeze_epoch: 2
+  second_unfreeze_epoch: 4
+  initial_layers_to_unfreeze: 4
+  lr_reduction_factor: 0.3
+
+================================================================================
+Trial #26 - 2025-07-10 18:50:19
+Combined Metric (Loss + (1-F1))/2: inf
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 768
+  dropout_rate: 0.1
+  num_attention_heads: 16
+  use_justice_attention: False
+  learning_rate: 0.00036499877542448765
+  weight_decay: 2.7024348485153146e-05
+  first_unfreeze_epoch: 2
+  second_unfreeze_epoch: 4
+  initial_layers_to_unfreeze: 4
+  lr_reduction_factor: 0.4
+
+================================================================================
+Trial #27 - 2025-07-10 18:57:43
+Combined Metric (Loss + (1-F1))/2: inf
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 384
+  dropout_rate: 0.05
+  num_attention_heads: 16
+  use_justice_attention: False
+  learning_rate: 0.0005172821979204125
+  weight_decay: 1.4489447080005917e-05
+  first_unfreeze_epoch: 2
+  second_unfreeze_epoch: 6
+  initial_layers_to_unfreeze: 4
+  lr_reduction_factor: 0.4
+
+================================================================================
+Trial #28 - 2025-07-10 19:05:09
+Combined Metric (Loss + (1-F1))/2: 0.354899
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 2048
+  dropout_rate: 0.1
+  num_attention_heads: 8
+  use_justice_attention: False
+  learning_rate: 0.0002571165259850013
+  weight_decay: 0.0002900258374224824
+  first_unfreeze_epoch: 4
+  second_unfreeze_epoch: 8
+  initial_layers_to_unfreeze: 3
+  lr_reduction_factor: 0.3
+
+================================================================================
+Trial #29 - 2025-07-10 19:12:51
+Combined Metric (Loss + (1-F1))/2: inf
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 384
+  dropout_rate: 0.2
+  num_attention_heads: 12
+  use_justice_attention: True
+  learning_rate: 0.0003368284566994493
+  weight_decay: 4.618085586550188e-05
+  first_unfreeze_epoch: -1
+  second_unfreeze_epoch: 6
+  initial_layers_to_unfreeze: 6
+  lr_reduction_factor: 0.5
+
+================================================================================
+Trial #30 - 2025-07-10 19:20:18
+Combined Metric (Loss + (1-F1))/2: inf
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 2048
+  dropout_rate: 0.05
+  num_attention_heads: 16
+  use_justice_attention: False
+  learning_rate: 0.00025260779344822137
+  weight_decay: 2.064631983717698e-05
+  first_unfreeze_epoch: 4
+  second_unfreeze_epoch: 4
+  initial_layers_to_unfreeze: 3
+  lr_reduction_factor: 0.5
+
+================================================================================
+Trial #31 - 2025-07-10 19:47:21
+Combined Metric (Loss + (1-F1))/2: 0.307373
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 2048
+  dropout_rate: 0.05
+  num_attention_heads: 16
+  use_justice_attention: False
+  learning_rate: 0.0002028596158885991
+  weight_decay: 3.578246305582672e-05
+  first_unfreeze_epoch: 2
+  second_unfreeze_epoch: 4
+  initial_layers_to_unfreeze: 4
+  lr_reduction_factor: 0.3
+
+================================================================================
+Trial #32 - 2025-07-10 20:14:24
+Combined Metric (Loss + (1-F1))/2: 0.319803
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 2048
+  dropout_rate: 0.05
+  num_attention_heads: 16
+  use_justice_attention: False
+  learning_rate: 0.00021242013267345277
+  weight_decay: 1.5240461740154734e-05
+  first_unfreeze_epoch: 2
+  second_unfreeze_epoch: 4
+  initial_layers_to_unfreeze: 4
+  lr_reduction_factor: 0.3
+
+================================================================================
+Trial #33 - 2025-07-10 20:26:47
+Combined Metric (Loss + (1-F1))/2: 0.338530
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 2048
+  dropout_rate: 0.05
+  num_attention_heads: 16
+  use_justice_attention: False
+  learning_rate: 0.00016178096038041467
+  weight_decay: 0.00010349464543661008
+  first_unfreeze_epoch: 2
+  second_unfreeze_epoch: 4
+  initial_layers_to_unfreeze: 4
+  lr_reduction_factor: 0.3
+
+================================================================================
+Trial #34 - 2025-07-10 20:34:27
+Combined Metric (Loss + (1-F1))/2: inf
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 2048
+  dropout_rate: 0.05
+  num_attention_heads: 12
+  use_justice_attention: True
+  learning_rate: 0.00045156343473991
+  weight_decay: 3.09898679940028e-05
+  first_unfreeze_epoch: 2
+  second_unfreeze_epoch: 4
+  initial_layers_to_unfreeze: 4
+  lr_reduction_factor: 0.3
+
+================================================================================
+Trial #35 - 2025-07-10 20:41:52
+Combined Metric (Loss + (1-F1))/2: inf
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 1536
+  dropout_rate: 0.1
+  num_attention_heads: 16
+  use_justice_attention: False
+  learning_rate: 0.00011250677706368993
+  weight_decay: 1.0308299142190787e-05
+  first_unfreeze_epoch: 2
+  second_unfreeze_epoch: -1
+  initial_layers_to_unfreeze: 6
+  lr_reduction_factor: 0.3
+
+================================================================================
+Trial #36 - 2025-07-10 20:49:13
+Combined Metric (Loss + (1-F1))/2: inf
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 384
+  dropout_rate: 0.05
+  num_attention_heads: 16
+  use_justice_attention: False
+  learning_rate: 0.00031582761056147965
+  weight_decay: 7.641935401492129e-05
+  first_unfreeze_epoch: 2
+  second_unfreeze_epoch: 6
+  initial_layers_to_unfreeze: 4
+  lr_reduction_factor: 0.3
+
+================================================================================
+Trial #37 - 2025-07-10 20:56:54
+Combined Metric (Loss + (1-F1))/2: inf
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 1024
+  dropout_rate: 0.05
+  num_attention_heads: 16
+  use_justice_attention: True
+  learning_rate: 0.00013202261538092613
+  weight_decay: 5.1369909643905206e-05
+  first_unfreeze_epoch: -1
+  second_unfreeze_epoch: 4
+  initial_layers_to_unfreeze: 3
+  lr_reduction_factor: 0.5
+
+================================================================================
+Trial #38 - 2025-07-10 21:04:21
+Combined Metric (Loss + (1-F1))/2: 0.328822
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 2048
+  dropout_rate: 0.1
+  num_attention_heads: 8
+  use_justice_attention: False
+  learning_rate: 0.00024001487586140758
+  weight_decay: 1.4827890702222524e-05
+  first_unfreeze_epoch: 2
+  second_unfreeze_epoch: 4
+  initial_layers_to_unfreeze: 6
+  lr_reduction_factor: 0.4
+
+================================================================================
+Trial #39 - 2025-07-10 21:13:31
+Combined Metric (Loss + (1-F1))/2: 0.326309
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 1536
+  dropout_rate: 0.15000000000000002
+  num_attention_heads: 12
+  use_justice_attention: False
+  learning_rate: 0.00027246438106515863
+  weight_decay: 2.648995602820181e-05
+  first_unfreeze_epoch: 2
+  second_unfreeze_epoch: -1
+  initial_layers_to_unfreeze: 4
+  lr_reduction_factor: 0.5
+
+================================================================================
+Trial #40 - 2025-07-10 21:24:58
+Combined Metric (Loss + (1-F1))/2: 0.322181
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 1024
+  dropout_rate: 0.05
+  num_attention_heads: 16
+  use_justice_attention: True
+  learning_rate: 0.00013805035940084981
+  weight_decay: 0.00017332767999880488
+  first_unfreeze_epoch: 2
+  second_unfreeze_epoch: 8
+  initial_layers_to_unfreeze: 3
+  lr_reduction_factor: 0.3
+
+================================================================================
+Trial #41 - 2025-07-10 21:37:15
+Combined Metric (Loss + (1-F1))/2: 0.346836
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 2048
+  dropout_rate: 0.05
+  num_attention_heads: 16
+  use_justice_attention: False
+  learning_rate: 0.00019282617490539965
+  weight_decay: 3.777583420704136e-05
+  first_unfreeze_epoch: 2
+  second_unfreeze_epoch: 4
+  initial_layers_to_unfreeze: 4
+  lr_reduction_factor: 0.3
+
+================================================================================
+Trial #42 - 2025-07-10 21:49:36
+Combined Metric (Loss + (1-F1))/2: 0.339461
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 2048
+  dropout_rate: 0.05
+  num_attention_heads: 16
+  use_justice_attention: False
+  learning_rate: 0.00017196853854869042
+  weight_decay: 6.324345472675922e-05
+  first_unfreeze_epoch: 2
+  second_unfreeze_epoch: 4
+  initial_layers_to_unfreeze: 4
+  lr_reduction_factor: 0.3
+
+================================================================================
+Trial #43 - 2025-07-10 22:01:56
+Combined Metric (Loss + (1-F1))/2: 0.332032
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 2048
+  dropout_rate: 0.05
+  num_attention_heads: 16
+  use_justice_attention: False
+  learning_rate: 0.00020535804964406037
+  weight_decay: 4.23965162204392e-05
+  first_unfreeze_epoch: 2
+  second_unfreeze_epoch: 4
+  initial_layers_to_unfreeze: 4
+  lr_reduction_factor: 0.3
+
+================================================================================
+Trial #44 - 2025-07-10 22:09:19
+Combined Metric (Loss + (1-F1))/2: inf
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 768
+  dropout_rate: 0.05
+  num_attention_heads: 16
+  use_justice_attention: False
+  learning_rate: 0.00023103106077719995
+  weight_decay: 0.00010503424982473131
+  first_unfreeze_epoch: 2
+  second_unfreeze_epoch: 4
+  initial_layers_to_unfreeze: 4
+  lr_reduction_factor: 0.3
+
+================================================================================
+Trial #45 - 2025-07-10 22:21:38
+Combined Metric (Loss + (1-F1))/2: 0.343568
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 2048
+  dropout_rate: 0.05
+  num_attention_heads: 16
+  use_justice_attention: False
+  learning_rate: 0.00015972925459962562
+  weight_decay: 1.740837308914576e-05
+  first_unfreeze_epoch: 2
+  second_unfreeze_epoch: 4
+  initial_layers_to_unfreeze: 4
+  lr_reduction_factor: 0.3
+
+================================================================================
+Trial #46 - 2025-07-10 22:32:40
+Combined Metric (Loss + (1-F1))/2: 0.330621
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 2048
+  dropout_rate: 0.15000000000000002
+  num_attention_heads: 16
+  use_justice_attention: False
+  learning_rate: 0.0001154962773129885
+  weight_decay: 0.0012664427939010684
+  first_unfreeze_epoch: -1
+  second_unfreeze_epoch: -1
+  initial_layers_to_unfreeze: 6
+  lr_reduction_factor: 0.3
+
+================================================================================
+Trial #47 - 2025-07-10 22:49:41
+Combined Metric (Loss + (1-F1))/2: inf
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 384
+  dropout_rate: 0.05
+  num_attention_heads: 16
+  use_justice_attention: False
+  learning_rate: 0.0002892166990066281
+  weight_decay: 2.4712788564123755e-05
+  first_unfreeze_epoch: 2
+  second_unfreeze_epoch: 4
+  initial_layers_to_unfreeze: 4
+  lr_reduction_factor: 0.5
+
+================================================================================
+Trial #48 - 2025-07-10 22:57:20
+Combined Metric (Loss + (1-F1))/2: 0.329874
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 1536
+  dropout_rate: 0.1
+  num_attention_heads: 8
+  use_justice_attention: True
+  learning_rate: 0.00014762352757808877
+  weight_decay: 3.450665741578093e-05
+  first_unfreeze_epoch: 4
+  second_unfreeze_epoch: 4
+  initial_layers_to_unfreeze: 4
+  lr_reduction_factor: 0.3
+
+================================================================================
+Trial #49 - 2025-07-10 23:14:23
+Combined Metric (Loss + (1-F1))/2: inf
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 1024
+  dropout_rate: 0.1
+  num_attention_heads: 16
+  use_justice_attention: False
+  learning_rate: 0.0002223538352940795
+  weight_decay: 1.3071824803438357e-05
+  first_unfreeze_epoch: 2
+  second_unfreeze_epoch: 4
+  initial_layers_to_unfreeze: 4
+  lr_reduction_factor: 0.4
+
+================================================================================
+Trial #50 - 2025-07-10 23:23:35
+Combined Metric (Loss + (1-F1))/2: 0.340202
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 2048
+  dropout_rate: 0.05
+  num_attention_heads: 12
+  use_justice_attention: False
+  learning_rate: 0.0007871058155970061
+  weight_decay: 1.2485827857208146e-05
+  first_unfreeze_epoch: 2
+  second_unfreeze_epoch: 8
+  initial_layers_to_unfreeze: 4
+  lr_reduction_factor: 0.4
+
+================================================================================
+Trial #51 - 2025-07-10 23:30:59
+Combined Metric (Loss + (1-F1))/2: 0.328241
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 2048
+  dropout_rate: 0.05
+  num_attention_heads: 16
+  use_justice_attention: False
+  learning_rate: 0.00021268769808775362
+  weight_decay: 1.7604321965657507e-05
+  first_unfreeze_epoch: 2
+  second_unfreeze_epoch: 4
+  initial_layers_to_unfreeze: 4
+  lr_reduction_factor: 0.3
+
+================================================================================
+Trial #52 - 2025-07-10 23:43:12
+Combined Metric (Loss + (1-F1))/2: 0.334779
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 2048
+  dropout_rate: 0.05
+  num_attention_heads: 16
+  use_justice_attention: False
+  learning_rate: 0.0001777090811095685
+  weight_decay: 1.8409263265444566e-05
+  first_unfreeze_epoch: 2
+  second_unfreeze_epoch: 4
+  initial_layers_to_unfreeze: 4
+  lr_reduction_factor: 0.3
+
+================================================================================
+Trial #53 - 2025-07-10 23:55:27
+Combined Metric (Loss + (1-F1))/2: 0.343835
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 2048
+  dropout_rate: 0.05
+  num_attention_heads: 16
+  use_justice_attention: False
+  learning_rate: 0.00019334703341381476
+  weight_decay: 1.2672960897967369e-05
+  first_unfreeze_epoch: 2
+  second_unfreeze_epoch: 4
+  initial_layers_to_unfreeze: 4
+  lr_reduction_factor: 0.3
+
+================================================================================
+Trial #54 - 2025-07-11 00:22:16
+Combined Metric (Loss + (1-F1))/2: 0.319600
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 2048
+  dropout_rate: 0.05
+  num_attention_heads: 16
+  use_justice_attention: False
+  learning_rate: 0.00014012511287390638
+  weight_decay: 2.3480984706464798e-05
+  first_unfreeze_epoch: 2
+  second_unfreeze_epoch: 4
+  initial_layers_to_unfreeze: 4
+  lr_reduction_factor: 0.3
+
+================================================================================
+Trial #55 - 2025-07-11 00:29:35
+Combined Metric (Loss + (1-F1))/2: inf
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 768
+  dropout_rate: 0.05
+  num_attention_heads: 16
+  use_justice_attention: False
+  learning_rate: 0.00013940035200049066
+  weight_decay: 2.36719086637732e-05
+  first_unfreeze_epoch: 2
+  second_unfreeze_epoch: 4
+  initial_layers_to_unfreeze: 4
+  lr_reduction_factor: 0.3
+
+================================================================================
+Trial #56 - 2025-07-11 00:36:54
+Combined Metric (Loss + (1-F1))/2: inf
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 384
+  dropout_rate: 0.05
+  num_attention_heads: 16
+  use_justice_attention: False
+  learning_rate: 0.00011572351057037605
+  weight_decay: 5.583278935459613e-05
+  first_unfreeze_epoch: -1
+  second_unfreeze_epoch: 4
+  initial_layers_to_unfreeze: 4
+  lr_reduction_factor: 0.3
+
+================================================================================
+Trial #57 - 2025-07-11 00:46:03
+Combined Metric (Loss + (1-F1))/2: 0.343218
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 2048
+  dropout_rate: 0.05
+  num_attention_heads: 16
+  use_justice_attention: False
+  learning_rate: 0.00017039395909525232
+  weight_decay: 2.9833370102065013e-05
+  first_unfreeze_epoch: 2
+  second_unfreeze_epoch: 6
+  initial_layers_to_unfreeze: 4
+  lr_reduction_factor: 0.3
+
+================================================================================
+Trial #58 - 2025-07-11 00:58:13
+Combined Metric (Loss + (1-F1))/2: 0.334764
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 2048
+  dropout_rate: 0.05
+  num_attention_heads: 8
+  use_justice_attention: False
+  learning_rate: 0.00010566449730882414
+  weight_decay: 4.248806244026302e-05
+  first_unfreeze_epoch: 4
+  second_unfreeze_epoch: 4
+  initial_layers_to_unfreeze: 3
+  lr_reduction_factor: 0.3
+
+================================================================================
+Trial #59 - 2025-07-11 01:05:30
+Combined Metric (Loss + (1-F1))/2: inf
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 384
+  dropout_rate: 0.1
+  num_attention_heads: 16
+  use_justice_attention: False
+  learning_rate: 0.00012186340035342177
+  weight_decay: 0.0024590920716853633
+  first_unfreeze_epoch: 2
+  second_unfreeze_epoch: -1
+  initial_layers_to_unfreeze: 4
+  lr_reduction_factor: 0.4
+
+================================================================================
+Trial #60 - 2025-07-11 01:12:52
+Combined Metric (Loss + (1-F1))/2: 0.353307
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 2048
+  dropout_rate: 0.2
+  num_attention_heads: 16
+  use_justice_attention: False
+  learning_rate: 0.00015740581710163082
+  weight_decay: 2.1110167293359886e-05
+  first_unfreeze_epoch: 2
+  second_unfreeze_epoch: 4
+  initial_layers_to_unfreeze: 6
+  lr_reduction_factor: 0.3
+
+================================================================================
+Trial #61 - 2025-07-11 01:39:32
+Combined Metric (Loss + (1-F1))/2: 0.313798
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 2048
+  dropout_rate: 0.05
+  num_attention_heads: 16
+  use_justice_attention: False
+  learning_rate: 0.00019281666747475624
+  weight_decay: 1.1495635034208804e-05
+  first_unfreeze_epoch: 2
+  second_unfreeze_epoch: 4
+  initial_layers_to_unfreeze: 4
+  lr_reduction_factor: 0.3
+
+================================================================================
+Trial #62 - 2025-07-11 01:51:41
+Combined Metric (Loss + (1-F1))/2: 0.339751
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 2048
+  dropout_rate: 0.05
+  num_attention_heads: 16
+  use_justice_attention: False
+  learning_rate: 0.00014045298014952676
+  weight_decay: 1.1788958601905614e-05
+  first_unfreeze_epoch: 2
+  second_unfreeze_epoch: 4
+  initial_layers_to_unfreeze: 4
+  lr_reduction_factor: 0.3
+
+================================================================================
+Trial #63 - 2025-07-11 02:18:21
+Combined Metric (Loss + (1-F1))/2: 0.310056
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 2048
+  dropout_rate: 0.05
+  num_attention_heads: 16
+  use_justice_attention: False
+  learning_rate: 0.00018477539076403696
+  weight_decay: 1.018151028143398e-05
+  first_unfreeze_epoch: 2
+  second_unfreeze_epoch: 4
+  initial_layers_to_unfreeze: 4
+  lr_reduction_factor: 0.3
+
+================================================================================
+Trial #64 - 2025-07-11 02:30:31
+Combined Metric (Loss + (1-F1))/2: 0.328906
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 2048
+  dropout_rate: 0.05
+  num_attention_heads: 16
+  use_justice_attention: False
+  learning_rate: 0.00018558244975555973
+  weight_decay: 1.773128067527227e-05
+  first_unfreeze_epoch: 2
+  second_unfreeze_epoch: 4
+  initial_layers_to_unfreeze: 4
+  lr_reduction_factor: 0.3
+
+================================================================================
+Trial #65 - 2025-07-11 02:42:42
+Combined Metric (Loss + (1-F1))/2: 0.336730
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 2048
+  dropout_rate: 0.05
+  num_attention_heads: 16
+  use_justice_attention: False
+  learning_rate: 0.00023569444234982387
+  weight_decay: 1.1500298941718597e-05
+  first_unfreeze_epoch: 2
+  second_unfreeze_epoch: 4
+  initial_layers_to_unfreeze: 4
+  lr_reduction_factor: 0.3
+
+================================================================================
+Trial #66 - 2025-07-11 02:50:15
+Combined Metric (Loss + (1-F1))/2: inf
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 2048
+  dropout_rate: 0.05
+  num_attention_heads: 16
+  use_justice_attention: True
+  learning_rate: 0.0006794802310341668
+  weight_decay: 1.059514179663482e-05
+  first_unfreeze_epoch: 2
+  second_unfreeze_epoch: 4
+  initial_layers_to_unfreeze: 4
+  lr_reduction_factor: 0.3
+
+================================================================================
+Trial #67 - 2025-07-11 03:01:03
+Combined Metric (Loss + (1-F1))/2: inf
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 768
+  dropout_rate: 0.05
+  num_attention_heads: 12
+  use_justice_attention: False
+  learning_rate: 0.00020180745391305295
+  weight_decay: 1.4167087360427928e-05
+  first_unfreeze_epoch: 2
+  second_unfreeze_epoch: 8
+  initial_layers_to_unfreeze: 4
+  lr_reduction_factor: 0.3
+
+================================================================================
+Trial #68 - 2025-07-11 03:21:30
+Combined Metric (Loss + (1-F1))/2: 0.326549
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 384
+  dropout_rate: 0.05
+  num_attention_heads: 16
+  use_justice_attention: False
+  learning_rate: 0.0002700664441381851
+  weight_decay: 0.0005736622247102178
+  first_unfreeze_epoch: 4
+  second_unfreeze_epoch: 6
+  initial_layers_to_unfreeze: 4
+  lr_reduction_factor: 0.4
+
+================================================================================
+Trial #69 - 2025-07-11 03:38:30
+Combined Metric (Loss + (1-F1))/2: 0.325392
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 1536
+  dropout_rate: 0.05
+  num_attention_heads: 16
+  use_justice_attention: False
+  learning_rate: 0.00016397579103533412
+  weight_decay: 1.015602049542671e-05
+  first_unfreeze_epoch: -1
+  second_unfreeze_epoch: 4
+  initial_layers_to_unfreeze: 4
+  lr_reduction_factor: 0.3
+
+================================================================================
+Trial #70 - 2025-07-11 03:55:32
+Combined Metric (Loss + (1-F1))/2: inf
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 2048
+  dropout_rate: 0.1
+  num_attention_heads: 8
+  use_justice_attention: False
+  learning_rate: 0.00018334814231069454
+  weight_decay: 3.507390618224695e-05
+  first_unfreeze_epoch: 2
+  second_unfreeze_epoch: 4
+  initial_layers_to_unfreeze: 3
+  lr_reduction_factor: 0.5
+
+================================================================================
+Trial #71 - 2025-07-11 04:02:52
+Combined Metric (Loss + (1-F1))/2: inf
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 2048
+  dropout_rate: 0.05
+  num_attention_heads: 16
+  use_justice_attention: False
+  learning_rate: 0.00014898977722084444
+  weight_decay: 2.3257542881963275e-05
+  first_unfreeze_epoch: 2
+  second_unfreeze_epoch: 4
+  initial_layers_to_unfreeze: 4
+  lr_reduction_factor: 0.3
+
+================================================================================
+Trial #72 - 2025-07-11 04:29:31
+Combined Metric (Loss + (1-F1))/2: 0.329830
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 2048
+  dropout_rate: 0.05
+  num_attention_heads: 16
+  use_justice_attention: False
+  learning_rate: 0.00012851481950567218
+  weight_decay: 1.5111962974359078e-05
+  first_unfreeze_epoch: 2
+  second_unfreeze_epoch: 4
+  initial_layers_to_unfreeze: 4
+  lr_reduction_factor: 0.3
+
+================================================================================
+Trial #73 - 2025-07-11 04:36:53
+Combined Metric (Loss + (1-F1))/2: inf
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 2048
+  dropout_rate: 0.05
+  num_attention_heads: 16
+  use_justice_attention: False
+  learning_rate: 0.00016702818242917672
+  weight_decay: 2.0583355093765653e-05
+  first_unfreeze_epoch: 2
+  second_unfreeze_epoch: 4
+  initial_layers_to_unfreeze: 4
+  lr_reduction_factor: 0.3
+
+================================================================================
+Trial #74 - 2025-07-11 04:44:13
+Combined Metric (Loss + (1-F1))/2: 0.350003
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 2048
+  dropout_rate: 0.05
+  num_attention_heads: 16
+  use_justice_attention: False
+  learning_rate: 0.0001893599531529451
+  weight_decay: 2.9764798677206055e-05
+  first_unfreeze_epoch: 2
+  second_unfreeze_epoch: 4
+  initial_layers_to_unfreeze: 4
+  lr_reduction_factor: 0.3
+
+================================================================================
+Trial #75 - 2025-07-11 05:05:59
+Combined Metric (Loss + (1-F1))/2: 0.328645
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 1024
+  dropout_rate: 0.05
+  num_attention_heads: 16
+  use_justice_attention: False
+  learning_rate: 0.00024987685886330063
+  weight_decay: 1.7169807292327864e-05
+  first_unfreeze_epoch: 2
+  second_unfreeze_epoch: 4
+  initial_layers_to_unfreeze: 4
+  lr_reduction_factor: 0.3
+
+================================================================================
+Trial #76 - 2025-07-11 05:13:19
+Combined Metric (Loss + (1-F1))/2: 0.326564
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 2048
+  dropout_rate: 0.05
+  num_attention_heads: 16
+  use_justice_attention: False
+  learning_rate: 0.0002219733967078028
+  weight_decay: 9.044789504804798e-05
+  first_unfreeze_epoch: 2
+  second_unfreeze_epoch: 4
+  initial_layers_to_unfreeze: 4
+  lr_reduction_factor: 0.3
+
+================================================================================
+Trial #77 - 2025-07-11 05:20:53
+Combined Metric (Loss + (1-F1))/2: inf
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 2048
+  dropout_rate: 0.15000000000000002
+  num_attention_heads: 16
+  use_justice_attention: True
+  learning_rate: 0.00020190832782013325
+  weight_decay: 1.436367058393795e-05
+  first_unfreeze_epoch: 2
+  second_unfreeze_epoch: 4
+  initial_layers_to_unfreeze: 6
+  lr_reduction_factor: 0.3
+
+================================================================================
+Trial #78 - 2025-07-11 05:28:11
+Combined Metric (Loss + (1-F1))/2: inf
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 384
+  dropout_rate: 0.05
+  num_attention_heads: 16
+  use_justice_attention: False
+  learning_rate: 0.00014517690078646873
+  weight_decay: 6.144341003092576e-05
+  first_unfreeze_epoch: 2
+  second_unfreeze_epoch: -1
+  initial_layers_to_unfreeze: 4
+  lr_reduction_factor: 0.3
+
+================================================================================
+Trial #79 - 2025-07-11 05:40:21
+Combined Metric (Loss + (1-F1))/2: 0.353784
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 2048
+  dropout_rate: 0.05
+  num_attention_heads: 12
+  use_justice_attention: False
+  learning_rate: 0.00010113059433262564
+  weight_decay: 2.635949454431873e-05
+  first_unfreeze_epoch: 2
+  second_unfreeze_epoch: 4
+  initial_layers_to_unfreeze: 4
+  lr_reduction_factor: 0.3
+
+================================================================================
+Trial #80 - 2025-07-11 05:53:06
+Combined Metric (Loss + (1-F1))/2: 0.330918
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 2048
+  dropout_rate: 0.05
+  num_attention_heads: 16
+  use_justice_attention: False
+  learning_rate: 0.0003520018048736254
+  weight_decay: 1.2506681086717498e-05
+  first_unfreeze_epoch: 2
+  second_unfreeze_epoch: 8
+  initial_layers_to_unfreeze: 4
+  lr_reduction_factor: 0.3
+
+================================================================================
+Trial #81 - 2025-07-11 06:00:26
+Combined Metric (Loss + (1-F1))/2: inf
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 2048
+  dropout_rate: 0.05
+  num_attention_heads: 16
+  use_justice_attention: False
+  learning_rate: 0.00021116873558183304
+  weight_decay: 1.956933128485731e-05
+  first_unfreeze_epoch: 2
+  second_unfreeze_epoch: 4
+  initial_layers_to_unfreeze: 4
+  lr_reduction_factor: 0.3
+
+================================================================================
+Trial #82 - 2025-07-11 06:27:06
+Combined Metric (Loss + (1-F1))/2: 0.316164
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 2048
+  dropout_rate: 0.05
+  num_attention_heads: 16
+  use_justice_attention: False
+  learning_rate: 0.0002434690499959603
+  weight_decay: 1.6922729233098892e-05
+  first_unfreeze_epoch: 2
+  second_unfreeze_epoch: 4
+  initial_layers_to_unfreeze: 4
+  lr_reduction_factor: 0.3
+
+================================================================================
+Trial #83 - 2025-07-11 06:53:48
+Combined Metric (Loss + (1-F1))/2: 0.307615
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 2048
+  dropout_rate: 0.05
+  num_attention_heads: 16
+  use_justice_attention: False
+  learning_rate: 0.00024349442551722955
+  weight_decay: 1.0012113905669797e-05
+  first_unfreeze_epoch: 2
+  second_unfreeze_epoch: 4
+  initial_layers_to_unfreeze: 4
+  lr_reduction_factor: 0.3
+
+================================================================================
+Trial #84 - 2025-07-11 07:20:34
+Combined Metric (Loss + (1-F1))/2: 0.330378
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 2048
+  dropout_rate: 0.05
+  num_attention_heads: 16
+  use_justice_attention: False
+  learning_rate: 0.00030181086696386936
+  weight_decay: 1.0025926180626062e-05
+  first_unfreeze_epoch: 2
+  second_unfreeze_epoch: 4
+  initial_layers_to_unfreeze: 4
+  lr_reduction_factor: 0.3
+
+================================================================================
+Trial #85 - 2025-07-11 07:32:46
+Combined Metric (Loss + (1-F1))/2: 0.333139
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 2048
+  dropout_rate: 0.05
+  num_attention_heads: 16
+  use_justice_attention: False
+  learning_rate: 0.0002739266189501201
+  weight_decay: 1.5858056966849393e-05
+  first_unfreeze_epoch: 2
+  second_unfreeze_epoch: 4
+  initial_layers_to_unfreeze: 4
+  lr_reduction_factor: 0.3
+
+================================================================================
+Trial #86 - 2025-07-11 07:49:47
+Combined Metric (Loss + (1-F1))/2: inf
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 1536
+  dropout_rate: 0.05
+  num_attention_heads: 16
+  use_justice_attention: False
+  learning_rate: 0.00024829727894711565
+  weight_decay: 1.3177067948254668e-05
+  first_unfreeze_epoch: 2
+  second_unfreeze_epoch: 4
+  initial_layers_to_unfreeze: 4
+  lr_reduction_factor: 0.3
+
+================================================================================
+Trial #87 - 2025-07-11 07:57:10
+Combined Metric (Loss + (1-F1))/2: inf
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 2048
+  dropout_rate: 0.05
+  num_attention_heads: 16
+  use_justice_attention: False
+  learning_rate: 0.00022918726507513952
+  weight_decay: 1.2001752684209909e-05
+  first_unfreeze_epoch: 4
+  second_unfreeze_epoch: 6
+  initial_layers_to_unfreeze: 3
+  lr_reduction_factor: 0.3
+
+================================================================================
+Trial #88 - 2025-07-11 08:14:26
+Combined Metric (Loss + (1-F1))/2: 0.332623
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 1024
+  dropout_rate: 0.05
+  num_attention_heads: 16
+  use_justice_attention: True
+  learning_rate: 0.00024104064368699873
+  weight_decay: 1.6238320495304974e-05
+  first_unfreeze_epoch: -1
+  second_unfreeze_epoch: 4
+  initial_layers_to_unfreeze: 4
+  lr_reduction_factor: 0.5
+
+================================================================================
+Trial #89 - 2025-07-11 08:21:43
+Combined Metric (Loss + (1-F1))/2: 0.332727
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 768
+  dropout_rate: 0.05
+  num_attention_heads: 8
+  use_justice_attention: False
+  learning_rate: 0.00026122946681543063
+  weight_decay: 1.146697995666726e-05
+  first_unfreeze_epoch: 2
+  second_unfreeze_epoch: 4
+  initial_layers_to_unfreeze: 4
+  lr_reduction_factor: 0.3
+
+================================================================================
+Trial #90 - 2025-07-11 08:48:12
+Combined Metric (Loss + (1-F1))/2: 0.317287
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 384
+  dropout_rate: 0.05
+  num_attention_heads: 16
+  use_justice_attention: False
+  learning_rate: 0.0001807391038596796
+  weight_decay: 0.004593925057608113
+  first_unfreeze_epoch: 2
+  second_unfreeze_epoch: 4
+  initial_layers_to_unfreeze: 6
+  lr_reduction_factor: 0.4
+
+================================================================================
+Trial #91 - 2025-07-11 08:55:28
+Combined Metric (Loss + (1-F1))/2: inf
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 384
+  dropout_rate: 0.05
+  num_attention_heads: 16
+  use_justice_attention: False
+  learning_rate: 0.00017682765654084955
+  weight_decay: 0.004025487195308032
+  first_unfreeze_epoch: 2
+  second_unfreeze_epoch: 4
+  initial_layers_to_unfreeze: 4
+  lr_reduction_factor: 0.5
+
+================================================================================
+Trial #92 - 2025-07-11 09:07:37
+Combined Metric (Loss + (1-F1))/2: 0.350447
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 384
+  dropout_rate: 0.05
+  num_attention_heads: 16
+  use_justice_attention: False
+  learning_rate: 0.00021635923786195426
+  weight_decay: 0.00141459346880077
+  first_unfreeze_epoch: 2
+  second_unfreeze_epoch: 4
+  initial_layers_to_unfreeze: 6
+  lr_reduction_factor: 0.4
+
+================================================================================
+Trial #93 - 2025-07-11 09:14:55
+Combined Metric (Loss + (1-F1))/2: inf
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 384
+  dropout_rate: 0.05
+  num_attention_heads: 16
+  use_justice_attention: False
+  learning_rate: 0.00019351461309960593
+  weight_decay: 0.0008679373054246574
+  first_unfreeze_epoch: 2
+  second_unfreeze_epoch: 4
+  initial_layers_to_unfreeze: 6
+  lr_reduction_factor: 0.4
+
+================================================================================
+Trial #94 - 2025-07-11 09:31:56
+Combined Metric (Loss + (1-F1))/2: inf
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 384
+  dropout_rate: 0.05
+  num_attention_heads: 16
+  use_justice_attention: False
+  learning_rate: 0.0003205153367182539
+  weight_decay: 0.0003470129717508776
+  first_unfreeze_epoch: 2
+  second_unfreeze_epoch: 4
+  initial_layers_to_unfreeze: 6
+  lr_reduction_factor: 0.3
+
+================================================================================
+Trial #95 - 2025-07-11 09:44:10
+Combined Metric (Loss + (1-F1))/2: 0.355440
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 2048
+  dropout_rate: 0.05
+  num_attention_heads: 16
+  use_justice_attention: False
+  learning_rate: 0.0001807767181003939
+  weight_decay: 0.0026691441005808766
+  first_unfreeze_epoch: 2
+  second_unfreeze_epoch: 4
+  initial_layers_to_unfreeze: 6
+  lr_reduction_factor: 0.4
+
+================================================================================
+Trial #96 - 2025-07-11 10:11:00
+Combined Metric (Loss + (1-F1))/2: 0.318202
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 2048
+  dropout_rate: 0.05
+  num_attention_heads: 16
+  use_justice_attention: False
+  learning_rate: 0.00015553757443982188
+  weight_decay: 4.853502080610001e-05
+  first_unfreeze_epoch: 2
+  second_unfreeze_epoch: 4
+  initial_layers_to_unfreeze: 6
+  lr_reduction_factor: 0.3
+
+================================================================================
+Trial #97 - 2025-07-11 10:18:18
+Combined Metric (Loss + (1-F1))/2: inf
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 384
+  dropout_rate: 0.05
+  num_attention_heads: 16
+  use_justice_attention: False
+  learning_rate: 0.00028988917007795117
+  weight_decay: 0.00016667266198090155
+  first_unfreeze_epoch: 2
+  second_unfreeze_epoch: -1
+  initial_layers_to_unfreeze: 4
+  lr_reduction_factor: 0.3
+
+================================================================================
+Trial #98 - 2025-07-11 10:25:41
+Combined Metric (Loss + (1-F1))/2: inf
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 2048
+  dropout_rate: 0.1
+  num_attention_heads: 12
+  use_justice_attention: False
+  learning_rate: 0.00020776899364984697
+  weight_decay: 0.00021047812075785345
+  first_unfreeze_epoch: 2
+  second_unfreeze_epoch: 4
+  initial_layers_to_unfreeze: 4
+  lr_reduction_factor: 0.3
+
+================================================================================
+Trial #99 - 2025-07-11 10:37:54
+Combined Metric (Loss + (1-F1))/2: 0.355712
+Trial Status: COMPLETED
+Parameters:
+  hidden_dim: 2048
+  dropout_rate: 0.05
+  num_attention_heads: 16
+  use_justice_attention: False
+  learning_rate: 0.00022439258636093056
+  weight_decay: 0.0005568740750956368
+  first_unfreeze_epoch: 2
+  second_unfreeze_epoch: 4
+  initial_layers_to_unfreeze: 4
+  lr_reduction_factor: 0.5
+
+################################################################################
+# OPTIMIZATION SUMMARY - 2025-07-11 10:37:54
+################################################################################
+Total trials: 100
+Completed trials: 100
+Pruned trials: 0
+Failed trials: 0
+
+BEST TRIAL: #31
+Best combined metric (Loss + (1-F1))/2: 0.307373
+Best parameters:
+  hidden_dim: 2048
+  dropout_rate: 0.05
+  num_attention_heads: 16
+  use_justice_attention: False
+  learning_rate: 0.0002028596158885991
+  weight_decay: 3.578246305582672e-05
+  first_unfreeze_epoch: 2
+  second_unfreeze_epoch: 4
+  initial_layers_to_unfreeze: 4
+  lr_reduction_factor: 0.3
+
+Study completed at: 2025-07-11 10:37:54
+################################################################################
+

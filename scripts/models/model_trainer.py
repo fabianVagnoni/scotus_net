@@ -19,6 +19,7 @@ from ..utils.logger import get_logger
 from ..utils.holdout_test_set import HoldoutTestSetManager
 from .config import config
 from .losses import create_scotus_loss_function
+from ..utils.metrics import calculate_f1_macro
 
 
 class SCOTUSModelTrainer:
@@ -293,20 +294,35 @@ class SCOTUSModelTrainer:
         # Setup sentence transformer fine-tuning if enabled
         sentence_transformer_optimizer = None
         if self.config.enable_sentence_transformer_finetuning:
-            self.logger.info(f"Sentence transformer fine-tuning enabled. Will unfreeze at epoch {self.config.unfreeze_sentence_transformers_epoch}")
-            # Create separate optimizer for sentence transformers (will be activated when unfrozen)
-            sentence_transformer_params = []
-            if self.config.unfreeze_bio_model:
-                sentence_transformer_params.extend(model.bio_model.parameters())
-            if self.config.unfreeze_description_model:
-                sentence_transformer_params.extend(model.description_model.parameters())
+            self.logger.info(f"Sentence transformer fine-tuning enabled")
             
-            if sentence_transformer_params:
-                sentence_transformer_optimizer = torch.optim.AdamW(
-                    sentence_transformer_params, 
-                    lr=self.config.sentence_transformer_learning_rate, 
-                    weight_decay=weight_decay
-                )
+            # Log the fine-tuning strategy
+            self.logger.info(f"Fine-tuning strategy:")
+            if self.config.first_unfreeze_epoch == -1 and self.config.second_unfreeze_epoch == -1:
+                self.logger.info(f"  - No fine-tuning (frozen underlying models)")
+            elif self.config.first_unfreeze_epoch == -1:
+                self.logger.info(f"  - Step 1 → Step 3: Skip Step 2, full unfreezing at epoch {self.config.second_unfreeze_epoch}")
+            elif self.config.second_unfreeze_epoch == -1:
+                self.logger.info(f"  - Step 1 → Step 2: Partial unfreezing at epoch {self.config.first_unfreeze_epoch} (final {self.config.initial_layers_to_unfreeze} layers only)")
+            else:
+                self.logger.info(f"  - Full three-step: Step 2 at epoch {self.config.first_unfreeze_epoch} ({self.config.initial_layers_to_unfreeze} layers), Step 3 at epoch {self.config.second_unfreeze_epoch} (all layers)")
+            self.logger.info(f"  - LR reduction factor: {self.config.lr_reduction_factor} (applied cumulatively)")
+            
+            # Create separate optimizer for sentence transformers (will be activated when unfrozen)
+            # Only create if unfreezing is actually configured
+            if self.config.first_unfreeze_epoch != -1 or self.config.second_unfreeze_epoch != -1:
+                sentence_transformer_params = []
+                if self.config.unfreeze_bio_model:
+                    sentence_transformer_params.extend(model.bio_model.parameters())
+                if self.config.unfreeze_description_model:
+                    sentence_transformer_params.extend(model.description_model.parameters())
+                
+                if sentence_transformer_params:
+                    sentence_transformer_optimizer = torch.optim.AdamW(
+                        sentence_transformer_params, 
+                        lr=self.config.sentence_transformer_learning_rate, 
+                        weight_decay=weight_decay
+                    )
         
         # Setup loss function using the new modular system
         loss_function = self.config.loss_function
@@ -325,6 +341,7 @@ class SCOTUSModelTrainer:
         # Training loop
         model.train()
         best_val_loss = float('inf')
+        best_combined_metric = float('inf')  # Track combined metric like in optimization
         patience_counter = 0
         max_patience = self.config.patience
         
@@ -334,7 +351,8 @@ class SCOTUSModelTrainer:
         
         for epoch in range(num_epochs):
             # Handle progressive unfreezing strategy
-            if self.config.enable_sentence_transformer_finetuning:
+            if (self.config.enable_sentence_transformer_finetuning and 
+                (self.config.first_unfreeze_epoch != -1 or self.config.second_unfreeze_epoch != -1)):
                 unfreeze_done = self._handle_progressive_unfreezing(
                     model, epoch, optimizer, sentence_transformer_optimizer,
                     first_unfreeze_done, second_unfreeze_done
@@ -403,24 +421,27 @@ class SCOTUSModelTrainer:
                 
             avg_train_loss = train_loss / num_batches
             
-            # Validation phase
-            val_loss = self.evaluate_model(model, val_loader, criterion)
+            # Validation phase - calculate combined metric like in optimization
+            val_loss, combined_metric = self.evaluate_model_with_combined_metric(model, val_loader, criterion)
             
             # Learning rate scheduling
             scheduler.step(val_loss)
             
             self.logger.info(f"Epoch {epoch+1}/{num_epochs} - "
-                           f"Train Loss: {avg_train_loss:.4f}, Val Loss: {val_loss:.4f}")
+                           f"Train Loss: {avg_train_loss:.4f}, Val Loss: {val_loss:.4f}, "
+                           f"Combined Metric: {combined_metric:.4f}")
             
-            # Save best model
-            if val_loss < best_val_loss:
+            # Save best model based on combined metric (like in optimization)
+            if combined_metric < best_combined_metric:
+                best_combined_metric = combined_metric
                 best_val_loss = val_loss
                 patience_counter = 0
                 
                 model_output_dir = Path(self.config.model_output_dir)
                 model_output_dir.mkdir(exist_ok=True)
                 model.save_model(str(model_output_dir / 'best_model.pth'))
-                self.logger.info(f"New best model saved with validation loss: {val_loss:.4f}")
+                self.logger.info(f"New best model saved with combined metric: {combined_metric:.4f} "
+                               f"(val loss: {val_loss:.4f})")
             else:
                 patience_counter += 1
                 if patience_counter >= max_patience:
@@ -428,6 +449,8 @@ class SCOTUSModelTrainer:
                     break
         
         self.logger.info("Training completed")
+        self.logger.info(f"Best combined metric achieved: {best_combined_metric:.4f}")
+        self.logger.info(f"Best validation loss: {best_val_loss:.4f}")
         self.logger.info("Use evaluate_on_holdout_test_set() method for final evaluation on holdout test set")
         
         return model
@@ -469,6 +492,74 @@ class SCOTUSModelTrainer:
         model.train()
         return total_loss / num_batches if num_batches > 0 else float('inf')
     
+    def evaluate_model_with_combined_metric(self, model: SCOTUSVotingModel, data_loader: DataLoader, criterion: nn.Module) -> tuple:
+        """
+        Evaluate model with combined metric (Loss + (1 - F1-Score Macro)) / 2.
+        
+        Returns:
+            Tuple of (validation_loss, combined_metric)
+        """
+        model.eval()
+        total_loss = 0.0
+        num_batches = 0
+        
+        # For F1-Score calculation
+        all_predictions = []
+        all_targets = []
+        
+        with torch.no_grad():
+            for batch in data_loader:
+                try:
+                    batch_predictions = []
+                    batch_targets = batch['targets'].to(self.device)
+                    
+                    # Process each sample in the batch
+                    for i in range(len(batch['case_ids'])):
+                        case_description_path = batch['case_description_paths'][i]
+                        justice_bio_paths = batch['justice_bio_paths'][i]
+                        
+                        # Forward pass
+                        prediction = model(case_description_path, justice_bio_paths)
+                        batch_predictions.append(prediction)
+                    
+                    # Stack predictions and compute loss
+                    predictions_tensor = torch.stack(batch_predictions)
+                    
+                    # Compute loss using modular loss system
+                    loss = criterion(predictions_tensor, batch_targets)
+                    
+                    # Store predictions and targets for F1-Score calculation
+                    # Convert to class predictions (argmax) for F1-Score
+                    predicted_classes = torch.argmax(predictions_tensor, dim=1).cpu().numpy()
+                    target_classes = torch.argmax(batch_targets, dim=1).cpu().numpy()
+                    
+                    all_predictions.extend(predicted_classes)
+                    all_targets.extend(target_classes)
+                    
+                    total_loss += loss.item()
+                    num_batches += 1
+                    
+                except Exception as e:
+                    self.logger.error(f"Error in evaluation batch: {e}")
+                    continue
+        
+        model.train()
+        
+        if num_batches == 0:
+            return float('inf'), float('inf')
+        
+        # Calculate average loss
+        avg_loss = total_loss / num_batches
+        
+        # Calculate F1-Score Macro
+        f1_macro = calculate_f1_macro(all_predictions, all_targets, verbose=False)
+        
+        # Combine metrics: (Loss + (1 - F1)) / 2
+        # This ensures both metrics are minimized (lower is better)
+        combined_metric = (avg_loss + (1.0 - f1_macro)) / 2.0
+        
+        return avg_loss, combined_metric
+    
     def _handle_progressive_unfreezing(self, model, epoch, optimizer, sentence_transformer_optimizer, 
                                      first_unfreeze_done, second_unfreeze_done):
         """
@@ -491,35 +582,29 @@ class SCOTUSModelTrainer:
         }
         
         # First unfreezing step
-        if (self.config.unfreeze_sentence_transformers_epoch == epoch and 
+        if (self.config.first_unfreeze_epoch != -1 and 
+            self.config.first_unfreeze_epoch == epoch and 
             not first_unfreeze_done and sentence_transformer_optimizer is not None):
             
             self.logger.info(f"🔓 First unfreezing step at epoch {epoch + 1}")
             
-            # Progressive unfreezing: unfreeze final N layers (or all if N=0)
+            # Progressive unfreezing: unfreeze final N layers
             n_layers = self.config.initial_layers_to_unfreeze
-            if n_layers == 0:
-                self.logger.info(f"   Unfreezing all layers")
-                model.unfreeze_models_selectively(
-                    unfreeze_bio=self.config.unfreeze_bio_model,
-                    unfreeze_description=self.config.unfreeze_description_model
-                )
-            else:
-                self.logger.info(f"   Unfreezing final {n_layers} layers")
-                model.unfreeze_final_layers(
-                    n_layers=n_layers,
-                    unfreeze_bio=self.config.unfreeze_bio_model,
-                    unfreeze_description=self.config.unfreeze_description_model
-                )
+            self.logger.info(f"   Unfreezing final {n_layers} layers")
+            model.unfreeze_final_layers(
+                n_layers=n_layers,
+                unfreeze_bio=self.config.unfreeze_bio_model,
+                unfreeze_description=self.config.unfreeze_description_model
+            )
             
             # Apply learning rate reduction
             if self.config.reduce_main_lr_on_unfreeze:
-                self._reduce_learning_rate(optimizer, self.config.lr_reduction_factor_first_unfreeze)
-                self.logger.info(f"   Reduced main optimizer LR by factor {self.config.lr_reduction_factor_first_unfreeze}")
+                self._reduce_learning_rate(optimizer, self.config.lr_reduction_factor)
+                self.logger.info(f"   Reduced main optimizer LR by factor {self.config.lr_reduction_factor}")
             
             if sentence_transformer_optimizer is not None:
-                self._reduce_learning_rate(sentence_transformer_optimizer, self.config.lr_reduction_factor_first_unfreeze)
-                self.logger.info(f"   Reduced sentence transformer optimizer LR by factor {self.config.lr_reduction_factor_first_unfreeze}")
+                self._reduce_learning_rate(sentence_transformer_optimizer, self.config.lr_reduction_factor)
+                self.logger.info(f"   Reduced sentence transformer optimizer LR by factor {self.config.lr_reduction_factor}")
             
             # Log the status
             self._log_unfreezing_status(model, "First unfreezing step")
@@ -543,12 +628,12 @@ class SCOTUSModelTrainer:
             
             # Apply learning rate reduction
             if self.config.reduce_main_lr_on_unfreeze:
-                self._reduce_learning_rate(optimizer, self.config.lr_reduction_factor_second_unfreeze)
-                self.logger.info(f"   Reduced main optimizer LR by factor {self.config.lr_reduction_factor_second_unfreeze}")
+                self._reduce_learning_rate(optimizer, self.config.lr_reduction_factor)
+                self.logger.info(f"   Reduced main optimizer LR by factor {self.config.lr_reduction_factor}")
             
             if sentence_transformer_optimizer is not None:
-                self._reduce_learning_rate(sentence_transformer_optimizer, self.config.lr_reduction_factor_second_unfreeze)
-                self.logger.info(f"   Reduced sentence transformer optimizer LR by factor {self.config.lr_reduction_factor_second_unfreeze}")
+                self._reduce_learning_rate(sentence_transformer_optimizer, self.config.lr_reduction_factor)
+                self.logger.info(f"   Reduced sentence transformer optimizer LR by factor {self.config.lr_reduction_factor}")
             
             # Log the status
             self._log_unfreezing_status(model, "Second unfreezing step")
