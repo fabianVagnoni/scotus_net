@@ -2,7 +2,7 @@
 set -e
 
 # Create required directories if they don't exist
-mkdir -p /app/data/raw /app/data/processed /app/logs /app/logs/hyperparameter_tunning_logs /app/models_output /app/.cache
+mkdir -p /app/data/raw /app/data/processed /app/logs /app/logs/hyperparameter_tunning_logs /app/logs/training_logs /app/models_output /app/.cache
 
 # Set proper permissions only on directories we can modify
 # Skip permission changes on mounted volumes to avoid "Operation not permitted" errors
@@ -44,7 +44,7 @@ echo "Available commands:"
 echo "  data-pipeline      - Run the complete data pipeline"
 echo "  data-pipeline-step - Run a specific pipeline step"
 echo "  encoding           - Run the encoding pipeline"
-echo "  train              - Train the model"
+echo "  train              - Train the model with optimized hyperparameters"
 echo "  hyperparameter-tuning - Run hyperparameter optimization"
 echo "  check              - Check data status"
 echo "  bash               - Open bash shell"
@@ -53,7 +53,7 @@ echo "Examples:"
 echo "  docker run -it scotus-ai data-pipeline"
 echo "  docker run -it scotus-ai data-pipeline-step scrape-justices"
 echo "  docker run -it scotus-ai encoding"
-echo "  docker run -it scotus-ai train"
+echo "  docker run -it scotus-ai train --experiment-name production_v1"
 echo "  docker run -it scotus-ai hyperparameter-tuning --experiment-name test"
 echo "  docker run -it scotus-ai bash"
 echo ""
@@ -82,7 +82,7 @@ case "$1" in
         ;;
     train)
         shift
-        exec python3 -m scripts.models.model_trainer "$@"
+        exec python3 -m scripts.models.run_training "$@"
         ;;
     hyperparameter-tuning)
         shift

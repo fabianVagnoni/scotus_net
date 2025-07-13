@@ -81,6 +81,7 @@ RUN mkdir -p /app/data/raw \
     /app/data/external \
     /app/logs \
     /app/logs/hyperparameter_tunning_logs \
+    /app/logs/training_logs \
     /app/models_output \
     /app/.cache \
     /app/notebooks

@@ -118,13 +118,13 @@ EOF
 # Function to create necessary directories
 create_directories() {
     print_info "Creating necessary directories..."
-    mkdir -p data/raw data/processed logs logs/hyperparameter_tunning_logs models_output cache
+    mkdir -p data/raw data/processed logs logs/hyperparameter_tunning_logs logs/training_logs models_output cache
     
     # Ensure logs directory is writable by making it world-writable
     # This is necessary for the container's non-root user to write log files
-    chmod 777 logs logs/hyperparameter_tunning_logs 2>/dev/null || {
+    chmod 777 logs logs/hyperparameter_tunning_logs logs/training_logs 2>/dev/null || {
         print_warning "Could not set write permissions on logs directory"
-        print_warning "You may need to run: sudo chmod 777 logs/ logs/hyperparameter_tunning_logs/"
+        print_warning "You may need to run: sudo chmod 777 logs/ logs/hyperparameter_tunning_logs/ logs/training_logs/"
     }
     
     print_success "Directories created"
@@ -227,9 +227,9 @@ show_usage() {
     echo "  data-pipeline            Run the complete data pipeline"
     echo "  data-pipeline-step STEP  Run a specific pipeline step"
     echo "  encoding                 Run the encoding pipeline"
-    echo "  train                    Train the model"
-    echo "  hyperparameter-tuning    Run hyperparameter optimization"
-    echo "  tune                     Alias for hyperparameter-tuning"
+    echo "  train                    Train the model with optimized hyperparameters"
+echo "  hyperparameter-tuning    Run hyperparameter optimization"
+echo "  tune                     Alias for hyperparameter-tuning"
     echo "  check                    Check data status"
     echo "  setup-gpu                Configure Docker for GPU support (requires sudo)"
     echo "  compose [COMMAND]        Use docker-compose (optional command)"
@@ -243,7 +243,7 @@ show_usage() {
     echo "  $0 data-pipeline                           # Run full pipeline"
     echo "  $0 data-pipeline-step scrape-justices      # Run specific step"
     echo "  $0 encoding                                 # Run encoding pipeline"
-    echo "  $0 train                                    # Train the model"
+    echo "  $0 train --experiment-name production_v1    # Train the model"
     echo "  $0 tune --experiment-name arch_test         # Run hyperparameter tuning"
     echo "  $0 hyperparameter-tuning --n-trials 50     # Run 50 optimization trials"
     echo "  sudo $0 setup-gpu                          # Configure GPU support"
@@ -291,11 +291,27 @@ case "${1:-}" in
         run_container "encode-descriptions" "$@"
         ;;
     train)
+        if [ "$2" = "--help" ] || [ "$2" = "-h" ]; then
+            print_info "Training Options:"
+            echo "  --experiment-name NAME    Name for the experiment (required)"
+            echo ""
+            echo "Examples:"
+            echo "  $0 train --experiment-name production_v1"
+            echo "  $0 train --experiment-name optimal_trial_31"
+            echo ""
+            echo "The training will:"
+            echo "  - Use optimized hyperparameters from config.env"
+            echo "  - Save logs to logs/training_logs/"
+            echo "  - Save best model based on combined metric"
+            echo "  - Follow three-step fine-tuning strategy"
+            echo ""
+            exit 0
+        fi
         shift
         run_container "train" "$@"
         ;;
     hyperparameter-tuning|tune)
-        if [ "$1" = "--help" ] || [ "$1" = "-h" ]; then
+        if [ "$2" = "--help" ] || [ "$2" = "-h" ]; then
             print_info "Hyperparameter Tuning Options:"
             echo "  --experiment-name NAME    Name for the experiment (required)"
             echo "  --n-trials N             Number of trials (default: from config)"
