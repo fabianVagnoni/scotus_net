@@ -111,6 +111,10 @@ def main():
     output_dir = Path("logs/training_logs")
     output_dir.mkdir(parents=True, exist_ok=True)
     
+    # Also ensure the config's model output directory exists
+    config_output_dir = Path(config.model_output_dir)
+    config_output_dir.mkdir(parents=True, exist_ok=True)
+    
     try:
         # Train model
         logger.info("🎓 Starting model training...")

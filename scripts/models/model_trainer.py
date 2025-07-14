@@ -438,7 +438,7 @@ class SCOTUSModelTrainer:
                 patience_counter = 0
                 
                 model_output_dir = Path(self.config.model_output_dir)
-                model_output_dir.mkdir(exist_ok=True)
+                model_output_dir.mkdir(parents=True, exist_ok=True)
                 model.save_model(str(model_output_dir / 'best_model.pth'))
                 self.logger.info(f"New best model saved with combined metric: {combined_metric:.4f} "
                                f"(val loss: {val_loss:.4f})")
@@ -699,6 +699,7 @@ class SCOTUSModelTrainer:
         """
         if model_path is None:
             model_output_dir = Path(self.config.model_output_dir)
+            model_output_dir.mkdir(parents=True, exist_ok=True)
             model_path = str(model_output_dir / 'best_model.pth')
         
         if not os.path.exists(model_path):
