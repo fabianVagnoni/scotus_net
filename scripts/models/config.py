@@ -25,7 +25,8 @@ class ModelConfig:
             config_file = Path(__file__).parent / "config.env"
         
         # Load environment variables from config file
-        load_dotenv(config_file)
+        # Use override=True to ensure config.env values take precedence over existing env vars
+        load_dotenv(config_file, override=True)
         
         self.config_file = str(config_file)
         self._load_config()
