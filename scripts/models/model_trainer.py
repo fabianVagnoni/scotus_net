@@ -14,12 +14,12 @@ from typing import Dict, List, Tuple
 from sklearn.model_selection import train_test_split
 import torch.nn.functional as F
 
-from .scotus_voting_model import SCOTUSVotingModel, SCOTUSDataset, collate_fn
-from ..utils.logger import get_logger
-from ..utils.holdout_test_set import HoldoutTestSetManager
-from .config import config
-from .losses import create_scotus_loss_function
-from ..utils.metrics import calculate_f1_macro
+from models.scotus_voting_model import SCOTUSVotingModel, SCOTUSDataset, collate_fn
+from utils.logger import get_logger
+from utils.holdout_test_set import HoldoutTestSetManager
+from models.config import config
+from models.losses import create_scotus_loss_function
+from utils.metrics import calculate_f1_macro
 
 
 class SCOTUSModelTrainer:

@@ -3,4 +3,4 @@
 # Utils package for SCOTUS AI pipeline 
 
 # Import commonly used functions
-from .metrics import calculate_f1_macro
+from utils.metrics import calculate_f1_macro
