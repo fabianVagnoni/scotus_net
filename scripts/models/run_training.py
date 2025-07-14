@@ -12,7 +12,8 @@ Usage:
 The script will:
 1. Create a log file: logs/training_logs/training_my_experiment_TIMESTAMP.txt
 2. Save the best model: logs/training_logs/final_model_my_experiment_TIMESTAMP.pth
-3. Use combined metric (Loss + (1-F1))/2 for model selection (same as optimization)
+3. Use combined metric (Val Loss + (1-F1))/2 for model selection (same as optimization)
+4. Log all training progress (epochs, losses, metrics) to a single txt file
 """
 
 import os
@@ -20,9 +21,9 @@ import sys
 import torch
 import numpy as np
 from pathlib import Path
-import logging
 import argparse
 from datetime import datetime
+import shutil
 
 # Add the scripts directory to the path
 sys.path.append(str(Path(__file__).parent.parent))
@@ -40,7 +41,7 @@ def set_seeds(seed=42):
     torch.backends.cudnn.benchmark = False
 
 def setup_logging(experiment_name: str):
-    """Set up logging to file and console."""
+    """Set up logging to file and console using loguru."""
     # Create logs directory
     logs_dir = Path("logs/training_logs")
     logs_dir.mkdir(parents=True, exist_ok=True)
@@ -49,15 +50,8 @@ def setup_logging(experiment_name: str):
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     log_file = logs_dir / f"training_{experiment_name}_{timestamp}.txt"
     
-    # Set up logging configuration
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        handlers=[
-            logging.FileHandler(log_file, encoding='utf-8'),
-            logging.StreamHandler(sys.stdout)
-        ]
-    )
+    # Set the LOG_FILE environment variable so get_logger() uses this file
+    os.environ["LOG_FILE"] = str(log_file)
     
     return log_file
 
@@ -72,6 +66,8 @@ def main():
     
     # Set up logging
     log_file = setup_logging(args.experiment_name)
+    
+    # Create logger (will use the LOG_FILE environment variable set by setup_logging)
     logger = get_logger(__name__)
     
     # Set random seeds
@@ -127,7 +123,6 @@ def main():
         # Copy the best model to the training_logs directory
         best_model_path = Path(config.model_output_dir) / config.best_model_name
         if best_model_path.exists():
-            import shutil
             shutil.copy2(best_model_path, final_model_path)
             logger.info(f"💾 Final model (best validation) saved to: {final_model_path}")
         else:
@@ -136,7 +131,7 @@ def main():
             logger.info(f"💾 Final model saved to: {final_model_path}")
         
         logger.info("✅ Training completed successfully!")
-        logger.info("📊 Best model was saved based on combined metric (Loss + (1-F1))/2")
+        logger.info("📊 Best model was saved based on combined metric (Val Loss + (1-F1))/2")
         logger.info("📈 Combined metric balances probabilistic accuracy with classification performance")
         
         # Optionally evaluate on holdout test set
@@ -157,7 +152,7 @@ def main():
         logger.info(f"📝 Experiment: {args.experiment_name}")
         logger.info(f"📋 Log file: {log_file}")
         logger.info(f"💾 Model file: {final_model_path}")
-        logger.info("📊 Model selection: Best combined metric (Loss + (1-F1))/2")
+        logger.info("📊 Model selection: Best combined metric (Val Loss + (1-F1))/2")
         logger.info("✅ Training completed successfully!")
         logger.info("=" * 80)
         

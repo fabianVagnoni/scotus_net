@@ -428,8 +428,8 @@ class SCOTUSModelTrainer:
             scheduler.step(val_loss)
             
             self.logger.info(f"Epoch {epoch+1}/{num_epochs} - "
-                           f"Train Loss: {avg_train_loss:.4f}, Val Loss: {val_loss:.4f}, "
-                           f"Combined Metric: {combined_metric:.4f}")
+                           f"Train Loss: {avg_train_loss:.4f}, "
+                           f"Combined Metric (Val Loss + (1-F1))/2: {combined_metric:.4f}")
             
             # Save best model based on combined metric (like in optimization)
             if combined_metric < best_combined_metric:
@@ -440,7 +440,7 @@ class SCOTUSModelTrainer:
                 model_output_dir = Path(self.config.model_output_dir)
                 model_output_dir.mkdir(parents=True, exist_ok=True)
                 model.save_model(str(model_output_dir / 'best_model.pth'))
-                self.logger.info(f"New best model saved with combined metric: {combined_metric:.4f} "
+                self.logger.info(f"New best model saved with combined metric (Val Loss + (1-F1))/2: {combined_metric:.4f} "
                                f"(val loss: {val_loss:.4f})")
             else:
                 patience_counter += 1
@@ -449,8 +449,9 @@ class SCOTUSModelTrainer:
                     break
         
         self.logger.info("Training completed")
-        self.logger.info(f"Best combined metric achieved: {best_combined_metric:.4f}")
+        self.logger.info(f"Best combined metric (Val Loss + (1-F1))/2 achieved: {best_combined_metric:.4f}")
         self.logger.info(f"Best validation loss: {best_val_loss:.4f}")
+        self.logger.info("Model selection used combined metric: (Validation Loss + (1-F1 Macro))/2")
         self.logger.info("Use evaluate_on_holdout_test_set() method for final evaluation on holdout test set")
         
         return model
@@ -557,6 +558,9 @@ class SCOTUSModelTrainer:
         # Combine metrics: (Loss + (1 - F1)) / 2
         # This ensures both metrics are minimized (lower is better)
         combined_metric = (avg_loss + (1.0 - f1_macro)) / 2.0
+        
+        # Log detailed breakdown for clarity
+        self.logger.info(f"   Validation metrics - Loss: {avg_loss:.4f}, F1-Macro: {f1_macro:.4f}, Combined: {combined_metric:.4f}")
         
         return avg_loss, combined_metric
     
