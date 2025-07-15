@@ -140,6 +140,7 @@ def main():
             holdout_results = trainer.evaluate_on_holdout_test_set()
             logger.info("🎯 Holdout test set evaluation results:")
             logger.info(f"   - Test Loss: {holdout_results['holdout_loss']:.4f}")
+            logger.info(f"   - Test Combined Metric (Val Loss + (1-F1))/2: {holdout_results['holdout_combined_metric']:.4f}")
             logger.info(f"   - Test Cases: {holdout_results['num_holdout_cases']}")
             logger.info(f"   - Loss Function: {holdout_results['loss_function']}")
         except Exception as e:

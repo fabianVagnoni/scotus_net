@@ -758,15 +758,17 @@ class SCOTUSModelTrainer:
         loss_function = self.config.loss_function
         criterion = create_scotus_loss_function(loss_function, self.config)
         
-        # Evaluate
-        holdout_loss = self.evaluate_model(model, holdout_loader, criterion)
+        # Evaluate with combined metric (same as validation)
+        holdout_loss, holdout_combined_metric = self.evaluate_model_with_combined_metric(model, holdout_loader, criterion)
         
         self.logger.info(f"Holdout test set evaluation completed")
         self.logger.info(f"Holdout test loss: {holdout_loss:.4f}")
+        self.logger.info(f"Holdout combined metric (Val Loss + (1-F1))/2: {holdout_combined_metric:.4f}")
         
         # Additional metrics could be computed here
         results = {
             'holdout_loss': holdout_loss,
+            'holdout_combined_metric': holdout_combined_metric,
             'num_holdout_cases': len(holdout_dataset_dict),
             'loss_function': loss_function,
             'model_path': model_path
