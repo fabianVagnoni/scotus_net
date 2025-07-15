@@ -1,0 +1,41 @@
+2025-07-15 09:25:59 | INFO     | __main__:demo_lr_scheduler:24 | 🎯 SCOTUS AI Enhanced LR Scheduler Demo
+2025-07-15 09:25:59 | INFO     | __main__:demo_lr_scheduler:25 | ============================================================
+2025-07-15 09:26:58 | INFO     | __main__:demo_lr_scheduler:24 | 🎯 SCOTUS AI Enhanced LR Scheduler Demo
+2025-07-15 09:26:58 | INFO     | __main__:demo_lr_scheduler:25 | ============================================================
+2025-07-15 09:27:01 | INFO     | __main__:demo_lr_scheduler:39 | 📊 LR Scheduler Configuration:
+2025-07-15 09:27:01 | INFO     | __main__:demo_lr_scheduler:40 |    - Mode: minimize validation loss
+2025-07-15 09:27:01 | INFO     | __main__:demo_lr_scheduler:41 |    - Factor: 0.5 (LR multiplier on plateau)
+2025-07-15 09:27:01 | INFO     | __main__:demo_lr_scheduler:42 |    - Patience: 3 epochs
+2025-07-15 09:27:01 | INFO     | __main__:demo_lr_scheduler:43 |    - Initial LR: 1.00e-03
+2025-07-15 09:27:01 | INFO     | __main__:demo_lr_scheduler:44 |    - Custom logging: Enabled (will log LR reductions)
+2025-07-15 09:27:01 | INFO     | __main__:demo_lr_scheduler:45 | 
+2025-07-15 09:27:01 | INFO     | __main__:demo_lr_scheduler:50 | 🚀 Starting simulated training...
+2025-07-15 09:27:01 | INFO     | __main__:demo_lr_scheduler:51 | 📉 Validation losses will plateau to trigger LR reductions:
+2025-07-15 09:27:01 | INFO     | __main__:demo_lr_scheduler:52 |    Epochs 1-4: Decreasing loss (1.0 → 0.5)
+2025-07-15 09:27:01 | INFO     | __main__:demo_lr_scheduler:53 |    Epochs 5-7: Plateau at 0.5 (triggers first LR reduction)
+2025-07-15 09:27:01 | INFO     | __main__:demo_lr_scheduler:54 |    Epochs 8-12: Plateau at 0.4 (triggers second LR reduction)
+2025-07-15 09:27:01 | INFO     | __main__:demo_lr_scheduler:55 |    Epoch 13: Improves to 0.3
+2025-07-15 09:27:01 | INFO     | __main__:demo_lr_scheduler:56 | 
+2025-07-15 09:27:01 | INFO     | __main__:demo_lr_scheduler:70 | Epoch  1: Val Loss = 1.0, LR = 1.00e-03
+2025-07-15 09:27:01 | INFO     | __main__:demo_lr_scheduler:70 | Epoch  2: Val Loss = 0.8, LR = 1.00e-03
+2025-07-15 09:27:01 | INFO     | __main__:demo_lr_scheduler:70 | Epoch  3: Val Loss = 0.6, LR = 1.00e-03
+2025-07-15 09:27:01 | INFO     | __main__:demo_lr_scheduler:70 | Epoch  4: Val Loss = 0.5, LR = 1.00e-03
+2025-07-15 09:27:01 | INFO     | __main__:demo_lr_scheduler:70 | Epoch  5: Val Loss = 0.5, LR = 1.00e-03
+2025-07-15 09:27:01 | INFO     | __main__:demo_lr_scheduler:70 | Epoch  6: Val Loss = 0.5, LR = 1.00e-03
+2025-07-15 09:27:01 | INFO     | __main__:demo_lr_scheduler:70 | Epoch  7: Val Loss = 0.5, LR = 1.00e-03
+2025-07-15 09:27:01 | INFO     | __main__:demo_lr_scheduler:70 | Epoch  8: Val Loss = 0.4, LR = 1.00e-03
+2025-07-15 09:27:01 | INFO     | __main__:demo_lr_scheduler:70 | Epoch  9: Val Loss = 0.4, LR = 1.00e-03
+2025-07-15 09:27:01 | INFO     | __main__:demo_lr_scheduler:70 | Epoch 10: Val Loss = 0.4, LR = 1.00e-03
+2025-07-15 09:27:01 | INFO     | __main__:demo_lr_scheduler:70 | Epoch 11: Val Loss = 0.4, LR = 1.00e-03
+2025-07-15 09:27:01 | INFO     | __main__:demo_lr_scheduler:70 | Epoch 12: Val Loss = 0.4, LR = 5.00e-04
+2025-07-15 09:27:01 | INFO     | __main__:demo_lr_scheduler:74 |    🔽 Learning rate reduced: 1.00e-03 → 5.00e-04
+2025-07-15 09:27:01 | INFO     | __main__:demo_lr_scheduler:70 | Epoch 13: Val Loss = 0.3, LR = 5.00e-04
+2025-07-15 09:27:01 | INFO     | __main__:demo_lr_scheduler:77 | 
+2025-07-15 09:27:01 | INFO     | __main__:demo_lr_scheduler:78 | 📊 LR Scheduler Summary:
+2025-07-15 09:27:01 | INFO     | __main__:demo_lr_scheduler:83 |    - Initial LR: 1.00e-03
+2025-07-15 09:27:01 | INFO     | __main__:demo_lr_scheduler:84 |    - Final LR: 5.00e-04
+2025-07-15 09:27:01 | INFO     | __main__:demo_lr_scheduler:85 |    - Total reductions: 1
+2025-07-15 09:27:01 | INFO     | __main__:demo_lr_scheduler:86 |    - LR reduction factor: 0.500
+2025-07-15 09:27:01 | INFO     | __main__:demo_lr_scheduler:88 | 
+2025-07-15 09:27:01 | INFO     | __main__:demo_lr_scheduler:89 | ✅ Demo completed!
+2025-07-15 09:27:01 | INFO     | __main__:demo_lr_scheduler:90 | This is how the enhanced LR scheduler works in SCOTUS AI training.

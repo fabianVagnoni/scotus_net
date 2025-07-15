@@ -133,6 +133,9 @@ def main():
         logger.info("✅ Training completed successfully!")
         logger.info("📊 Best model was saved based on combined metric (Val Loss + (1-F1))/2")
         logger.info("📈 Combined metric balances probabilistic accuracy with classification performance")
+        logger.info("🔄 Learning rate was automatically reduced on validation loss plateau")
+        logger.info(f"   - LR reduction factor: {config.lr_scheduler_factor}")
+        logger.info(f"   - LR reduction patience: {config.lr_scheduler_patience} epochs")
         
         # Optionally evaluate on holdout test set
         logger.info("🔍 Evaluating on holdout test set...")
@@ -154,6 +157,7 @@ def main():
         logger.info(f"📋 Log file: {log_file}")
         logger.info(f"💾 Model file: {final_model_path}")
         logger.info("📊 Model selection: Best combined metric (Val Loss + (1-F1))/2")
+        logger.info("🔄 Learning rate scheduling: ReduceLROnPlateau (automatic reduction)")
         logger.info("✅ Training completed successfully!")
         logger.info("=" * 80)
         

@@ -332,11 +332,31 @@ class SCOTUSModelTrainer:
         loss_config = criterion.get_config()
         self.logger.info(f"Loss configuration: {loss_config}")
         
-        # Learning rate scheduler
+        # Learning rate schedulers
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
             optimizer, mode='min', factor=self.config.lr_scheduler_factor, 
             patience=self.config.lr_scheduler_patience
         )
+        
+        # Sentence transformer scheduler (if applicable)
+        sentence_transformer_scheduler = None
+        if sentence_transformer_optimizer is not None:
+            sentence_transformer_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+                sentence_transformer_optimizer, mode='min', factor=self.config.lr_scheduler_factor, 
+                patience=self.config.lr_scheduler_patience
+            )
+        
+        # Track learning rate history
+        lr_history = {'main': [], 'sentence_transformer': []}
+        
+        self.logger.info("📊 Learning Rate Scheduler Configuration:")
+        self.logger.info(f"   - Mode: minimize validation loss")
+        self.logger.info(f"   - Factor: {self.config.lr_scheduler_factor} (LR multiplier on plateau)")
+        self.logger.info(f"   - Patience: {self.config.lr_scheduler_patience} epochs")
+        self.logger.info(f"   - Initial LR (main): {learning_rate:.2e}")
+        if sentence_transformer_optimizer is not None:
+            self.logger.info(f"   - Initial LR (sentence transformer): {self.config.sentence_transformer_learning_rate:.2e}")
+        self.logger.info(f"   - Custom logging: Enabled (will log LR reductions)")
         
         # Training loop
         model.train()
@@ -424,12 +444,43 @@ class SCOTUSModelTrainer:
             # Validation phase - calculate combined metric like in optimization
             val_loss, combined_metric = self.evaluate_model_with_combined_metric(model, val_loader, criterion)
             
+            # Track learning rates before scheduling
+            current_main_lr = optimizer.param_groups[0]['lr']
+            current_st_lr = None
+            if sentence_transformer_optimizer is not None:
+                current_st_lr = sentence_transformer_optimizer.param_groups[0]['lr']
+            
             # Learning rate scheduling
             scheduler.step(val_loss)
+            if sentence_transformer_scheduler is not None:
+                sentence_transformer_scheduler.step(val_loss)
+            
+            # Check if learning rate was reduced and log it
+            new_main_lr = optimizer.param_groups[0]['lr']
+            new_st_lr = None
+            if sentence_transformer_optimizer is not None:
+                new_st_lr = sentence_transformer_optimizer.param_groups[0]['lr']
+            
+            # Log learning rate changes
+            if new_main_lr != current_main_lr:
+                self.logger.info(f"🔽 Learning rate reduced for main optimizer: {current_main_lr:.2e} → {new_main_lr:.2e}")
+            if current_st_lr is not None and new_st_lr != current_st_lr:
+                self.logger.info(f"🔽 Learning rate reduced for sentence transformer optimizer: {current_st_lr:.2e} → {new_st_lr:.2e}")
+            
+            # Record learning rate history
+            lr_history['main'].append(new_main_lr)
+            if new_st_lr is not None:
+                lr_history['sentence_transformer'].append(new_st_lr)
             
             self.logger.info(f"Epoch {epoch+1}/{num_epochs} - "
                            f"Train Loss: {avg_train_loss:.4f}, "
                            f"Combined Metric (Val Loss + (1-F1))/2: {combined_metric:.4f}")
+            
+            # Log current learning rates
+            if epoch == 0 or new_main_lr != current_main_lr or (current_st_lr is not None and new_st_lr != current_st_lr):
+                self.logger.info(f"   Current LR (main): {new_main_lr:.2e}")
+                if new_st_lr is not None:
+                    self.logger.info(f"   Current LR (sentence transformer): {new_st_lr:.2e}")
             
             # Save best model based on combined metric (like in optimization)
             if combined_metric < best_combined_metric:
@@ -452,6 +503,21 @@ class SCOTUSModelTrainer:
         self.logger.info(f"Best combined metric (Val Loss + (1-F1))/2 achieved: {best_combined_metric:.4f}")
         self.logger.info(f"Best validation loss: {best_val_loss:.4f}")
         self.logger.info("Model selection used combined metric: (Validation Loss + (1-F1 Macro))/2")
+        
+        # Log learning rate reduction summary
+        self.logger.info("📊 Learning Rate Scheduler Summary:")
+        if lr_history['main']:
+            initial_main_lr = lr_history['main'][0]
+            final_main_lr = lr_history['main'][-1]
+            main_reductions = sum(1 for i in range(1, len(lr_history['main'])) if lr_history['main'][i] < lr_history['main'][i-1])
+            self.logger.info(f"   - Main optimizer: {initial_main_lr:.2e} → {final_main_lr:.2e} ({main_reductions} reductions)")
+        
+        if lr_history['sentence_transformer']:
+            initial_st_lr = lr_history['sentence_transformer'][0]
+            final_st_lr = lr_history['sentence_transformer'][-1]
+            st_reductions = sum(1 for i in range(1, len(lr_history['sentence_transformer'])) if lr_history['sentence_transformer'][i] < lr_history['sentence_transformer'][i-1])
+            self.logger.info(f"   - Sentence transformer optimizer: {initial_st_lr:.2e} → {final_st_lr:.2e} ({st_reductions} reductions)")
+        
         self.logger.info("Use evaluate_on_holdout_test_set() method for final evaluation on holdout test set")
         
         return model
@@ -690,6 +756,26 @@ class SCOTUSModelTrainer:
                         self.logger.info(f"       Trainable layers: {', '.join(model_status['trainable_layers'][:5])} ... {', '.join(model_status['trainable_layers'][-5:])}")
         except Exception as e:
             self.logger.debug(f"Could not get detailed layer status: {e}")
+    
+    def _get_current_learning_rates(self, optimizer, sentence_transformer_optimizer=None):
+        """
+        Get current learning rates from optimizers.
+        
+        Args:
+            optimizer: Main optimizer
+            sentence_transformer_optimizer: Optional sentence transformer optimizer
+            
+        Returns:
+            Dictionary with current learning rates
+        """
+        rates = {
+            'main': optimizer.param_groups[0]['lr']
+        }
+        
+        if sentence_transformer_optimizer is not None:
+            rates['sentence_transformer'] = sentence_transformer_optimizer.param_groups[0]['lr']
+        
+        return rates
     
     def evaluate_on_holdout_test_set(self, model_path: str = None) -> Dict:
         """
