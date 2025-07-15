@@ -725,24 +725,16 @@ class SCOTUSModelTrainer:
         # Get tokenized file paths from the full dataset
         bio_tokenized_file, description_tokenized_file = self.get_tokenized_file_paths(full_dataset)
         
-        # Load model
-        model = SCOTUSVotingModel(
+        # Load model using the class method (which properly handles all parameters)
+        model = SCOTUSVotingModel.load_model(
+            filepath=model_path,
             bio_tokenized_file=bio_tokenized_file,
             description_tokenized_file=description_tokenized_file,
             bio_model_name=self.config.bio_model_name,
             description_model_name=self.config.description_model_name,
-            embedding_dim=self.config.embedding_dim,
-            hidden_dim=self.config.hidden_dim,
-            dropout_rate=self.config.dropout_rate,
-            max_justices=self.config.max_justices,
-            num_attention_heads=self.config.num_attention_heads,
-            use_justice_attention=self.config.use_justice_attention,
             device=str(self.device)
         )
         
-        # Load trained weights
-        model.load_model(model_path)
-        model.to(self.device)
         model.eval()
         
         # Prepare holdout dataset
