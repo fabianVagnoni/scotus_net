@@ -350,13 +350,14 @@ class SCOTUSModelTrainer:
         lr_history = {'main': [], 'sentence_transformer': []}
         
         self.logger.info("📊 Learning Rate Scheduler Configuration:")
-        self.logger.info(f"   - Mode: minimize validation loss")
+        self.logger.info(f"   - Mode: minimize combined metric (Val Loss + (1-F1))/2")
         self.logger.info(f"   - Factor: {self.config.lr_scheduler_factor} (LR multiplier on plateau)")
         self.logger.info(f"   - Patience: {self.config.lr_scheduler_patience} epochs")
         self.logger.info(f"   - Initial LR (main): {learning_rate:.2e}")
         if sentence_transformer_optimizer is not None:
             self.logger.info(f"   - Initial LR (sentence transformer): {self.config.sentence_transformer_learning_rate:.2e}")
         self.logger.info(f"   - Custom logging: Enabled (will log LR reductions)")
+        self.logger.info(f"   - Metric: Same as model selection (combined metric for consistency)")
         
         # Training loop
         model.train()
@@ -450,10 +451,10 @@ class SCOTUSModelTrainer:
             if sentence_transformer_optimizer is not None:
                 current_st_lr = sentence_transformer_optimizer.param_groups[0]['lr']
             
-            # Learning rate scheduling
-            scheduler.step(val_loss)
+            # Learning rate scheduling (using combined metric for consistency with model selection)
+            scheduler.step(combined_metric)
             if sentence_transformer_scheduler is not None:
-                sentence_transformer_scheduler.step(val_loss)
+                sentence_transformer_scheduler.step(combined_metric)
             
             # Check if learning rate was reduced and log it
             new_main_lr = optimizer.param_groups[0]['lr']
@@ -464,8 +465,10 @@ class SCOTUSModelTrainer:
             # Log learning rate changes
             if new_main_lr != current_main_lr:
                 self.logger.info(f"🔽 Learning rate reduced for main optimizer: {current_main_lr:.2e} → {new_main_lr:.2e}")
+                self.logger.info(f"   Reason: Combined metric plateaued (no improvement for {self.config.lr_scheduler_patience} epochs)")
             if current_st_lr is not None and new_st_lr != current_st_lr:
                 self.logger.info(f"🔽 Learning rate reduced for sentence transformer optimizer: {current_st_lr:.2e} → {new_st_lr:.2e}")
+                self.logger.info(f"   Reason: Combined metric plateaued (no improvement for {self.config.lr_scheduler_patience} epochs)")
             
             # Record learning rate history
             lr_history['main'].append(new_main_lr)

@@ -39,3 +39,35 @@
 2025-07-15 09:27:01 | INFO     | __main__:demo_lr_scheduler:88 | 
 2025-07-15 09:27:01 | INFO     | __main__:demo_lr_scheduler:89 | ✅ Demo completed!
 2025-07-15 09:27:01 | INFO     | __main__:demo_lr_scheduler:90 | This is how the enhanced LR scheduler works in SCOTUS AI training.
+2025-07-15 09:32:26 | INFO     | __main__:simulate_training_with_combined_metric:24 | 🎯 LR Scheduler with Combined Metric Test
+2025-07-15 09:32:26 | INFO     | __main__:simulate_training_with_combined_metric:25 | ============================================================
+2025-07-15 09:32:30 | INFO     | __main__:simulate_training_with_combined_metric:36 | 📊 LR Scheduler Configuration:
+2025-07-15 09:32:30 | INFO     | __main__:simulate_training_with_combined_metric:37 |    - Mode: minimize combined metric (Val Loss + (1-F1))/2
+2025-07-15 09:32:30 | INFO     | __main__:simulate_training_with_combined_metric:38 |    - Factor: 0.5 (LR multiplier on plateau)
+2025-07-15 09:32:30 | INFO     | __main__:simulate_training_with_combined_metric:39 |    - Patience: 3 epochs
+2025-07-15 09:32:30 | INFO     | __main__:simulate_training_with_combined_metric:40 |    - Initial LR: 1.00e-03
+2025-07-15 09:32:30 | INFO     | __main__:simulate_training_with_combined_metric:41 |    - Metric: Combined metric for consistency
+2025-07-15 09:32:30 | INFO     | __main__:simulate_training_with_combined_metric:42 | 
+2025-07-15 09:32:30 | INFO     | __main__:simulate_training_with_combined_metric:59 | 🚀 Starting simulated training...
+2025-07-15 09:32:30 | INFO     | __main__:simulate_training_with_combined_metric:60 | 📈 Combined metric = (Val Loss + (1-F1))/2
+2025-07-15 09:32:30 | INFO     | __main__:simulate_training_with_combined_metric:61 | 📉 Epochs 4-7 will plateau to trigger LR reduction
+2025-07-15 09:32:30 | INFO     | __main__:simulate_training_with_combined_metric:62 | 
+2025-07-15 09:32:31 | INFO     | __main__:simulate_training_with_combined_metric:82 | Epoch 1: Val Loss = 0.8, F1-Macro = 0.74, Combined = 0.53, LR = 1.00e-03
+2025-07-15 09:32:31 | INFO     | __main__:simulate_training_with_combined_metric:82 | Epoch 2: Val Loss = 0.6, F1-Macro = 1.00, Combined = 0.30, LR = 1.00e-03
+2025-07-15 09:32:31 | INFO     | __main__:simulate_training_with_combined_metric:82 | Epoch 3: Val Loss = 0.5, F1-Macro = 0.84, Combined = 0.33, LR = 1.00e-03
+2025-07-15 09:32:31 | INFO     | __main__:simulate_training_with_combined_metric:82 | Epoch 4: Val Loss = 0.4, F1-Macro = 0.58, Combined = 0.41, LR = 1.00e-03
+2025-07-15 09:32:31 | INFO     | __main__:simulate_training_with_combined_metric:82 | Epoch 5: Val Loss = 0.4, F1-Macro = 0.58, Combined = 0.41, LR = 1.00e-03
+2025-07-15 09:32:31 | INFO     | __main__:simulate_training_with_combined_metric:82 | Epoch 6: Val Loss = 0.4, F1-Macro = 0.58, Combined = 0.41, LR = 5.00e-04
+2025-07-15 09:32:31 | INFO     | __main__:simulate_training_with_combined_metric:86 |    🔽 Learning rate reduced: 1.00e-03 → 5.00e-04
+2025-07-15 09:32:31 | INFO     | __main__:simulate_training_with_combined_metric:87 |    Reason: Combined metric plateaued (no improvement for 3 epochs)
+2025-07-15 09:32:31 | INFO     | __main__:simulate_training_with_combined_metric:82 | Epoch 7: Val Loss = 0.4, F1-Macro = 0.58, Combined = 0.41, LR = 5.00e-04
+2025-07-15 09:32:31 | INFO     | __main__:simulate_training_with_combined_metric:82 | Epoch 8: Val Loss = 0.3, F1-Macro = 1.00, Combined = 0.15, LR = 5.00e-04
+2025-07-15 09:32:31 | INFO     | __main__:simulate_training_with_combined_metric:90 | 
+2025-07-15 09:32:31 | INFO     | __main__:simulate_training_with_combined_metric:91 | 📊 LR Scheduler Summary:
+2025-07-15 09:32:31 | INFO     | __main__:simulate_training_with_combined_metric:96 |    - Initial LR: 1.00e-03
+2025-07-15 09:32:31 | INFO     | __main__:simulate_training_with_combined_metric:97 |    - Final LR: 5.00e-04
+2025-07-15 09:32:31 | INFO     | __main__:simulate_training_with_combined_metric:98 |    - Total reductions: 1
+2025-07-15 09:32:31 | INFO     | __main__:simulate_training_with_combined_metric:99 |    - LR reduction factor: 0.500
+2025-07-15 09:32:31 | INFO     | __main__:simulate_training_with_combined_metric:101 | 
+2025-07-15 09:32:31 | INFO     | __main__:simulate_training_with_combined_metric:102 | ✅ Combined metric plateau detection works correctly!
+2025-07-15 09:32:31 | INFO     | __main__:simulate_training_with_combined_metric:103 | 🎯 LR scheduler now uses same metric as model selection for consistency
