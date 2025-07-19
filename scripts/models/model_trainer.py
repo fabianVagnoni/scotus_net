@@ -392,20 +392,14 @@ class SCOTUSModelTrainer:
                     if sentence_transformer_optimizer is not None:
                         sentence_transformer_optimizer.zero_grad()
                     
-                    batch_predictions = []
                     batch_targets = batch['targets'].to(self.device)
                     
-                    # Process each sample in the batch
-                    for i in range(len(batch['case_ids'])):
-                        case_description_path = batch['case_description_paths'][i]
-                        justice_bio_paths = batch['justice_bio_paths'][i]
-                        
-                        # Forward pass
-                        prediction = model(case_description_path, justice_bio_paths)
-                        batch_predictions.append(prediction)
+                    # Use batch processing for efficiency
+                    case_description_paths = batch['case_description_paths']
+                    justice_bio_paths_list = batch['justice_bio_paths']
                     
-                    # Stack predictions and compute loss
-                    predictions_tensor = torch.stack(batch_predictions)
+                    # Forward pass with true batch processing
+                    predictions_tensor = model.forward_batch(case_description_paths, justice_bio_paths_list)
                     
                     # Compute loss using modular loss system (pass epoch for annealing)
                     loss = criterion(predictions_tensor, batch_targets, epoch=epoch)
@@ -534,20 +528,14 @@ class SCOTUSModelTrainer:
         with torch.no_grad():
             for batch in data_loader:
                 try:
-                    batch_predictions = []
                     batch_targets = batch['targets'].to(self.device)
                     
-                    # Process each sample in the batch
-                    for i in range(len(batch['case_ids'])):
-                        case_description_path = batch['case_description_paths'][i]
-                        justice_bio_paths = batch['justice_bio_paths'][i]
-                        
-                        # Forward pass
-                        prediction = model(case_description_path, justice_bio_paths)
-                        batch_predictions.append(prediction)
+                    # Use batch processing for efficiency
+                    case_description_paths = batch['case_description_paths']
+                    justice_bio_paths_list = batch['justice_bio_paths']
                     
-                    # Stack predictions and compute loss
-                    predictions_tensor = torch.stack(batch_predictions)
+                    # Forward pass with true batch processing
+                    predictions_tensor = model.forward_batch(case_description_paths, justice_bio_paths_list)
                     
                     # Compute loss using modular loss system
                     loss = criterion(predictions_tensor, batch_targets)
@@ -580,20 +568,14 @@ class SCOTUSModelTrainer:
         with torch.no_grad():
             for batch in data_loader:
                 try:
-                    batch_predictions = []
                     batch_targets = batch['targets'].to(self.device)
                     
-                    # Process each sample in the batch
-                    for i in range(len(batch['case_ids'])):
-                        case_description_path = batch['case_description_paths'][i]
-                        justice_bio_paths = batch['justice_bio_paths'][i]
-                        
-                        # Forward pass
-                        prediction = model(case_description_path, justice_bio_paths)
-                        batch_predictions.append(prediction)
+                    # Use batch processing for efficiency
+                    case_description_paths = batch['case_description_paths']
+                    justice_bio_paths_list = batch['justice_bio_paths']
                     
-                    # Stack predictions and compute loss
-                    predictions_tensor = torch.stack(batch_predictions)
+                    # Forward pass with true batch processing
+                    predictions_tensor = model.forward_batch(case_description_paths, justice_bio_paths_list)
                     
                     # Compute loss using modular loss system
                     loss = criterion(predictions_tensor, batch_targets)

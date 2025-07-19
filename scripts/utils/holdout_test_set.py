@@ -156,7 +156,7 @@ class HoldoutTestSetManager:
         Create the holdout test set by selecting the most recent cases with descriptions.
         
         Args:
-            percentage: Percentage of cases to select for holdout (default 0.15 for 15%)
+            percentage: Percentage of cases to select for holdout (default for 15%)
             force_recreate: Whether to recreate even if holdout file already exists
             
         Returns:
