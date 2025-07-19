@@ -205,6 +205,7 @@ class SCOTUSVotingModel(nn.Module):
         # Note: SentenceTransformer expects batch, so we add batch dimension
         input_ids = tokenized_data['input_ids'].unsqueeze(0)  # (1, seq_len)
         attention_mask = tokenized_data['attention_mask'].unsqueeze(0)  # (1, seq_len)
+        attention_mask_unsqueezed = attention_mask.unsqueeze(1).unsqueeze(2).float()
         
         transformer_model = None
         for module in self.description_model._modules.values():
@@ -250,7 +251,7 @@ class SCOTUSVotingModel(nn.Module):
             # Pass through the encoder layers
             encoder_outputs = transformer_model.encoder(
                 hidden_states=word_embeddings,
-                attention_mask=attention_mask
+                attention_mask=attention_mask_unsqueezed
             )
             
             # Get the last hidden state
@@ -258,9 +259,9 @@ class SCOTUSVotingModel(nn.Module):
             
             # Apply pooling (mean pooling by default for sentence transformers)
             # Mask out padding tokens for proper mean pooling
-            input_mask_expanded = attention_mask.unsqueeze(-1).expand(last_hidden_state.size()).float()
-            sum_embeddings = torch.sum(last_hidden_state * input_mask_expanded, 1)
-            sum_mask = torch.clamp(input_mask_expanded.sum(1), min=1e-9)
+            mask_3d = attention_mask.unsqueeze(-1).float()            
+            sum_embeddings = torch.sum(last_hidden_state * mask_3d, 1)
+            sum_mask = torch.clamp(mask_3d.sum(1), min=1e-9)
             sentence_embedding = sum_embeddings / sum_mask  # (1, hidden_dim)
             
             # Apply projection layer if exists
@@ -839,7 +840,8 @@ class SCOTUSVotingModel(nn.Module):
         pad_id = self.description_model.tokenizer.pad_token_id
         batch_input_ids = pad_sequence(batch_input_ids, batch_first=True, padding_value=pad_id)
         batch_attention_masks = pad_sequence(batch_attention_masks, batch_first=True, padding_value=0)
-        
+        batch_attention_masks_unsqueezed = batch_attention_masks.unsqueeze(1).unsqueeze(2).float()
+
         transformer_model = None
         for module in self.description_model._modules.values():
             if hasattr(module, 'auto_model'):  # This is the Transformer module
@@ -877,7 +879,7 @@ class SCOTUSVotingModel(nn.Module):
             # Pass through the encoder layers
             encoder_outputs = transformer_model.encoder(
                 hidden_states=word_embeddings,
-                attention_mask=batch_attention_masks
+                attention_mask=batch_attention_masks_unsqueezed
             )
             
             # Get the last hidden state
@@ -885,9 +887,10 @@ class SCOTUSVotingModel(nn.Module):
             
             # Apply pooling (mean pooling by default for sentence transformers)
             # Mask out padding tokens for proper mean pooling
-            input_mask_expanded = batch_attention_masks.unsqueeze(-1).expand(last_hidden_state.size()).float()
-            sum_embeddings = torch.sum(last_hidden_state * input_mask_expanded, 1)
-            sum_mask = torch.clamp(input_mask_expanded.sum(1), min=1e-9)
+            mask_2d = batch_attention_masks.unsqueeze(0)
+            mask_3d = mask_2d.unsqueeze(-1).float()            
+            sum_embeddings = torch.sum(last_hidden_state * mask_3d, 1)
+            sum_mask = torch.clamp(mask_3d.sum(1), min=1e-9)
             sentence_embedding = sum_embeddings / sum_mask  # (1, hidden_dim)
             
             # Apply projection layer if exists
@@ -957,6 +960,12 @@ class SCOTUSVotingModel(nn.Module):
         pad_id = self.bio_model.tokenizer.pad_token_id
         batch_input_ids = pad_sequence(all_input_ids, batch_first=True, padding_value=pad_id)
         batch_attention_masks = pad_sequence(all_attention_masks, batch_first=True, padding_value=0)
+        
+        transformer_model = None
+        for module in self.bio_model._modules.values():
+            if hasattr(module, 'auto_model'):  # This is the Transformer module
+                transformer_model = module.auto_model
+                break
         
         # Use the sentence transformer's internal encoding
         with torch.no_grad() if not self.training else torch.enable_grad():
