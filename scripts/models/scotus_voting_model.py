@@ -32,6 +32,8 @@ class SCOTUSVotingModel(nn.Module):
         max_justices: int = 15,  # Maximum number of justices that can be on the court
         num_attention_heads: int = 4,  # Number of attention heads for justice cross-attention
         use_justice_attention: bool = True,  # Whether to use attention or simple concatenation
+        use_noise_reg: bool = True,
+        noise_reg_alpha: float = 5.0,
         device: str = 'cuda'  # Device to place models and data on
     ):
         super(SCOTUSVotingModel, self).__init__()
@@ -41,6 +43,8 @@ class SCOTUSVotingModel(nn.Module):
         self.max_justices = max_justices
         self.num_attention_heads = num_attention_heads
         self.use_justice_attention = use_justice_attention
+        self.use_noise_reg = use_noise_reg
+        self.noise_reg_alpha = noise_reg_alpha
         self.device = device
         
         # Pre-tokenized data storage
@@ -209,7 +213,14 @@ class SCOTUSVotingModel(nn.Module):
                 'input_ids': input_ids,
                 'attention_mask': attention_mask
             }
-            embedding = self.description_model(features)['sentence_embedding']
+            embedding_output = self.description_model.embeddings(input=features["input_ids"])
+            if self.use_noise_reg and self.training:
+                embedding_output = self.noise_reg(embedding_output)
+
+            embeddings = self.description_model.encoder(input_embeds=embedding_output , 
+                                                        attention_mask=features["attention_mask"])
+            if self.use_noise_reg and self.training:
+                embeddings = self.noise_reg(embeddings)
             if self.description_projection_layer:
                 embedding = self.description_projection_layer(embedding)
                 
@@ -270,6 +281,8 @@ class SCOTUSVotingModel(nn.Module):
                 'attention_mask': attention_mask
             }
             embedding = self.bio_model(features)['sentence_embedding']
+            if self.use_noise_reg and self.training:
+                embedding = self.noise_reg(embedding)
             if self.bio_projection_layer:
                 embedding = self.bio_projection_layer(embedding)
             
@@ -455,6 +468,15 @@ class SCOTUSVotingModel(nn.Module):
             'bio_paths': list(self.bio_tokenized_data.keys()),
             'description_paths': list(self.description_tokenized_data.keys())
         }
+    
+    def noise_reg(self, embedding: torch.Tensor) -> torch.Tensor:
+        """Apply noise regularization to an embedding following NEFTune (arXiv:2310.05914)."""
+        alpha = self.noise_reg_alpha
+        d = embedding.size(-1)
+        U = torch.empty_like(embedding).uniform_(-1, 1)
+        scale = alpha / d**0.5
+        noise = U * scale
+        return embedding + noise
 
     def freeze_sentence_transformers(self):
         """Freeze all sentence transformers."""
@@ -781,7 +803,15 @@ class SCOTUSVotingModel(nn.Module):
                 'input_ids': batch_input_ids,
                 'attention_mask': batch_attention_masks
             }
-            embeddings = self.description_model(features)['sentence_embedding']  # (batch_size, embedding_dim)
+            
+            embedding_output = self.description_model.embeddings(input=features["input_ids"])
+            if self.use_noise_reg and self.training:
+                embedding_output = self.noise_reg(embedding_output)
+            
+            embeddings = self.description_model.encoder(input_embeds=embedding_output , 
+                                                        attention_mask=features["attention_mask"])
+            if self.use_noise_reg and self.training:
+                embeddings = self.noise_reg(embeddings)
             if self.description_projection_layer:
                 embeddings = self.description_projection_layer(embeddings)
                 
@@ -857,6 +887,8 @@ class SCOTUSVotingModel(nn.Module):
                 'attention_mask': batch_attention_masks
             }
             embeddings = self.bio_model(features)['sentence_embedding']  # (total_justices, embedding_dim)
+            if self.use_noise_reg and self.training:
+                embeddings = self.noise_reg(embeddings)
             if self.bio_projection_layer:
                 embeddings = self.bio_projection_layer(embeddings)
         
