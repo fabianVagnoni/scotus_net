@@ -314,16 +314,7 @@ class SCOTUSVotingModel(nn.Module):
         if self.use_justice_attention:
             # Use attention mechanism
             # Stack justice embeddings: (max_justices, embedding_dim)
-            print(f"🔍 STACK DEBUG - Justice embeddings before stack:")
-            print(f"   Number of justice embeddings: {len(justice_embeddings)}")
-            for i, emb in enumerate(justice_embeddings):
-                print(f"   Justice {i}: shape {emb.shape}, dtype {emb.dtype}, device {emb.device}")
-            try:
-                justice_embs_tensor = torch.stack(justice_embeddings)
-                print(f"✅ STACK SUCCESS - Justice embeddings stacked: {justice_embs_tensor.shape}")
-            except Exception as e:
-                print(f"❌ STACK FAILED - Justice embeddings stack error: {e}")
-                raise
+            justice_embs_tensor = torch.stack(justice_embeddings)
             
             # Create mask for real vs padded justices
             justice_mask = torch.zeros(self.max_justices, dtype=torch.bool, device=case_embedding.device)
@@ -779,22 +770,9 @@ class SCOTUSVotingModel(nn.Module):
             batch_input_ids.append(tokenized_data['input_ids'])
             batch_attention_masks.append(tokenized_data['attention_mask'])
         
-        # Stack into batch tensors
-        try:
-            pad_id = self.description_model.tokenizer.pad_token_id
-            batch_input_ids = pad_sequence(batch_input_ids, batch_first=True, padding_value=pad_id)
-            # batch_input_ids = torch.stack(batch_input_ids)  # (batch_size, seq_len)
-        except Exception as e:
-            print(f"❌ STACK FAILED - Case description input_ids stack error: {e}")
-            raise
-        
-        try:
-            pad_id = self.description_model.tokenizer.pad_token_id
-            batch_attention_masks = pad_sequence(batch_attention_masks, batch_first=True, padding_value=0)
-            # batch_attention_masks = torch.stack(batch_attention_masks)  # (batch_size, seq_len)
-        except Exception as e:
-            print(f"❌ STACK FAILED - Case description attention_masks stack error: {e}")
-            raise
+        pad_id = self.description_model.tokenizer.pad_token_id
+        batch_input_ids = pad_sequence(batch_input_ids, batch_first=True, padding_value=pad_id)
+        batch_attention_masks = pad_sequence(batch_attention_masks, batch_first=True, padding_value=0)
         
         # Use the sentence transformer's internal encoding
         with torch.no_grad() if not self.training else torch.enable_grad():
@@ -867,22 +845,9 @@ class SCOTUSVotingModel(nn.Module):
         if not all_input_ids:
             raise ValueError("No valid justice biography paths found")
         
-        # Stack into batch tensors
-        try:
-            pad_id = self.bio_model.tokenizer.pad_token_id
-            batch_input_ids = pad_sequence(all_input_ids, batch_first=True, padding_value=pad_id)
-            # batch_input_ids = torch.stack(all_input_ids)  # (total_justices, seq_len)    
-        except Exception as e:
-            print(f"❌ STACK FAILED - Justice bio input_ids stack error: {e}")
-            raise
-        
-        try:
-            pad_id = self.bio_model.tokenizer.pad_token_id
-            batch_attention_masks = pad_sequence(all_attention_masks, batch_first=True, padding_value=0)
-            # batch_attention_masks = torch.stack(all_attention_masks)  # (total_justices, seq_len)
-        except Exception as e:
-            print(f"❌ STACK FAILED - Justice bio attention_masks stack error: {e}")
-            raise
+        pad_id = self.bio_model.tokenizer.pad_token_id
+        batch_input_ids = pad_sequence(all_input_ids, batch_first=True, padding_value=pad_id)
+        batch_attention_masks = pad_sequence(all_attention_masks, batch_first=True, padding_value=0)
         
         # Use the sentence transformer's internal encoding
         with torch.no_grad() if not self.training else torch.enable_grad():
@@ -957,17 +922,8 @@ class SCOTUSVotingModel(nn.Module):
             if self.use_justice_attention:
                 # Use attention mechanism
                 # Stack justice embeddings: (max_justices, embedding_dim)
-                print(f"🔍 STACK DEBUG - Forward batch justice embeddings before stack (case {case_idx}):")
-                print(f"   Number of justice embeddings: {len(case_justice_embeddings)}")
-                for i, emb in enumerate(case_justice_embeddings):
-                    print(f"   Justice {i}: shape {emb.shape}, dtype {emb.dtype}, device {emb.device}")
-                try:
-                    justice_embs_tensor = torch.stack(case_justice_embeddings)
-                    print(f"✅ STACK SUCCESS - Forward batch justice embeddings stacked: {justice_embs_tensor.shape}")
-                except Exception as e:
-                    print(f"❌ STACK FAILED - Forward batch justice embeddings stack error: {e}")
-                    raise
-            
+                justice_embs_tensor = torch.stack(case_justice_embeddings)
+                
                 # Create mask for real vs padded justices
                 justice_mask = torch.zeros(self.max_justices, dtype=torch.bool, device=case_embedding.device)
                 justice_mask[:num_real_justices] = True  # True for real justices, False for padding
@@ -991,56 +947,7 @@ class SCOTUSVotingModel(nn.Module):
                 batch_outputs.append(output)
             
         # Stack all outputs
-        print(f"🔍 STACK DEBUG - Forward batch outputs before final stack:")
-        print(f"   Number of batch outputs: {len(batch_outputs)}")
-        for i, output in enumerate(batch_outputs):
-            print(f"   Output {i}: shape {output.shape}, dtype {output.dtype}, device {output.device}")
-        try:
-            return torch.stack(batch_outputs)  # (batch_size, 3)
-            print(f"✅ STACK SUCCESS - Forward batch outputs stacked: {batch_outputs.shape}")
-        except Exception as e:
-            print(f"❌ STACK FAILED - Forward batch outputs stack error: {e}")
-            raise
-
-
-class SCOTUSDataset(torch.utils.data.Dataset):
-    """
-    PyTorch Dataset for SCOTUS voting data.
-    """
-    
-    def __init__(self, dataset_dict: Dict[str, List], transform=None):
-        """
-        Initialize dataset.
-        
-        Args:
-            dataset_dict: Dictionary with case_id as keys and 
-                         [justice_bio_paths, case_description_path, voting_percentages] as values
-        """
-        self.dataset_dict = dataset_dict
-        self.case_ids = list(dataset_dict.keys())
-        self.transform = transform
-    
-    def __len__(self):
-        return len(self.case_ids)
-    
-    def __getitem__(self, idx):
-        case_id = self.case_ids[idx]
-        justice_bio_paths, case_description_path, voting_percentages = self.dataset_dict[case_id]
-        
-        # Convert voting percentages to tensor
-        target = torch.tensor(voting_percentages, dtype=torch.float32)
-        
-        sample = {
-            'case_id': case_id,
-            'justice_bio_paths': justice_bio_paths,
-            'case_description_path': case_description_path,
-            'target': target
-        }
-        
-        if self.transform:
-            sample = self.transform(sample)
-        
-        return sample
+        return torch.stack(batch_outputs)  # (batch_size, 3)
 
 
 def collate_fn(batch):
