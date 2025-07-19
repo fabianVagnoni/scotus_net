@@ -213,11 +213,11 @@ class SCOTUSVotingModel(nn.Module):
                 'input_ids': input_ids,
                 'attention_mask': attention_mask
             }
-            embedding_output = self.description_model.embeddings(input=features["input_ids"])
+            embedding_output = self.description_model._first_module().embeddings(input=features["input_ids"])
             if self.use_noise_reg and self.training:
                 embedding_output = self.noise_reg(embedding_output)
 
-            embeddings = self.description_model.encoder(input_embeds=embedding_output , 
+            embeddings = self.description_model._first_module().encoder(input_embeds=embedding_output , 
                                                         attention_mask=features["attention_mask"])
             if self.use_noise_reg and self.training:
                 embeddings = self.noise_reg(embeddings)
@@ -804,11 +804,11 @@ class SCOTUSVotingModel(nn.Module):
                 'attention_mask': batch_attention_masks
             }
             
-            embedding_output = self.description_model.embeddings(input=features["input_ids"])
+            embedding_output = self.description_model._first_module().embeddings(input=features["input_ids"])
             if self.use_noise_reg and self.training:
                 embedding_output = self.noise_reg(embedding_output)
             
-            embeddings = self.description_model.encoder(input_embeds=embedding_output , 
+            embeddings = self.description_model._first_module().encoder(input_embeds=embedding_output , 
                                                         attention_mask=features["attention_mask"])
             if self.use_noise_reg and self.training:
                 embeddings = self.noise_reg(embeddings)
