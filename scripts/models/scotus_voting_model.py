@@ -7,6 +7,7 @@ import torch.nn.functional as F
 import os
 import pickle
 from models.justice_cross_attention import JusticeCrossAttention
+from torch.nn.utils.rnn import pad_sequence
 
 class SCOTUSVotingModel(nn.Module):
     """
@@ -780,12 +781,16 @@ class SCOTUSVotingModel(nn.Module):
         
         # Stack into batch tensors
         try:
+            pad_id = self.description_model.tokenizer.pad_token_id
+            batch_input_ids = pad_sequence(batch_input_ids, batch_first=True, padding_value=pad_id)
             batch_input_ids = torch.stack(batch_input_ids)  # (batch_size, seq_len)
         except Exception as e:
             print(f"❌ STACK FAILED - Case description input_ids stack error: {e}")
             raise
         
         try:
+            pad_id = self.description_model.tokenizer.pad_token_id
+            batch_attention_masks = pad_sequence(batch_attention_masks, batch_first=True, padding_value=0)
             batch_attention_masks = torch.stack(batch_attention_masks)  # (batch_size, seq_len)
         except Exception as e:
             print(f"❌ STACK FAILED - Case description attention_masks stack error: {e}")
@@ -864,12 +869,16 @@ class SCOTUSVotingModel(nn.Module):
         
         # Stack into batch tensors
         try:
+            pad_id = self.bio_model.tokenizer.pad_token_id
+            batch_input_ids = pad_sequence(all_input_ids, batch_first=True, padding_value=pad_id)
             batch_input_ids = torch.stack(all_input_ids)  # (total_justices, seq_len)    
         except Exception as e:
             print(f"❌ STACK FAILED - Justice bio input_ids stack error: {e}")
             raise
         
         try:
+            pad_id = self.bio_model.tokenizer.pad_token_id
+            batch_attention_masks = pad_sequence(all_attention_masks, batch_first=True, padding_value=0)
             batch_attention_masks = torch.stack(all_attention_masks)  # (total_justices, seq_len)
         except Exception as e:
             print(f"❌ STACK FAILED - Justice bio attention_masks stack error: {e}")
