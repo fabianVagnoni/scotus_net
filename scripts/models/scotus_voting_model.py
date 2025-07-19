@@ -206,26 +206,69 @@ class SCOTUSVotingModel(nn.Module):
         input_ids = tokenized_data['input_ids'].unsqueeze(0)  # (1, seq_len)
         attention_mask = tokenized_data['attention_mask'].unsqueeze(0)  # (1, seq_len)
         
+        transformer_model = None
+        for module in self.description_model._modules.values():
+            if hasattr(module, 'auto_model'):  # This is the Transformer module
+                transformer_model = module.auto_model
+                break
+        
+        if transformer_model is None:
+            # Fallback: try to get the first module that looks like a transformer
+            for module in self.description_model._modules.values():
+                if hasattr(module, 'embeddings') and hasattr(module, 'encoder'):
+                    transformer_model = module
+                    break
+        if transformer_model is None:
+            raise RuntimeError("Could not find transformer model in SentenceTransformer")
+    
+
         # Use the sentence transformer's internal encoding
         with torch.no_grad() if not self.training else torch.enable_grad():
             # Get embeddings from the underlying transformer model
-            features = {
-                'input_ids': input_ids,
-                'attention_mask': attention_mask
-            }
+            word_embeddings = transformer_model.embeddings.word_embeddings(input_ids)
+            if self.use_noise_reg and self.training:
+                word_embeddings = self.noise_reg(word_embeddings)
+            # Get position and token type embeddings if they exist
+            if hasattr(transformer_model.embeddings, 'position_embeddings'):
+                seq_length = input_ids.size(1)
+                position_ids = torch.arange(seq_length, dtype=torch.long, device=input_ids.device)
+                position_ids = position_ids.unsqueeze(0).expand_as(input_ids)
+                position_embeddings = transformer_model.embeddings.position_embeddings(position_ids)
+                word_embeddings += position_embeddings
             
-            model = self.description_model._first_module().embeddings.autmodel
-            embedding_output = model.get_input_embeddings()(features["input_ids"])
-            if self.use_noise_reg and self.training:
-                embedding_output = self.noise_reg(embedding_output)
-            embeddings = model.encoder(input_embeds=embedding_output , 
-                                                        attention_mask=features["attention_mask"])
-            if self.use_noise_reg and self.training:
-                embeddings = self.noise_reg(embeddings)
+            if hasattr(transformer_model.embeddings, 'token_type_embeddings'):
+                token_type_ids = torch.zeros_like(input_ids)
+                token_type_embeddings = transformer_model.embeddings.token_type_embeddings(token_type_ids)
+                word_embeddings += token_type_embeddings
+            
+            # Apply LayerNorm and dropout if they exist in embeddings
+            if hasattr(transformer_model.embeddings, 'LayerNorm'):
+                word_embeddings = transformer_model.embeddings.LayerNorm(word_embeddings)
+            if hasattr(transformer_model.embeddings, 'dropout'):
+                word_embeddings = transformer_model.embeddings.dropout(word_embeddings)
+            
+            # Pass through the encoder layers
+            encoder_outputs = transformer_model.encoder(
+                hidden_states=word_embeddings,
+                attention_mask=attention_mask
+            )
+            
+            # Get the last hidden state
+            last_hidden_state = encoder_outputs.last_hidden_state  # (1, seq_len, hidden_dim)
+            
+            # Apply pooling (mean pooling by default for sentence transformers)
+            # Mask out padding tokens for proper mean pooling
+            input_mask_expanded = attention_mask.unsqueeze(-1).expand(last_hidden_state.size()).float()
+            sum_embeddings = torch.sum(last_hidden_state * input_mask_expanded, 1)
+            sum_mask = torch.clamp(input_mask_expanded.sum(1), min=1e-9)
+            sentence_embedding = sum_embeddings / sum_mask  # (1, hidden_dim)
+            
+            # Apply projection layer if exists
             if self.description_projection_layer:
-                embedding = self.description_projection_layer(embedding)
-                
-        return embedding.squeeze(0)  # Remove batch dimension
+                sentence_embedding = self.description_projection_layer(sentence_embedding)
+        
+        return sentence_embedding.squeeze(0)  # Remove batch dimension
+
     
     def encode_justice_bio(self, justice_bio_path: str) -> torch.Tensor:
         """
@@ -797,27 +840,61 @@ class SCOTUSVotingModel(nn.Module):
         batch_input_ids = pad_sequence(batch_input_ids, batch_first=True, padding_value=pad_id)
         batch_attention_masks = pad_sequence(batch_attention_masks, batch_first=True, padding_value=0)
         
+        transformer_model = None
+        for module in self.description_model._modules.values():
+            if hasattr(module, 'auto_model'):  # This is the Transformer module
+                transformer_model = module.auto_model
+                break
+        
+        if transformer_model is None:
+            raise RuntimeError("Could not find transformer model in SentenceTransformer")
+
         # Use the sentence transformer's internal encoding
         with torch.no_grad() if not self.training else torch.enable_grad():
             # Get embeddings from the underlying transformer model
-            features = {
-                'input_ids': batch_input_ids,
-                'attention_mask': batch_attention_masks
-            }
-            
-            model = self.description_model._first_module().embeddings.autmodel
-            embedding_output = model.get_input_embeddings()(features["input_ids"])
+            word_embeddings = transformer_model.embeddings.word_embeddings(batch_input_ids)
             if self.use_noise_reg and self.training:
-                embedding_output = self.noise_reg(embedding_output)
+                word_embeddings = self.noise_reg(word_embeddings)
+            # Get position and token type embeddings if they exist
+            if hasattr(transformer_model.embeddings, 'position_embeddings'):
+                seq_length = batch_input_ids.size(1)
+                position_ids = torch.arange(seq_length, dtype=torch.long, device=batch_input_ids.device)
+                position_ids = position_ids.unsqueeze(0).expand_as(batch_input_ids)
+                position_embeddings = transformer_model.embeddings.position_embeddings(position_ids)
+                word_embeddings += position_embeddings
             
-            embeddings = model.encoder(input_embeds=embedding_output , 
-                                                        attention_mask=features["attention_mask"])
-            if self.use_noise_reg and self.training:
-                embeddings = self.noise_reg(embeddings)
+            if hasattr(transformer_model.embeddings, 'token_type_embeddings'):
+                token_type_ids = torch.zeros_like(batch_input_ids)
+                token_type_embeddings = transformer_model.embeddings.token_type_embeddings(token_type_ids)
+                word_embeddings += token_type_embeddings
+            
+            # Apply LayerNorm and dropout if they exist in embeddings
+            if hasattr(transformer_model.embeddings, 'LayerNorm'):
+                word_embeddings = transformer_model.embeddings.LayerNorm(word_embeddings)
+            if hasattr(transformer_model.embeddings, 'dropout'):
+                word_embeddings = transformer_model.embeddings.dropout(word_embeddings)
+            
+            # Pass through the encoder layers
+            encoder_outputs = transformer_model.encoder(
+                hidden_states=word_embeddings,
+                attention_mask=batch_attention_masks
+            )
+            
+            # Get the last hidden state
+            last_hidden_state = encoder_outputs.last_hidden_state  # (1, seq_len, hidden_dim)
+            
+            # Apply pooling (mean pooling by default for sentence transformers)
+            # Mask out padding tokens for proper mean pooling
+            input_mask_expanded = batch_attention_masks.unsqueeze(-1).expand(last_hidden_state.size()).float()
+            sum_embeddings = torch.sum(last_hidden_state * input_mask_expanded, 1)
+            sum_mask = torch.clamp(input_mask_expanded.sum(1), min=1e-9)
+            sentence_embedding = sum_embeddings / sum_mask  # (1, hidden_dim)
+            
+            # Apply projection layer if exists
             if self.description_projection_layer:
-                embeddings = self.description_projection_layer(embeddings)
-                
-        return embeddings  # (batch_size, embedding_dim)
+                sentence_embedding = self.description_projection_layer(sentence_embedding)
+        
+        return sentence_embedding  # Remove batch dimension  
     
     def encode_justice_bio_batch(self, justice_bio_paths_list: List[List[str]]) -> torch.Tensor:
         """
