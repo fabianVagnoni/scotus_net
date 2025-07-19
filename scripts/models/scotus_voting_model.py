@@ -391,6 +391,7 @@ class SCOTUSVotingModel(nn.Module):
                 prediction = self.predict_logits_from_files(case_description_path, justice_bio_paths)
             batch_predictions.append(prediction)
         
+        print(f"Batch predictions: {batch_predictions.shape}")
         return torch.stack(batch_predictions)
     
     def save_model(self, filepath: str):
@@ -769,6 +770,8 @@ class SCOTUSVotingModel(nn.Module):
             batch_attention_masks.append(tokenized_data['attention_mask'])
         
         # Stack into batch tensors
+        print(f"Batch input ids: {batch_input_ids.shape}")
+        print(f"Batch attention masks: {batch_attention_masks.shape}")
         batch_input_ids = torch.stack(batch_input_ids)  # (batch_size, seq_len)
         batch_attention_masks = torch.stack(batch_attention_masks)  # (batch_size, seq_len)
         
@@ -844,6 +847,8 @@ class SCOTUSVotingModel(nn.Module):
             raise ValueError("No valid justice biography paths found")
         
         # Stack into batch tensors
+        print(f"All input ids: {all_input_ids.shape}")
+        print(f"All attention masks: {all_attention_masks.shape}")
         batch_input_ids = torch.stack(all_input_ids)  # (total_justices, seq_len)
         batch_attention_masks = torch.stack(all_attention_masks)  # (total_justices, seq_len)
         
