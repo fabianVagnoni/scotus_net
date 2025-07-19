@@ -779,9 +779,17 @@ class SCOTUSVotingModel(nn.Module):
             batch_attention_masks.append(tokenized_data['attention_mask'])
         
         # Stack into batch tensors
-        batch_input_ids = torch.stack(batch_input_ids)  # (batch_size, seq_len)
-            
-        batch_attention_masks = torch.stack(batch_attention_masks)  # (batch_size, seq_len)
+        try:
+            batch_input_ids = torch.stack(batch_input_ids)  # (batch_size, seq_len)
+        except Exception as e:
+            print(f"❌ STACK FAILED - Case description input_ids stack error: {e}")
+            raise
+        
+        try:
+            batch_attention_masks = torch.stack(batch_attention_masks)  # (batch_size, seq_len)
+        except Exception as e:
+            print(f"❌ STACK FAILED - Case description attention_masks stack error: {e}")
+            raise
         
         # Use the sentence transformer's internal encoding
         with torch.no_grad() if not self.training else torch.enable_grad():
@@ -855,8 +863,17 @@ class SCOTUSVotingModel(nn.Module):
             raise ValueError("No valid justice biography paths found")
         
         # Stack into batch tensors
-        batch_input_ids = torch.stack(all_input_ids)  # (total_justices, seq_len)    
-        batch_attention_masks = torch.stack(all_attention_masks)  # (total_justices, seq_len)
+        try:
+            batch_input_ids = torch.stack(all_input_ids)  # (total_justices, seq_len)    
+        except Exception as e:
+            print(f"❌ STACK FAILED - Justice bio input_ids stack error: {e}")
+            raise
+        
+        try:
+            batch_attention_masks = torch.stack(all_attention_masks)  # (total_justices, seq_len)
+        except Exception as e:
+            print(f"❌ STACK FAILED - Justice bio attention_masks stack error: {e}")
+            raise
         
         # Use the sentence transformer's internal encoding
         with torch.no_grad() if not self.training else torch.enable_grad():
@@ -942,28 +959,28 @@ class SCOTUSVotingModel(nn.Module):
                     print(f"❌ STACK FAILED - Forward batch justice embeddings stack error: {e}")
                     raise
             
-            # Create mask for real vs padded justices
-            justice_mask = torch.zeros(self.max_justices, dtype=torch.bool, device=case_embedding.device)
-            justice_mask[:num_real_justices] = True  # True for real justices, False for padding
+                # Create mask for real vs padded justices
+                justice_mask = torch.zeros(self.max_justices, dtype=torch.bool, device=case_embedding.device)
+                justice_mask[:num_real_justices] = True  # True for real justices, False for padding
+                
+                # Apply cross-attention
+                court_embedding = self.justice_attention(
+                    case_emb=case_embedding,
+                    justice_embs=justice_embs_tensor,
+                    justice_mask=justice_mask
+                )
+                
+                # Combine case and court embeddings
+                combined_embedding = torch.cat([case_embedding, court_embedding], dim=0)
+            else:
+                # Original concatenation approach
+                all_embeddings = [case_embedding] + case_justice_embeddings
+                combined_embedding = torch.cat(all_embeddings, dim=0)
+                
+                # Pass through fully connected layers
+                output = self.fc_layers(combined_embedding)  # (3,)
+                batch_outputs.append(output)
             
-            # Apply cross-attention
-            court_embedding = self.justice_attention(
-                case_emb=case_embedding,
-                justice_embs=justice_embs_tensor,
-                justice_mask=justice_mask
-            )
-            
-            # Combine case and court embeddings
-            combined_embedding = torch.cat([case_embedding, court_embedding], dim=0)
-        else:
-            # Original concatenation approach
-            all_embeddings = [case_embedding] + case_justice_embeddings
-            combined_embedding = torch.cat(all_embeddings, dim=0)
-            
-            # Pass through fully connected layers
-            output = self.fc_layers(combined_embedding)  # (3,)
-            batch_outputs.append(output)
-        
         # Stack all outputs
         print(f"🔍 STACK DEBUG - Forward batch outputs before final stack:")
         print(f"   Number of batch outputs: {len(batch_outputs)}")
