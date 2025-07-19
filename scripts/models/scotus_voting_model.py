@@ -97,6 +97,7 @@ class SCOTUSVotingModel(nn.Module):
             fc_input_dim = embedding_dim * 2  # case_emb + court_emb
         else:
             # Original concatenation approach
+            self.justice_attention = None
             fc_input_dim = embedding_dim * (1 + max_justices)  # case + all justices
         
         # Fully connected layers
@@ -778,27 +779,9 @@ class SCOTUSVotingModel(nn.Module):
             batch_attention_masks.append(tokenized_data['attention_mask'])
         
         # Stack into batch tensors
-        print(f"🔍 STACK DEBUG - Case description batch_input_ids before stack:")
-        print(f"   Number of input_ids: {len(batch_input_ids)}")
-        for i, ids in enumerate(batch_input_ids):
-            print(f"   Input {i}: shape {ids.shape}, dtype {ids.dtype}, device {ids.device}")
-        try:
-            batch_input_ids = torch.stack(batch_input_ids)  # (batch_size, seq_len)
-            print(f"✅ STACK SUCCESS - Case description input_ids stacked: {batch_input_ids.shape}")
-        except Exception as e:
-            print(f"❌ STACK FAILED - Case description input_ids stack error: {e}")
-            raise
+        batch_input_ids = torch.stack(batch_input_ids)  # (batch_size, seq_len)
             
-        print(f"🔍 STACK DEBUG - Case description batch_attention_masks before stack:")
-        print(f"   Number of attention_masks: {len(batch_attention_masks)}")
-        for i, mask in enumerate(batch_attention_masks):
-            print(f"   Mask {i}: shape {mask.shape}, dtype {mask.dtype}, device {mask.device}")
-        try:
-            batch_attention_masks = torch.stack(batch_attention_masks)  # (batch_size, seq_len)
-            print(f"✅ STACK SUCCESS - Case description attention_masks stacked: {batch_attention_masks.shape}")
-        except Exception as e:
-            print(f"❌ STACK FAILED - Case description attention_masks stack error: {e}")
-            raise
+        batch_attention_masks = torch.stack(batch_attention_masks)  # (batch_size, seq_len)
         
         # Use the sentence transformer's internal encoding
         with torch.no_grad() if not self.training else torch.enable_grad():
@@ -872,27 +855,8 @@ class SCOTUSVotingModel(nn.Module):
             raise ValueError("No valid justice biography paths found")
         
         # Stack into batch tensors
-        print(f"🔍 STACK DEBUG - Justice bio all_input_ids before stack:")
-        print(f"   Number of input_ids: {len(all_input_ids)}")
-        for i, ids in enumerate(all_input_ids):
-            print(f"   Input {i}: shape {ids.shape}, dtype {ids.dtype}, device {ids.device}")
-        try:
-            batch_input_ids = torch.stack(all_input_ids)  # (total_justices, seq_len)
-            print(f"✅ STACK SUCCESS - Justice bio input_ids stacked: {batch_input_ids.shape}")
-        except Exception as e:
-            print(f"❌ STACK FAILED - Justice bio input_ids stack error: {e}")
-            raise
-            
-        print(f"🔍 STACK DEBUG - Justice bio all_attention_masks before stack:")
-        print(f"   Number of attention_masks: {len(all_attention_masks)}")
-        for i, mask in enumerate(all_attention_masks):
-            print(f"   Mask {i}: shape {mask.shape}, dtype {mask.dtype}, device {mask.device}")
-        try:
-            batch_attention_masks = torch.stack(all_attention_masks)  # (total_justices, seq_len)
-            print(f"✅ STACK SUCCESS - Justice bio attention_masks stacked: {batch_attention_masks.shape}")
-        except Exception as e:
-            print(f"❌ STACK FAILED - Justice bio attention_masks stack error: {e}")
-            raise
+        batch_input_ids = torch.stack(all_input_ids)  # (total_justices, seq_len)    
+        batch_attention_masks = torch.stack(all_attention_masks)  # (total_justices, seq_len)
         
         # Use the sentence transformer's internal encoding
         with torch.no_grad() if not self.training else torch.enable_grad():
