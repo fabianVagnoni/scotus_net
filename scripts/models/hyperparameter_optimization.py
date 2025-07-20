@@ -432,7 +432,9 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
             hyperparams['use_noise_reg'] = self.trial.suggest_categorical('use_noise_reg', self.base_config.optuna_use_noise_reg_options)
             # Only tune alpha if noise_reg is enabled
             if hyperparams['use_noise_reg']:
-                hyperparams['noise_reg_alpha'] = self.trial.suggest_float('noise_reg_alpha', self.base_config.optuna_noise_reg_alpha_range)
+                alpha_min, alpha_max, alpha_log = self.base_config.optuna_noise_reg_alpha_range
+                alpha_kwargs = {'log': alpha_log} if alpha_log else {}
+                hyperparams['noise_reg_alpha'] = self.trial.suggest_float('noise_reg_alpha', alpha_min, alpha_max, **alpha_kwargs)
             else:
                 hyperparams['noise_reg_alpha'] = self.base_config.noise_reg_alpha  # Use default when disabled
         else:
