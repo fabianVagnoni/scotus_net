@@ -48,6 +48,8 @@ class ModelConfig:
         # Regularization
         self.dropout_rate = float(os.getenv('DROPOUT_RATE', '0.1'))
         self.weight_decay = float(os.getenv('WEIGHT_DECAY', '0.01'))
+        self.use_noise_reg = os.getenv('USE_NOISE_REG', 'true').lower() == 'true'
+        self.noise_reg_alpha = float(os.getenv('NOISE_REG_ALPHA', '5.0'))
         
         # Training Configuration
         self.learning_rate = float(os.getenv('LEARNING_RATE', '0.0001'))
@@ -166,6 +168,8 @@ class ModelConfig:
         self.optuna_learning_rate_range = self._parse_float_range_with_log(os.getenv('OPTUNA_LEARNING_RATE_RANGE', '1e-5,1e-3,true'))
         self.optuna_batch_size_options = self._parse_int_list(os.getenv('OPTUNA_BATCH_SIZE_OPTIONS', '8,16,32'))
         self.optuna_weight_decay_range = self._parse_float_range_with_log(os.getenv('OPTUNA_WEIGHT_DECAY_RANGE', '1e-4,1e-1,true'))
+        self.optuna_use_noise_reg_options = self._parse_bool_list(os.getenv('OPTUNA_USE_NOISE_REG', 'true,false'))
+        self.optuna_noise_reg_alpha_range = self._parse_float_range_with_log(os.getenv('OPTUNA_NOISE_ALPHA', '0.1,10,true'))
         
         # Fine-tuning Strategy Search Spaces
         self.optuna_first_unfreeze_epoch_options = self._parse_int_list(os.getenv('OPTUNA_FIRST_UNFREEZE_EPOCH_OPTIONS', '-1,2,3,4'))
@@ -181,10 +185,11 @@ class ModelConfig:
         self.tune_learning_rate = os.getenv('TUNE_LEARNING_RATE', 'true').lower() == 'true'
         self.tune_batch_size = os.getenv('TUNE_BATCH_SIZE', 'true').lower() == 'true'
         self.tune_weight_decay = os.getenv('TUNE_WEIGHT_DECAY', 'true').lower() == 'true'
-        
+        self.tune_use_noise_reg = os.getenv('TUNE_NOISE_REG', 'true').lower() == 'true'
+
         # Fine-tuning Strategy Tuning Control
         self.tune_fine_tuning_strategy = os.getenv('TUNE_FINE_TUNING_STRATEGY', 'true').lower() == 'true'
-    
+
     def _parse_int_list(self, value: str) -> list:
         """Parse comma-separated integers."""
         return [int(x.strip()) for x in value.split(',')]
@@ -265,6 +270,10 @@ class ModelConfig:
             
             # Gradient Clipping
             'max_grad_norm': self.max_grad_norm,
+
+            # NEFTune Regularization
+            'use_noise_reg': self.use_noise_reg,
+            'noise_reg_alpha': self.noise_reg_alpha,
             
             # Device Configuration
             'device': self.device,
@@ -364,7 +373,9 @@ class ModelConfig:
             'optuna_learning_rate_range': self.optuna_learning_rate_range,
             'optuna_batch_size_options': self.optuna_batch_size_options,
             'optuna_weight_decay_range': self.optuna_weight_decay_range,
-            
+            'optuna_use_noise_reg_options': self.optuna_use_noise_reg_options,
+            'optuna_noise_reg_alpha_range': self.optuna_noise_reg_alpha_range,
+
             # Fine-tuning Strategy Search Spaces
             'optuna_first_unfreeze_epoch_options': self.optuna_first_unfreeze_epoch_options,
             'optuna_second_unfreeze_epoch_options': self.optuna_second_unfreeze_epoch_options,
@@ -379,7 +390,7 @@ class ModelConfig:
             'tune_learning_rate': self.tune_learning_rate,
             'tune_batch_size': self.tune_batch_size,
             'tune_weight_decay': self.tune_weight_decay,
-            
+            'tune_use_noise_reg': self.tune_use_noise_reg,
             # Fine-tuning Strategy Tuning Control
             'tune_fine_tuning_strategy': self.tune_fine_tuning_strategy,
         }
@@ -452,6 +463,8 @@ def get_training_config() -> Dict[str, Any]:
         'kl_reduction': config.kl_reduction,
         'validation_frequency': config.validation_frequency,
         'log_frequency': config.log_frequency,
+        'use_noise_reg': config.use_noise_reg,
+        'noise_reg_alpha': config.noise_reg_alpha,
         'verbose_training': config.verbose_training
     }
 

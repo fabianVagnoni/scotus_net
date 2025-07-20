@@ -230,6 +230,8 @@ class SCOTUSModelTrainer:
         max_justices = self.config.max_justices
         num_attention_heads = self.config.num_attention_heads
         use_justice_attention = self.config.use_justice_attention
+        use_noise_reg = self.config.use_noise_reg
+        noise_reg_alpha = self.config.noise_reg_alpha
         
         # Initialize model
         model = SCOTUSVotingModel(
@@ -243,6 +245,8 @@ class SCOTUSModelTrainer:
             max_justices=max_justices,
             num_attention_heads=num_attention_heads,
             use_justice_attention=use_justice_attention,
+            use_noise_reg=use_noise_reg,
+            noise_reg_alpha=noise_reg_alpha,
             device=str(self.device)
         )
         

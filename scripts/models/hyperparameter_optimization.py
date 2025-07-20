@@ -123,6 +123,8 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
                 max_justices=self.base_config.max_justices,  # Keep fixed
                 num_attention_heads=hyperparams['num_attention_heads'],
                 use_justice_attention=hyperparams['use_justice_attention'],
+                use_noise_reg=hyperparams['use_noise_reg'],
+                noise_reg_alpha=hyperparams['noise_reg_alpha'],
                 device=str(self.device)
             )
             
@@ -424,6 +426,18 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
             hyperparams['weight_decay'] = self.trial.suggest_float('weight_decay', wd_min, wd_max, **wd_kwargs)
         else:
             hyperparams['weight_decay'] = self.base_config.weight_decay
+
+        # Regularization - Use NEFTune (single control for both use and alpha)
+        if self.base_config.tune_use_noise_reg:
+            hyperparams['use_noise_reg'] = self.trial.suggest_categorical('use_noise_reg', self.base_config.optuna_use_noise_reg_options)
+            # Only tune alpha if noise_reg is enabled
+            if hyperparams['use_noise_reg']:
+                hyperparams['noise_reg_alpha'] = self.trial.suggest_float('noise_reg_alpha', self.base_config.optuna_noise_reg_alpha_range)
+            else:
+                hyperparams['noise_reg_alpha'] = self.base_config.noise_reg_alpha  # Use default when disabled
+        else:
+            hyperparams['use_noise_reg'] = self.base_config.use_noise_reg
+            hyperparams['noise_reg_alpha'] = self.base_config.noise_reg_alpha
         
         # Fine-tuning Strategy
         if self.base_config.tune_fine_tuning_strategy:
@@ -1036,6 +1050,8 @@ def save_best_config(study: optuna.Study, base_config: ModelConfig, output_file:
         studied_params.append("BATCH_SIZE")
     if base_config.tune_weight_decay:
         studied_params.append("WEIGHT_DECAY")
+    if base_config.tune_use_noise_reg:
+        studied_params.append("USE_NOISE_REG (controls both use and alpha)")
     
     # Fine-tuning strategy parameters
     if base_config.tune_fine_tuning_strategy:
@@ -1083,6 +1099,8 @@ def save_best_config(study: optuna.Study, base_config: ModelConfig, output_file:
         "# Regularization",
         f"DROPOUT_RATE={best_params.get('dropout_rate', base_config.dropout_rate)}",
         f"WEIGHT_DECAY={best_params.get('weight_decay', base_config.weight_decay)}",
+        f"USE_NOISE_REG={str(best_params.get('use_noise_reg', base_config.use_noise_reg)).lower()}",
+        f"NOISE_REG_ALPHA={best_params.get('noise_reg_alpha', base_config.noise_reg_alpha)}",
         "",
         "# Training Configuration",
         f"LEARNING_RATE={best_params.get('learning_rate', base_config.learning_rate)}",
