@@ -367,14 +367,14 @@ class SCOTUSVotingModel(nn.Module):
         
         # Truncate if more justices than max_justices
         justice_embeddings = justice_embeddings[:self.max_justices]
-        justice_embeddings = self.justice_dropout(justice_embeddings)
-        if self.use_noise_reg and self.training:
-            justice_embeddings = self.noise_reg(justice_embeddings)
-        
+
         if self.use_justice_attention:
             # Use attention mechanism
             # Stack justice embeddings: (max_justices, embedding_dim)
             justice_embs_tensor = torch.stack(justice_embeddings)
+            justice_embs_tensor = self.justice_dropout(justice_embs_tensor)
+            if self.use_noise_reg and self.training:
+                justice_embs_tensor = self.noise_reg(justice_embs_tensor)
             
             # Create mask for real vs padded justices
             justice_mask = torch.zeros(self.max_justices, dtype=torch.bool, device=case_embedding.device)
@@ -393,6 +393,9 @@ class SCOTUSVotingModel(nn.Module):
             # Original concatenation approach
             all_embeddings = [case_embedding] + justice_embeddings
             combined_embedding = torch.cat(all_embeddings, dim=0)
+            combined_embedding = self.justice_dropout(combined_embedding)
+            if self.use_noise_reg and self.training:
+                combined_embedding = self.noise_reg(combined_embedding)
         
         # Pass through fully connected layers
         output = self.fc_layers(combined_embedding)
@@ -1043,14 +1046,14 @@ class SCOTUSVotingModel(nn.Module):
             
             # Truncate if more justices than max_justices
             case_justice_embeddings = case_justice_embeddings[:self.max_justices]
-            case_justice_embeddings = self.justice_dropout(case_justice_embeddings)
-            if self.use_noise_reg and self.training:
-                case_justice_embeddings = self.noise_reg(case_justice_embeddings)
             
             if self.use_justice_attention:
                 # Use attention mechanism
                 # Stack justice embeddings: (max_justices, embedding_dim)
                 justice_embs_tensor = torch.stack(case_justice_embeddings)
+                justice_embs_tensor = self.justice_dropout(justice_embs_tensor)
+                if self.use_noise_reg and self.training:
+                    justice_embs_tensor = self.noise_reg(justice_embs_tensor)
                 
                 # Create mask for real vs padded justices
                 justice_mask = torch.zeros(self.max_justices, dtype=torch.bool, device=case_embedding.device)
@@ -1069,6 +1072,9 @@ class SCOTUSVotingModel(nn.Module):
                 # Original concatenation approach
                 all_embeddings = [case_embedding] + case_justice_embeddings
                 combined_embedding = torch.cat(all_embeddings, dim=0)
+                combined_embedding = self.justice_dropout(combined_embedding)
+                if self.use_noise_reg and self.training:
+                    combined_embedding = self.noise_reg(combined_embedding)
                 
                 # Pass through fully connected layers
                 output = self.fc_layers(combined_embedding)  # (3,)
