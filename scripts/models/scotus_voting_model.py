@@ -93,6 +93,7 @@ class SCOTUSVotingModel(nn.Module):
         print(f"✅ Model initialized with {len(self.bio_tokenized_data)} biography and {len(self.description_tokenized_data)} case description tokenized files")
         
         # Justice attention mechanism or concatenation
+        self.justice_dropout = nn.Dropout(dropout_rate)
         if use_justice_attention:
             self.justice_attention = JusticeCrossAttention(
                 embedding_dim=embedding_dim,
@@ -366,6 +367,9 @@ class SCOTUSVotingModel(nn.Module):
         
         # Truncate if more justices than max_justices
         justice_embeddings = justice_embeddings[:self.max_justices]
+        justice_embeddings = self.justice_dropout(justice_embeddings)
+        if self.use_noise_reg and self.training:
+            justice_embeddings = self.noise_reg(justice_embeddings)
         
         if self.use_justice_attention:
             # Use attention mechanism
@@ -1039,6 +1043,9 @@ class SCOTUSVotingModel(nn.Module):
             
             # Truncate if more justices than max_justices
             case_justice_embeddings = case_justice_embeddings[:self.max_justices]
+            case_justice_embeddings = self.justice_dropout(case_justice_embeddings)
+            if self.use_noise_reg and self.training:
+                case_justice_embeddings = self.noise_reg(case_justice_embeddings)
             
             if self.use_justice_attention:
                 # Use attention mechanism
