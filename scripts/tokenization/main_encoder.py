@@ -41,7 +41,23 @@ from tqdm import tqdm
 import pickle
 
 # Import configuration
-from config import get_config, get_bio_config, get_description_config
+import os
+import sys
+
+# Add the current directory to Python path for imports
+current_dir = os.path.dirname(os.path.abspath(__file__))
+if current_dir not in sys.path:
+    sys.path.insert(0, current_dir)
+
+try:
+    from config import get_config, get_bio_config, get_description_config
+except ImportError:
+    # Fallback for when running as module from root
+    try:
+        from scripts.tokenization.config import get_config, get_bio_config, get_description_config
+    except ImportError:
+        # Final fallback - try relative import
+        from .config import get_config, get_bio_config, get_description_config
 
 def print_header(title: str, char: str = "="):
     """Print a formatted header."""

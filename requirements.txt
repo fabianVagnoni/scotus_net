@@ -18,6 +18,10 @@ loguru
 sentence-transformers
 optuna
 optuna-dashboard
+nlpaug
+nltk
+huggingface_hub
+hf_xet
 
 # Visualization and Analysis
 seaborn

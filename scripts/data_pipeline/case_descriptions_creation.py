@@ -5,6 +5,7 @@ import re
 import argparse
 from pathlib import Path
 import sys
+from typing import Dict, List, Optional
 
 # Import existing decoding functionality
 from case_metadata_creation import (
@@ -14,6 +15,9 @@ from case_metadata_creation import (
     ISSUE_AREA_CODES,
     decode_value
 )
+
+# Import the Augmenter class
+from augmenter import Augmenter, create_augmenter
 
 def sanitize_filename(citation: str) -> str:
     """Convert citation to a safe filename."""
@@ -114,15 +118,42 @@ This Supreme Court case was decided under Chief Justice {chief_justice}. The pet
     
     return summary
 
-def create_case_descriptions(metadata_file: str, descriptions_dir: str, output_dir: str, verbose: bool = True, quiet: bool = False):
+def create_case_descriptions(metadata_file: str, descriptions_dir: str, output_dir: str, 
+                           verbose: bool = True, quiet: bool = False,
+                           use_augmentation: bool = False, augmentation_config: Optional[Dict] = None):
     """
     Create complete case descriptions by combining metadata with AI-filtered descriptions.
+    
+    Args:
+        metadata_file: Path to the metadata CSV file
+        descriptions_dir: Directory containing AI-filtered descriptions
+        output_dir: Output directory for case descriptions
+        verbose: Whether to print verbose output
+        quiet: Whether to minimize output
+        use_augmentation: Whether to create augmented versions
+        augmentation_config: Configuration for text augmentation
     """
     if verbose:
         print(f"🚀 Creating complete case descriptions...")
         print(f"📊 Metadata file: {metadata_file}")
         print(f"📁 Descriptions directory: {descriptions_dir}")
         print(f"💾 Output directory: {output_dir}")
+    
+    # Initialize augmenter if requested
+    augmenter = None
+    if use_augmentation and augmentation_config:
+        try:
+            augmenter = create_augmenter(
+                augmentations=augmentation_config.get('augmentations', ['synonym_augmentation','summarization']),
+                iterations=augmentation_config.get('iterations', 1),
+                seed=augmentation_config.get('seed', 42),
+                verbose=augmentation_config.get('verbose', verbose)
+            )
+            if verbose:
+                print(f"🔧 Initialized augmenter with: {augmentation_config}")
+        except Exception as e:
+            print(f"⚠️  Warning: Failed to initialize augmenter: {e}")
+            augmenter = None
     
     # Load case metadata
     if verbose:
@@ -176,24 +207,51 @@ def create_case_descriptions(metadata_file: str, descriptions_dir: str, output_d
             # Create complete case summary
             complete_summary = format_case_summary(row, description_text)
             
-            # Create output filename
+            # Create base filename
             if pd.notna(us_cite):
-                filename = sanitize_filename(us_cite)
+                base_filename = sanitize_filename(us_cite).replace('.txt', '')
             else:
-                filename = f"case_{case_id}.txt"
+                base_filename = f"case_{case_id}"
             
-            output_path = os.path.join(output_dir, filename)
+            # Save original version (version 0)
+            original_filename = f"{base_filename}_v0.txt"
+            original_output_path = os.path.join(output_dir, original_filename)
             
             try:
-                # Save complete summary
-                with open(output_path, 'w', encoding='utf-8') as f:
+                # Save original complete summary
+                with open(original_output_path, 'w', encoding='utf-8') as f:
                     f.write(complete_summary)
                 
                 successful += 1
                 word_count = len(complete_summary.split())
+                versions_created = 1
+                
+                # Create augmented versions if augmenter is available
+                if augmenter:
+                    try:
+                        # Augment the complete summary
+                        augmented_summaries = augmenter.augment_sentence(complete_summary)
+                        
+                        # Save augmented versions (skip the first one as it's the original)
+                        for version_num, augmented_summary in enumerate(augmented_summaries[1:], 1):
+                            if augmented_summary and augmented_summary != complete_summary:
+                                augmented_filename = f"{base_filename}_v{version_num}.txt"
+                                augmented_output_path = os.path.join(output_dir, augmented_filename)
+                                
+                                with open(augmented_output_path, 'w', encoding='utf-8') as f:
+                                    f.write(augmented_summary)
+                                
+                                versions_created += 1
+                                
+                    except Exception as e:
+                        if verbose:
+                            print(f"⚠️  Error creating augmented versions for {case_name}: {e}")
                 
                 if (idx % 10 == 0 or successful <= 5) and verbose:  # Show first few and every 10th
-                    print(f"✅ [{successful:,}] {case_name} -> {filename} ({word_count:,} words)")
+                    if augmenter and versions_created > 1:
+                        print(f"✅ [{successful:,}] {case_name} -> {original_filename} + {versions_created-1} augmented versions ({word_count:,} words)")
+                    else:
+                        print(f"✅ [{successful:,}] {case_name} -> {original_filename} ({word_count:,} words)")
                 
             except Exception as e:
                 if verbose:
@@ -221,6 +279,11 @@ def create_case_descriptions(metadata_file: str, descriptions_dir: str, output_d
         print(f"Errors: {errors:,}")
         print(f"Success rate: {successful/len(df)*100:.1f}%")
         print(f"Output directory: {output_dir}")
+        
+        if augmenter:
+            print(f"Text augmentation enabled: {augmentation_config}")
+            print(f"Augmentation techniques: {augmentation_config.get('augmentations', [])}")
+            print(f"Augmentation iterations: {augmentation_config.get('iterations', 1)}")
         
         if missing_descriptions > 0:
             print(f"\n💡 To get more descriptions, run the AI scraper on missing cases:")
@@ -254,16 +317,41 @@ def main():
     parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose output")
     parser.add_argument("--quiet", "-q", action="store_true", help="Minimize output")
     
+    # Augmentation arguments
+    parser.add_argument("--use-augmentation", action="store_true", 
+                       help="Enable text augmentation for case descriptions")
+    parser.add_argument("--augmentations", nargs="+", 
+                       default=["synonym_augmentation"],
+                       choices=["word_embedding_augmentation", "synonym_augmentation", 
+                               "back_translation", "summarization"],
+                       help="Augmentation techniques to use")
+    parser.add_argument("--augmentation-iterations", type=int, default=1,
+                       help="Number of augmentation iterations")
+    parser.add_argument("--augmentation-seed", type=int, default=42,
+                       help="Random seed for augmentation")
+    
     args = parser.parse_args()
     
     verbose = args.verbose and not args.quiet
+    
+    # Prepare augmentation config if requested
+    augmentation_config = None
+    if args.use_augmentation:
+        augmentation_config = {
+            'augmentations': args.augmentations,
+            'iterations': args.augmentation_iterations,
+            'seed': args.augmentation_seed,
+            'verbose': verbose
+        }
     
     success_count = create_case_descriptions(
         args.metadata,
         args.descriptions, 
         args.output,
         verbose=verbose,
-        quiet=args.quiet
+        quiet=args.quiet,
+        use_augmentation=args.use_augmentation,
+        augmentation_config=augmentation_config
     )
     
     if success_count > 0 and not args.quiet:
