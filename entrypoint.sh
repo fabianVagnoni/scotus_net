@@ -2,7 +2,7 @@
 set -e
 
 # Create required directories if they don't exist
-mkdir -p /app/data/raw /app/data/processed /app/logs /app/logs/hyperparameter_tunning_logs /app/logs/training_logs /app/models_output /app/.cache
+mkdir -p /app/data/raw /app/data/processed /app/data/augmented /app/logs /app/logs/hyperparameter_tunning_logs /app/logs/training_logs /app/models_output /app/.cache
 
 # Set proper permissions only on directories we can modify
 # Skip permission changes on mounted volumes to avoid "Operation not permitted" errors
@@ -28,7 +28,7 @@ fi
 chmod -R 755 /app/models_output /app/.cache 2>/dev/null || echo "Note: Some permission changes skipped (this is normal for mounted volumes)"
 
 # Ensure we can write to data directories by creating them if needed, but don't change existing file permissions
-mkdir -p /app/data/raw /app/data/processed /app/data/external 2>/dev/null || true
+mkdir -p /app/data/raw /app/data/processed /app/data/augmented /app/data/external 2>/dev/null || true
 
 # Check if .env file exists, if not create from template
 if [ ! -f /app/.env ] && [ -f /app/env.example ]; then
@@ -44,6 +44,7 @@ echo "Available commands:"
 echo "  data-pipeline      - Run the complete data pipeline"
 echo "  data-pipeline-step - Run a specific pipeline step"
 echo "  encoding           - Run the encoding pipeline"
+echo "  augmentation       - Run the augmentation pipeline"
 echo "  train              - Train the model with optimized hyperparameters"
 echo "  hyperparameter-tuning - Run hyperparameter optimization"
 echo "  check              - Check data status"
@@ -53,6 +54,7 @@ echo "Examples:"
 echo "  docker run -it scotus-ai data-pipeline"
 echo "  docker run -it scotus-ai data-pipeline-step scrape-justices"
 echo "  docker run -it scotus-ai encoding"
+echo "  docker run -it scotus-ai augmentation"
 echo "  docker run -it scotus-ai train --experiment-name production_v1"
 echo "  docker run -it scotus-ai hyperparameter-tuning --experiment-name test"
 echo "  docker run -it scotus-ai bash"
@@ -79,6 +81,10 @@ case "$1" in
     encode-descriptions)
         shift
         exec python3 -m scripts.tokenization.encode_descriptions "$@"
+        ;;
+    augmentation)
+        shift
+        exec python3 -m augmentation.main "$@"
         ;;
     train)
         shift

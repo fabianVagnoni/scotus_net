@@ -78,6 +78,7 @@ WORKDIR /app
 # Create necessary directories
 RUN mkdir -p /app/data/raw \
     /app/data/processed \
+    /app/data/augmented \
     /app/data/external \
     /app/logs \
     /app/logs/hyperparameter_tunning_logs \

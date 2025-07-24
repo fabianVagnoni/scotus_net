@@ -118,7 +118,7 @@ EOF
 # Function to create necessary directories
 create_directories() {
     print_info "Creating necessary directories..."
-    mkdir -p data/raw data/processed logs logs/hyperparameter_tunning_logs logs/training_logs models_output cache
+    mkdir -p data/raw data/processed data/augmented logs logs/hyperparameter_tunning_logs logs/training_logs models_output cache
     
     # Ensure logs directory is writable by making it world-writable
     # This is necessary for the container's non-root user to write log files
@@ -230,6 +230,7 @@ show_usage() {
     echo "  train                    Train the model with optimized hyperparameters"
 echo "  hyperparameter-tuning    Run hyperparameter optimization"
 echo "  tune                     Alias for hyperparameter-tuning"
+    echo "  augmentation            Run the augmentation pipeline"
     echo "  check                    Check data status"
     echo "  setup-gpu                Configure Docker for GPU support (requires sudo)"
     echo "  compose [COMMAND]        Use docker-compose (optional command)"
@@ -246,6 +247,9 @@ echo "  tune                     Alias for hyperparameter-tuning"
     echo "  $0 train --experiment-name production_v1    # Train the model"
     echo "  $0 tune --experiment-name arch_test         # Run hyperparameter tuning"
     echo "  $0 hyperparameter-tuning --n-trials 50     # Run 50 optimization trials"
+    echo "  $0 augmentation                             # Run full augmentation pipeline"
+    echo "  $0 augmentation --bios-only                 # Only augment justice bios"
+    echo "  $0 augmentation --descriptions-only         # Only augment case descriptions"
     echo "  sudo $0 setup-gpu                          # Configure GPU support"
     echo "  $0 check                                    # Check status"
     echo "  $0 compose                                  # Use docker-compose"
@@ -289,6 +293,10 @@ case "${1:-}" in
     encode-descriptions)
         shift
         run_container "encode-descriptions" "$@"
+        ;;
+    augmentation)
+        shift
+        run_container "augmentation" "$@"
         ;;
     train)
         if [ "$2" = "--help" ] || [ "$2" = "-h" ]; then

@@ -29,7 +29,8 @@ class Augmenter:
                  augmentations: List[str], 
                  iterations: int = 1, 
                  seed: int = 42,
-                 verbose: bool = True):
+                 verbose: bool = True,
+                 random_selection_prob: float = 0.5):
         """
         Initialize the Augmenter.
         
@@ -38,11 +39,13 @@ class Augmenter:
             iterations: Number of times to apply augmentations
             seed: Random seed for reproducibility
             verbose: Whether to print verbose output
+            random_selection_prob: Probability of selecting each augmentation in each iteration (0.0-1.0)
         """
         self.augmentations = augmentations
         self.iterations = iterations
         self.seed = seed
         self.verbose = verbose
+        self.random_selection_prob = random_selection_prob
         
         # Set random seed for reproducibility
         random.seed(seed)
@@ -62,21 +65,21 @@ class Augmenter:
                 self.word_embedding_augmenter = naw.ContextualWordEmbsAug(
                     model_path='bert-base-uncased',
                     action='substitute',
-                    aug_p=0.9  # Probability of word substitution
+                    aug_p=0.5  # Probability of word substitution
                 )
             elif aug == "synonym_augmentation":
-                self.synonym_augmenter = naw.SynonymAug(aug_src='wordnet', aug_p=0.3)
+                self.synonym_augmenter = naw.SynonymAug(aug_src='wordnet', aug_p=0.7)
             elif aug == "back_translation":
                 self.back_translation_augmenter = naw.BackTranslationAug(
                     from_model_name='facebook/wmt19-en-de',
                     to_model_name='facebook/wmt19-de-en'
                 )
             elif aug == "summarization":
-                self.summarization_augmenter = nas.AbstSummAug(model_path='t5-base', num_beam=3)
+                self.summarization_augmenter = nas.AbstSummAug(model_path='t5-base', num_beam=1)
 
     def augment_sentence(self, sentence: str) -> List[str]:
         """
-        Augment a single sentence with the specified augmentations.
+        Augment a single sentence with randomly selected augmentations.
         
         Args:
             sentence: The input sentence to augment
@@ -89,13 +92,33 @@ class Augmenter:
             
         augmented_sentences = [sentence]
         
-        for _ in range(self.iterations):
+        for iteration in range(self.iterations):
             sentence_copy = sentence
+            
+            # Randomly select which augmentations to apply in this iteration
+            selected_augmentations = []
             for augmentation in self.augmentations:
+                if random.random() < self.random_selection_prob:
+                    selected_augmentations.append(augmentation)
+            
+            # If no augmentations were selected, skip this iteration
+            if not selected_augmentations:
+                if self.verbose:
+                    logger.debug(f"Iteration {iteration + 1}: No augmentations selected, skipping")
+                continue
+            
+            if self.verbose:
+                logger.debug(f"Iteration {iteration + 1}: Selected augmentations: {selected_augmentations}")
+            
+            # Apply selected augmentations in random order
+            random.shuffle(selected_augmentations)
+            
+            for augmentation in selected_augmentations:
                 try:
                     augmented = self.augment(sentence_copy, augmentation)
                     if augmented and augmented != sentence_copy:
                         augmented_sentences.append(augmented)
+                        sentence_copy = augmented  # Use augmented version for next augmentation
                 except Exception as e:
                     if self.verbose:
                         logger.warning(f"Error applying {augmentation}: {e}")
@@ -188,7 +211,8 @@ class Augmenter:
 def create_augmenter(augmentations: List[str], 
                     iterations: int = 1, 
                     seed: int = 42,
-                    verbose: bool = True) -> Augmenter:
+                    verbose: bool = True,
+                    random_selection_prob: float = 0.5) -> Augmenter:
     """
     Create an Augmenter instance with the specified parameters.
     
@@ -197,17 +221,19 @@ def create_augmenter(augmentations: List[str],
         iterations: Number of iterations
         seed: Random seed
         verbose: Whether to print verbose output
+        random_selection_prob: Probability of selecting each augmentation in each iteration
         
     Returns:
         Configured Augmenter instance
     """
-    return Augmenter(augmentations, iterations, seed, verbose)
+    return Augmenter(augmentations, iterations, seed, verbose, random_selection_prob)
 
 def augment_text_list(texts: List[str], 
                      augmentations: List[str],
                      iterations: int = 1,
                      seed: int = 42,
-                     verbose: bool = True) -> List[str]:
+                     verbose: bool = True,
+                     random_selection_prob: float = 0.5) -> List[str]:
     """
     Convenience function to augment a list of texts.
     
@@ -217,11 +243,12 @@ def augment_text_list(texts: List[str],
         iterations: Number of iterations
         seed: Random seed
         verbose: Whether to print verbose output
+        random_selection_prob: Probability of selecting each augmentation in each iteration
         
     Returns:
         List of augmented texts
     """
-    augmenter = Augmenter(augmentations, iterations, seed, verbose)
+    augmenter = Augmenter(augmentations, iterations, seed, verbose, random_selection_prob)
     return augmenter.augment_data(texts)
         
 

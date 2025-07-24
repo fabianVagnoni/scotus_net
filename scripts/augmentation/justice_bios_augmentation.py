@@ -15,7 +15,8 @@ from typing import Dict, List, Optional
 import sys
 
 # Import the Augmenter class
-from augmenter import Augmenter, create_augmenter
+sys.path.append('scripts/augmentation')
+from .augmenter import Augmenter, create_augmenter
 
 def load_justice_bios(bios_dir: str) -> Dict[str, str]:
     """
@@ -97,10 +98,11 @@ def create_augmented_bios(bios_dir: str, output_dir: str,
                 print(f"🔧 Creating augmenter with config: {augmentation_config}")
             
             augmenter = create_augmenter(
-                augmentations=augmentation_config.get('augmentations', ['word_embedding_augmentation']),
-                iterations=augmentation_config.get('iterations', 3),
+                augmentations=augmentation_config.get('augmentations', ['synonym_augmentation', 'word_embedding_augmentation', 'back_translation', 'summarization']),
+                iterations=augmentation_config.get('iterations', 2),
                 seed=augmentation_config.get('seed', 42),
-                verbose=augmentation_config.get('verbose', verbose)
+                verbose=augmentation_config.get('verbose', verbose),
+                random_selection_prob=augmentation_config.get('random_selection_prob', 0.5)
             )
             if verbose:
                 print(f"🔧 Successfully initialized augmenter with: {augmentation_config}")

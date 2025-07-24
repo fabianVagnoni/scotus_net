@@ -4,6 +4,8 @@ venv/
 data/raw/*
 data/processed/*
 data/external/*
+data/augmented/*
 tests.py
 pickle_format_example.py
 logs/*
+scripts/pretraining/*
