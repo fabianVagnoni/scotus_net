@@ -8,4 +8,4 @@ data/augmented/*
 tests.py
 pickle_format_example.py
 logs/*
-scripts/pretraining/*
+tests/*
