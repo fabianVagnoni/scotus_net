@@ -75,6 +75,10 @@ class EncodingConfig:
             'DEVICE': 'auto',
             'BIO_OUTPUT_FILE': 'data/processed/encoded_bios.pkl',
             'DESCRIPTION_OUTPUT_FILE': 'data/processed/encoded_descriptions.pkl',
+            'PRETRAINING_TRUNC_BIO_FILE': 'data/processed/encoded_pre_trunc_bios.pkl',
+            'PRETRAINING_FULL_BIO_FILE': 'data/processed/encoded_pre_full_bios.pkl',
+            'PRETRAINING_TRUNC_BIO_DIR': 'data/processed/bios/',
+            'PRETRAINING_FULL_BIO_DIR': 'data/raw/bios/',
             'DATASET_FILE': 'data/processed/case_dataset.json',
             'BIO_INPUT_DIR': 'data/processed/bios',
             'DESCRIPTION_INPUT_DIR': 'data/processed/case_descriptions',
@@ -200,6 +204,22 @@ class EncodingConfig:
     def num_workers(self) -> int:
         return self.get_int('NUM_WORKERS', 4)
     
+    @property
+    def pretraining_trunc_bio_file(self) -> str:
+        return self.get_str('PRETRAINING_TRUNC_BIO_FILE')
+    
+    @property
+    def pretraining_full_bio_file(self) -> str:
+        return self.get_str('PRETRAINING_FULL_BIO_FILE')
+    
+    @property
+    def pretraining_trunc_bio_dir(self) -> str:
+        return self.get_str('PRETRAINING_TRUNC_BIO_DIR')
+    
+    @property
+    def pretraining_full_bio_dir(self) -> str:
+        return self.get_str('PRETRAINING_FULL_BIO_DIR')
+    
     def print_config(self):
         """Print the current configuration."""
         print("\n📋 ENCODING CONFIGURATION:")
@@ -277,6 +297,22 @@ def get_description_config() -> Dict[str, Any]:
         'output_file': config.description_output_file,
         'input_dir': config.description_input_dir,
         'max_words': config.max_description_words,
+    }
+
+def get_pretraining_config() -> Dict[str, Any]:
+    """Get pretraining configuration."""
+    config = get_config()
+    return {
+        'pretraining_trunc_bio_file': config.pretraining_trunc_bio_file,
+        'pretraining_full_bio_file': config.pretraining_full_bio_file,
+        'trunc_bios_dir': config.pretraining_trunc_bio_dir,
+        'full_bios_dir': config.pretraining_full_bio_dir,
+        'model_name': config.bio_model_name,
+        'embedding_dim': config.embedding_dim,
+        'max_sequence_length': config.max_sequence_length,
+        'batch_size': config.bio_batch_size,
+        'device': config.device,
+        'num_workers': config.num_workers,
     }
 
 if __name__ == "__main__":
