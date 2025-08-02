@@ -1,13 +1,26 @@
 import torch
 from torch.utils.data import DataLoader
-from scripts.pretraining.loss import ContrastiveLoss
-from scripts.pretraining.constrastive_justice import ContrastiveJustice, ContrastiveJusticeDataset, collate_fn
-from scripts.utils.logger import get_logger
-from scripts.utils.holdout_test_set import HoldoutTestSetManager
 from pathlib import Path
 import json
 import os
 from typing import Dict, List, Tuple, Any
+import sys
+
+current_dir = os.path.dirname(os.path.abspath(__file__))
+if current_dir not in sys.path:
+    sys.path.insert(0, current_dir)
+try:
+    from scripts.pretraining.loss import ContrastiveLoss
+    from scripts.pretraining.constrastive_justice import ContrastiveJustice, ContrastiveJusticeDataset, collate_fn
+    from scripts.utils.logger import get_logger
+    from scripts.utils.holdout_test_set import HoldoutTestSetManager
+except ImportError:
+    # Fallback for when running as module from root
+    from .loss import ContrastiveLoss
+    from .constrastive_justice import ContrastiveJustice, ContrastiveJusticeDataset, collate_fn
+    from ..utils.logger import get_logger
+    from ..utils.holdout_test_set import HoldoutTestSetManager
+
 
 class ContrastiveJusticeTrainer:
     def __init__(self, config):

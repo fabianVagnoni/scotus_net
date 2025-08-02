@@ -44,10 +44,37 @@ class ContrastiveJusticeConfig:
                     key = key.strip()
                     value = value.strip().strip('"').strip("'")
                     
+                    # Map uppercase keys to lowercase attributes
+                    key_mapping = {
+                        'MODEL_NAME': 'model_name',
+                        'DROPOUT_RATE': 'dropout_rate',
+                        'BATCH_SIZE': 'batch_size',
+                        'LEARNING_RATE': 'learning_rate',
+                        'NUM_EPOCHS': 'num_epochs',
+                        'WEIGHT_DECAY': 'weight_decay',
+                        'NUM_WORKERS': 'num_workers',
+                        'TEMPERATURE': 'temperature',
+                        'ALPHA': 'alpha',
+                        'LR_SCHEDULER_FACTOR': 'lr_scheduler_factor',
+                        'LR_SCHEDULER_PATIENCE': 'lr_scheduler_patience',
+                        'MAX_PATIENCE': 'max_patience',
+                        'VAL_SPLIT': 'val_split',
+                        'JUSTICES_FILE': 'justices_file',
+                        'TRUNC_BIO_TOKENIZED_FILE': 'trunc_bio_tokenized_file',
+                        'FULL_BIO_TOKENIZED_FILE': 'full_bio_tokenized_file',
+                        'PRETRAINING_DATASET_FILE': 'pretraining_dataset_file',
+                        'TEST_SET_SIZE': 'test_set_size',
+                        'VAL_SET_SIZE': 'val_set_size',
+                        'MODEL_OUTPUT_DIR': 'model_output_dir'
+                    }
+                    
+                    # Get the corresponding attribute name
+                    attr_name = key_mapping.get(key, key)
+                    
                     # Set the attribute based on the key
-                    if hasattr(self, key):
+                    if hasattr(self, attr_name):
                         # Convert value to appropriate type
-                        setattr(self, key, self._convert_value(key, value))
+                        setattr(self, attr_name, self._convert_value(key, value))
                     else:
                         print(f"⚠️  Unknown config key: {key}")
     
@@ -55,12 +82,12 @@ class ContrastiveJusticeConfig:
         """Convert string value to appropriate type based on key."""
         # Define type mappings for different configuration keys
         int_keys = {
-            'batch_size', 'num_epochs', 'num_workers', 'lr_scheduler_patience', 
-            'max_patience', 'test_set_size', 'val_set_size'
+            'BATCH_SIZE', 'NUM_EPOCHS', 'NUM_WORKERS', 'LR_SCHEDULER_PATIENCE', 
+            'MAX_PATIENCE', 'TEST_SET_SIZE', 'VAL_SET_SIZE'
         }
         float_keys = {
-            'dropout_rate', 'learning_rate', 'weight_decay', 'temperature', 
-            'alpha', 'lr_scheduler_factor', 'val_split'
+            'DROPOUT_RATE', 'LEARNING_RATE', 'WEIGHT_DECAY', 'TEMPERATURE', 
+            'ALPHA', 'LR_SCHEDULER_FACTOR', 'VAL_SPLIT'
         }
         bool_keys = set()  # No boolean keys in current config
         
@@ -85,72 +112,72 @@ class ContrastiveJusticeConfig:
         """Get default value for a configuration key."""
         defaults = {
             # Model configuration
-            'model_name': 'sentence-transformers/all-MiniLM-L6-v2',
-            'dropout_rate': 0.1,
+            'MODEL_NAME': 'sentence-transformers/all-MiniLM-L6-v2',
+            'DROPOUT_RATE': 0.1,
             
             # Training configuration
-            'batch_size': 8,
-            'learning_rate': 1e-5,
-            'num_epochs': 10,
-            'weight_decay': 0.01,
-            'num_workers': 2,
+            'BATCH_SIZE': 8,
+            'LEARNING_RATE': 1e-5,
+            'NUM_EPOCHS': 10,
+            'WEIGHT_DECAY': 0.01,
+            'NUM_WORKERS': 2,
             
             # Loss configuration
-            'temperature': 0.1,
-            'alpha': 0.5,
+            'TEMPERATURE': 0.1,
+            'ALPHA': 0.5,
             
             # Learning rate scheduler
-            'lr_scheduler_factor': 0.5,
-            'lr_scheduler_patience': 3,
-            'max_patience': 10,
+            'LR_SCHEDULER_FACTOR': 0.5,
+            'LR_SCHEDULER_PATIENCE': 3,
+            'MAX_PATIENCE': 10,
             
             # Data configuration
-            'val_split': 0.2,
-            'justices_file': 'data/raw/justices.json',
-            'trunc_bio_tokenized_file': 'data/processed/encoded_bios.pkl',
-            'full_bio_tokenized_file': 'data/raw/encoded_bios.pkl',
-            'pretraining_dataset_file': 'data/processed/pretraining_dataset.json',
-            'test_set_size': 10,
-            'val_set_size': 20,
+            'VAL_SPLIT': 0.2,
+            'JUSTICES_FILE': 'data/raw/justices.json',
+            'TRUNC_BIO_TOKENIZED_FILE': 'data/processed/encoded_pre_trunc_bios.pkl',
+            'FULL_BIO_TOKENIZED_FILE': 'data/processed/encoded_pre_full_bios.pkl',
+            'PRETRAINING_DATASET_FILE': 'data/processed/pretraining_dataset.json',
+            'TEST_SET_SIZE': 9,
+            'VAL_SET_SIZE': 9,
             
             # Output configuration
-            'model_output_dir': 'models/contrastive_justice'
+            'MODEL_OUTPUT_DIR': 'models/contrastive_justice'
         }
         return defaults.get(key, None)
     
     def _set_defaults(self):
         """Set default configuration values."""
         # Model configuration
-        self.model_name = self._get_default_value('model_name')
-        self.dropout_rate = self._get_default_value('dropout_rate')
+        self.model_name = self._get_default_value('MODEL_NAME')
+        self.dropout_rate = self._get_default_value('DROPOUT_RATE')
         
         # Training configuration
-        self.batch_size = self._get_default_value('batch_size')
-        self.learning_rate = self._get_default_value('learning_rate')
-        self.num_epochs = self._get_default_value('num_epochs')
-        self.weight_decay = self._get_default_value('weight_decay')
-        self.num_workers = self._get_default_value('num_workers')
+        self.batch_size = self._get_default_value('BATCH_SIZE')
+        self.learning_rate = self._get_default_value('LEARNING_RATE')
+        self.num_epochs = self._get_default_value('NUM_EPOCHS')
+        self.weight_decay = self._get_default_value('WEIGHT_DECAY')
+        self.num_workers = self._get_default_value('NUM_WORKERS')
         
         # Loss configuration
-        self.temperature = self._get_default_value('temperature')
-        self.alpha = self._get_default_value('alpha')
+        self.temperature = self._get_default_value('TEMPERATURE')
+        self.alpha = self._get_default_value('ALPHA')
         
         # Learning rate scheduler
-        self.lr_scheduler_factor = self._get_default_value('lr_scheduler_factor')
-        self.lr_scheduler_patience = self._get_default_value('lr_scheduler_patience')
-        self.max_patience = self._get_default_value('max_patience')
+        self.lr_scheduler_factor = self._get_default_value('LR_SCHEDULER_FACTOR')
+        self.lr_scheduler_patience = self._get_default_value('LR_SCHEDULER_PATIENCE')
+        self.max_patience = self._get_default_value('MAX_PATIENCE')
         
         # Data configuration
-        self.val_split = self._get_default_value('val_split')
-        self.justices_file = self._get_default_value('justices_file')
-        self.trunc_bio_tokenized_file = self._get_default_value('trunc_bio_tokenized_file')
-        self.full_bio_tokenized_file = self._get_default_value('full_bio_tokenized_file')
-        self.pretraining_dataset_file = self._get_default_value('pretraining_dataset_file')
-        self.test_set_size = self._get_default_value('test_set_size')
-        self.val_set_size = self._get_default_value('val_set_size')
+        self.val_split = self._get_default_value('VAL_SPLIT')
+        self.justices_file = self._get_default_value('JUSTICES_FILE')
+        self.trunc_bio_tokenized_file = self._get_default_value('TRUNC_BIO_TOKENIZED_FILE')
+        self.full_bio_tokenized_file = self._get_default_value('FULL_BIO_TOKENIZED_FILE')
+        self.pretraining_dataset_file = self._get_default_value('PRETRAINING_DATASET_FILE')
+        self.test_set_size = self._get_default_value('TEST_SET_SIZE')
+        self.val_set_size = self._get_default_value('VAL_SET_SIZE')
         
         # Output configuration
-        self.model_output_dir = self._get_default_value('model_output_dir')
+        self.model_output_dir = self._get_default_value('MODEL_OUTPUT_DIR')
     
     def print_config(self):
         """Print current configuration."""
