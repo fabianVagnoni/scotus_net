@@ -3,12 +3,12 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 class ContrastiveLoss(nn.Module):
-    def __init__(self, temperature: float = 0.5, alpha: float = 0.5, device: str = 'cuda'):
+    def __init__(self, temperature: float = 0.5, alpha: float = 0.5):
         super(ContrastiveLoss, self).__init__()
         self.temperature = temperature
         self.alpha = alpha
         self.cross_entropy_loss = nn.CrossEntropyLoss()
-        self.device = device
+        self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         self.to(self.device)
 
     def _to_device(self, tensor):

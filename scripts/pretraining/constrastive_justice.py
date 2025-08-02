@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.nn.utils.rnn import pad_sequence
 import pickle
 from transformers import AutoModel
 import copy
@@ -17,6 +18,7 @@ class ContrastiveJustice(nn.Module):
         for param in self.full_bio_model.parameters():
             param.requires_grad = False
         self.dropout = nn.Dropout(dropout_rate)
+        self.padding_value = self.truncated_bio_model.config.pad_token_id
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         
     def forward(self, trunc_bio_data: List[str], full_bio_data: List[str]):
@@ -41,9 +43,9 @@ class ContrastiveJustice(nn.Module):
             trunc_attention_masks.append(data['attention_mask'])
         
         # Pad sequences for batch processing
-        trunc_input_ids = torch.stack(trunc_input_ids)
-        trunc_attention_masks = torch.stack(trunc_attention_masks)
-        
+        trunc_input_ids = pad_sequence(trunc_input_ids, batch_first=True, padding_value=self.padding_value)
+        trunc_attention_masks = pad_sequence(trunc_attention_masks, batch_first=True, padding_value=0)
+
         # Process full biographies
         full_input_ids = []
         full_attention_masks = []
@@ -53,8 +55,8 @@ class ContrastiveJustice(nn.Module):
             full_attention_masks.append(data['attention_mask'])
         
         # Pad sequences for batch processing
-        full_input_ids = torch.stack(full_input_ids)
-        full_attention_masks = torch.stack(full_attention_masks)
+        full_input_ids = pad_sequence(full_input_ids, batch_first=True, padding_value=self.padding_value)
+        full_attention_masks = pad_sequence(full_attention_masks, batch_first=True, padding_value=0)
         
         # Get embeddings from models
         trunc_bio_outputs = self.truncated_bio_model(

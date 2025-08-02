@@ -104,3 +104,25 @@
 2025-08-02 11:08:53 | ERROR    | contrastive_trainer:train_model:175 | Error in batch 1: stack expects each tensor to be equal size, but got [512] at entry 0 and [288] at entry 6
 2025-08-02 11:08:53 | ERROR    | contrastive_trainer:train_model:175 | Error in batch 2: stack expects each tensor to be equal size, but got [512] at entry 0 and [304] at entry 1
 2025-08-02 11:08:53 | ERROR    | contrastive_trainer:train_model:175 | Error in batch 3: stack expects each tensor to be equal size, but got [512] at entry 0 and [387] at entry 1
+2025-08-02 11:11:20 | INFO     | contrastive_trainer:train_model:140 | Created contrastive loss function with temperature 0.1 and alpha 0.5
+2025-08-02 11:11:20 | INFO     | contrastive_trainer:train_model:151 | Starting training for 10 epochs
+2025-08-02 11:11:27 | ERROR    | contrastive_trainer:train_model:175 | Error in batch 0: stack expects each tensor to be equal size, but got [512] at entry 0 and [288] at entry 6
+2025-08-02 11:11:27 | ERROR    | contrastive_trainer:train_model:175 | Error in batch 1: stack expects each tensor to be equal size, but got [512] at entry 0 and [299] at entry 5
+2025-08-02 11:15:59 | INFO     | contrastive_trainer:train_model:140 | Created contrastive loss function with temperature 0.1 and alpha 0.5
+2025-08-02 11:15:59 | INFO     | contrastive_trainer:train_model:151 | Starting training for 10 epochs
+2025-08-02 11:16:18 | ERROR    | contrastive_trainer:train_model:175 | Error in batch 0: Torch not compiled with CUDA enabled
+2025-08-02 11:16:27 | ERROR    | contrastive_trainer:train_model:175 | Error in batch 1: Torch not compiled with CUDA enabled
+2025-08-02 11:17:33 | INFO     | contrastive_trainer:train_model:140 | Created contrastive loss function with temperature 0.1 and alpha 0.5
+2025-08-02 11:17:33 | INFO     | contrastive_trainer:train_model:151 | Starting training for 10 epochs
+2025-08-02 11:17:46 | ERROR    | contrastive_trainer:train_model:175 | Error in batch 0: Torch not compiled with CUDA enabled
+2025-08-02 11:18:57 | INFO     | contrastive_trainer:train_model:99 | MODEL DEVICE: cpu
+2025-08-02 11:18:57 | INFO     | contrastive_trainer:train_model:100 | DEVICE: cpu
+2025-08-02 11:18:57 | INFO     | contrastive_trainer:train_model:142 | Created contrastive loss function with temperature 0.1 and alpha 0.5
+2025-08-02 11:18:57 | INFO     | contrastive_trainer:train_model:153 | Starting training for 10 epochs
+2025-08-02 11:19:10 | ERROR    | contrastive_trainer:train_model:177 | Error in batch 0: Torch not compiled with CUDA enabled
+2025-08-02 11:22:41 | INFO     | contrastive_trainer:train_model:140 | Created contrastive loss function with temperature 0.1 and alpha 0.5
+2025-08-02 11:22:41 | INFO     | contrastive_trainer:train_model:151 | Starting training for 10 epochs
+2025-08-02 11:24:20 | INFO     | contrastive_trainer:train_model:183 | Epoch 1/10:
+2025-08-02 11:24:20 | INFO     | contrastive_trainer:train_model:184 | Training Loss: 0.7089
+2025-08-02 11:24:29 | INFO     | contrastive_trainer:train_model:186 | Validation Loss: 0.3611
+2025-08-02 11:24:29 | INFO     | contrastive_trainer:train_model:203 | New best model saved with validation loss 0.3611
