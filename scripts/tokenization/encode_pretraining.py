@@ -1,6 +1,24 @@
 import os
 import logging
-from scripts.tokenization.config import get_config, get_bio_config, get_pretraining_config
+import sys
+import re
+import json
+
+# Add the current directory to Python path for imports
+current_dir = os.path.dirname(os.path.abspath(__file__))
+if current_dir not in sys.path:
+    sys.path.insert(0, current_dir)
+
+try:
+    from config import get_config, get_bio_config, get_pretraining_config
+except ImportError:
+    # Fallback for when running as module from root
+    try:
+        from scripts.tokenization.config import get_config, get_bio_config, get_pretraining_config
+    except ImportError:
+        # Final fallback - try relative import
+        from .config import get_config, get_bio_config, get_pretraining_config
+
 from tqdm import tqdm
 import pickle
 from transformers import AutoTokenizer
@@ -9,17 +27,21 @@ from transformers import AutoTokenizer
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-def encode_pretraining_dataset(pretraining_full_bio_file: str = None, pretraining_trunc_bio_file: str = None, trunc_bios_dir: str = None, full_bios_dir: str = None ):
+def encode_pretraining_dataset(pretraining_full_bio_file: str = None, pretraining_trunc_bio_file: str = None, 
+                             trunc_bios_dir: str = None, full_bios_dir: str = None, 
+                             pretraining_dataset_file: str = None):
     """
-    Encode pretraining dataset by tokenizing truncated and full biographies.
+    Encode pretraining dataset by tokenizing truncated and full biographies,
+    and extract temporal information (appointment year and nominating president).
     
     Args:
         pretraining_full_bio_file: Path to save full bio tokenized data
         pretraining_trunc_bio_file: Path to save truncated bio tokenized data
         trunc_bios_dir: Directory containing truncated biography files
         full_bios_dir: Directory containing full biography files
+        pretraining_dataset_file: Path to save pretraining dataset with temporal info
     """
-    logger.info("🚀 Starting pretraining dataset encoding")
+    logger.info("🚀 Starting pretraining dataset encoding and temporal extraction")
     
     # Load configuration and set defaults
     config = get_config()
@@ -30,7 +52,10 @@ def encode_pretraining_dataset(pretraining_full_bio_file: str = None, pretrainin
     tokenizer = AutoTokenizer.from_pretrained(pretraining_config['model_name'])
     logger.info("✅ Tokenizer loaded successfully")
     
-    # Use config values as defaults if not provided
+    # Get the project root directory (two levels up from scripts/tokenization/)
+    project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    
+    # Use config values as defaults if not provided, and make them absolute paths
     if pretraining_full_bio_file is None:
         pretraining_full_bio_file = pretraining_config['pretraining_full_bio_file']
     if pretraining_trunc_bio_file is None:
@@ -39,12 +64,22 @@ def encode_pretraining_dataset(pretraining_full_bio_file: str = None, pretrainin
         trunc_bios_dir = pretraining_config['trunc_bios_dir']
     if full_bios_dir is None:
         full_bios_dir = pretraining_config['full_bios_dir']
+    if pretraining_dataset_file is None:
+        pretraining_dataset_file = pretraining_config['pretraining_dataset_file']
+    
+    # Convert relative paths to absolute paths relative to project root
+    pretraining_full_bio_file = os.path.join(project_root, pretraining_full_bio_file)
+    pretraining_trunc_bio_file = os.path.join(project_root, pretraining_trunc_bio_file)
+    trunc_bios_dir = os.path.join(project_root, trunc_bios_dir)
+    full_bios_dir = os.path.join(project_root, full_bios_dir)
+    pretraining_dataset_file = os.path.join(project_root, pretraining_dataset_file)
     
     logger.info(f"📁 Truncated bios directory: {trunc_bios_dir}")
     logger.info(f"📁 Full bios directory: {full_bios_dir}")
     logger.info(f"💾 Full bio output file: {pretraining_full_bio_file}")
     logger.info(f"💾 Truncated bio output file: {pretraining_trunc_bio_file}")
-    
+    logger.info(f"💾 Pretraining dataset file: {pretraining_dataset_file}")
+
     # Check if the directories exist
     if not os.path.exists(trunc_bios_dir):
         logger.error(f"❌ Truncated bios directory does not exist: {trunc_bios_dir}")
@@ -60,29 +95,48 @@ def encode_pretraining_dataset(pretraining_full_bio_file: str = None, pretrainin
     logger.info(f"📚 Found {len(trunc_justices)} truncated biography files")
     logger.info(f"📚 Found {len(full_justices)} full biography files")
     
-    if len(trunc_justices) != len(full_justices):
-        logger.error(f"❌ Number of truncated ({len(trunc_justices)}) and full ({len(full_justices)}) justices do not match")
-        raise ValueError("Number of truncated and full justices do not match")
+    # Match justice files between directories
+    common_justices = set(trunc_justices) & set(full_justices)
+    if len(common_justices) == 0:
+        logger.error("❌ No common justice files found between directories")
+        raise ValueError("No common justice files found between directories")
     
-    logger.info("✅ File count validation passed")
+    logger.info(f"✅ Found {len(common_justices)} common justice files to process")
     
+    # Initialize datasets
     pretraining_full_bio_dataset = {"tokenized_data": {}, "metadata": {}}
     pretraining_trunc_bio_dataset = {"tokenized_data": {}, "metadata": {}}
+    pretraining_dataset = {}  # For temporal information
     
-    logger.info(f"🧠 Starting tokenization of {len(trunc_justices)} justice biographies")
+    # Load justices metadata
+    justices_metadata_file = os.path.join(project_root, "data/raw/justices.json")
+    logger.info(f"📖 Loading justices metadata from: {justices_metadata_file}")
+    
+    with open(justices_metadata_file, 'r', encoding='utf-8') as f:
+        justices_metadata = json.load(f)
+    
+    logger.info(f"📚 Loaded metadata for {len(justices_metadata)} justices")
+    
+    logger.info(f"🧠 Starting tokenization and temporal extraction for {len(common_justices)} justice biographies")
     successful_encodings = 0
+    successful_extractions = 0
     failed_encodings = 0
+    failed_extractions = 0
     
-    for justice in tqdm(trunc_justices, desc="Encoding biographies"):
+    for justice in tqdm(common_justices, desc="Processing biographies"):
         try:
             trunc_bio_path = os.path.join(trunc_bios_dir, justice)
             full_bio_path = os.path.join(full_bios_dir, justice)
             
             logger.debug(f"Processing justice: {justice}")
             
-            trunc_bio = open(trunc_bio_path, 'r').read()
-            full_bio = open(full_bio_path, 'r').read()
+            # Read biography texts
+            with open(trunc_bio_path, 'r', encoding='utf-8') as f:
+                trunc_bio = f.read()
+            with open(full_bio_path, 'r', encoding='utf-8') as f:
+                full_bio = f.read()
             
+            # Tokenize full biography
             full_bio_encoded = tokenizer(full_bio, 
                                          add_special_tokens=True, 
                                          padding=True, 
@@ -92,6 +146,7 @@ def encode_pretraining_dataset(pretraining_full_bio_file: str = None, pretrainin
                                          return_token_type_ids=False,
                                          return_attention_mask=True)
             
+            # Tokenize truncated biography
             trunc_bio_encoded = tokenizer(trunc_bio, 
                                           add_special_tokens=True, 
                                           padding=True, 
@@ -101,6 +156,7 @@ def encode_pretraining_dataset(pretraining_full_bio_file: str = None, pretrainin
                                           return_token_type_ids=False,
                                           return_attention_mask=True)
             
+            # Store tokenized data
             pretraining_full_bio_dataset["tokenized_data"][justice] = {
                 "input_ids": full_bio_encoded["input_ids"].squeeze(0),
                 "attention_mask": full_bio_encoded["attention_mask"].squeeze(0)
@@ -112,15 +168,66 @@ def encode_pretraining_dataset(pretraining_full_bio_file: str = None, pretrainin
             
             successful_encodings += 1
             
+            # Extract temporal information from justices metadata
+            try:
+                # Convert filename to justice name (remove .txt extension and replace underscores with spaces)
+                justice_name = justice.replace('.txt', '').replace('_', ' ')
+                
+                # Look up justice in metadata
+                if justice_name in justices_metadata:
+                    justice_info = justices_metadata[justice_name]
+                    
+                    # Extract appointment year from appointment_date
+                    appointment_date = justice_info.get('appointment_date', '')
+                    appointment_year = None
+                    if appointment_date:
+                        # Extract year from date string (e.g., "September 26, 1789 ( Acclamation )" -> "1789")
+                        year_match = re.search(r'(\d{4})', appointment_date)
+                        if year_match:
+                            appointment_year = year_match.group(1)
+                    
+                    # Get nominating president
+                    nominating_president = justice_info.get('nominated_by', '')
+                    
+                    # Store extracted information in pretraining dataset
+                    pretraining_dataset[justice] = [appointment_year, nominating_president]
+                    
+                    # Log extraction results
+                    if appointment_year:
+                        successful_extractions += 1
+                        if nominating_president:
+                            logger.debug(f"Successfully extracted: Year={appointment_year}, President={nominating_president}")
+                        else:
+                            logger.debug(f"Successfully extracted: Year={appointment_year}, President=Unknown")
+                    else:
+                        failed_extractions += 1
+                        logger.warning(f"Failed to extract appointment year for {justice_name}")
+                        
+                else:
+                    failed_extractions += 1
+                    logger.warning(f"Justice {justice_name} not found in metadata")
+                    pretraining_dataset[justice] = [None, None]
+                    
+            except Exception as e:
+                failed_extractions += 1
+                logger.error(f"Error extracting temporal information for {justice}: {e}")
+                # Store None values for failed extractions
+                pretraining_dataset[justice] = [None, None]
+            
         except Exception as e:
             logger.error(f"❌ Error processing {justice}: {e}")
             failed_encodings += 1
             continue
     
+    # Log final statistics
     logger.info(f"✅ Successfully encoded {successful_encodings} biographies")
+    logger.info(f"✅ Successfully extracted temporal info for {successful_extractions} justices")
     if failed_encodings > 0:
         logger.warning(f"⚠️  Failed to encode {failed_encodings} biographies")
+    if failed_extractions > 0:
+        logger.warning(f"⚠️  Failed to extract temporal info for {failed_extractions} justices")
     
+    # Set metadata for tokenized datasets
     pretraining_full_bio_dataset["metadata"] = {
         'model_name': pretraining_config['model_name'],
         'max_sequence_length': pretraining_config['max_sequence_length'],
@@ -137,6 +244,12 @@ def encode_pretraining_dataset(pretraining_full_bio_file: str = None, pretrainin
         'device_used': pretraining_config['device'],
         'tokenization_method': 'transformers_autotokenizer'}
     
+    # Create output directories if they don't exist
+    os.makedirs(os.path.dirname(pretraining_full_bio_file), exist_ok=True)
+    os.makedirs(os.path.dirname(pretraining_trunc_bio_file), exist_ok=True)
+    os.makedirs(os.path.dirname(pretraining_dataset_file), exist_ok=True)
+    
+    # Save tokenized datasets
     logger.info(f"💾 Saving full bio dataset to: {pretraining_full_bio_file}")
     with open(pretraining_full_bio_file, 'wb') as f:
         pickle.dump(pretraining_full_bio_dataset, f)
@@ -145,7 +258,18 @@ def encode_pretraining_dataset(pretraining_full_bio_file: str = None, pretrainin
     with open(pretraining_trunc_bio_file, 'wb') as f:
         pickle.dump(pretraining_trunc_bio_dataset, f)
     
-    logger.info("🎉 Pretraining dataset encoding completed successfully!")
+    # Save pretraining dataset with temporal information
+    logger.info(f"💾 Saving pretraining dataset to: {pretraining_dataset_file}")
+    with open(pretraining_dataset_file, 'w', encoding='utf-8') as f:
+        json.dump(pretraining_dataset, f, indent=4)
+    
+    logger.info("🎉 Pretraining dataset encoding and temporal extraction completed successfully!")
+    logger.info(f"📊 Final Summary:")
+    logger.info(f"   - Total justices processed: {len(common_justices)}")
+    logger.info(f"   - Successful tokenizations: {successful_encodings}")
+    logger.info(f"   - Successful temporal extractions: {successful_extractions}")
+    logger.info(f"   - Tokenization success rate: {successful_encodings/len(common_justices)*100:.1f}%")
+    logger.info(f"   - Temporal extraction success rate: {successful_extractions/len(common_justices)*100:.1f}%")
 
 
 if __name__ == "__main__":

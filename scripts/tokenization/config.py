@@ -77,6 +77,7 @@ class EncodingConfig:
             'DESCRIPTION_OUTPUT_FILE': 'data/processed/encoded_descriptions.pkl',
             'PRETRAINING_TRUNC_BIO_FILE': 'data/processed/encoded_pre_trunc_bios.pkl',
             'PRETRAINING_FULL_BIO_FILE': 'data/processed/encoded_pre_full_bios.pkl',
+            'PRETRAINING_DATASET_FILE': 'data/processed/pretraining_dataset.json',
             'PRETRAINING_TRUNC_BIO_DIR': 'data/processed/bios/',
             'PRETRAINING_FULL_BIO_DIR': 'data/raw/bios/',
             'DATASET_FILE': 'data/processed/case_dataset.json',
@@ -220,6 +221,10 @@ class EncodingConfig:
     def pretraining_full_bio_dir(self) -> str:
         return self.get_str('PRETRAINING_FULL_BIO_DIR')
     
+    @property
+    def pretraining_dataset_file(self) -> str:
+        return self.get_str('PRETRAINING_DATASET_FILE')
+    
     def print_config(self):
         """Print the current configuration."""
         print("\n📋 ENCODING CONFIGURATION:")
@@ -305,6 +310,7 @@ def get_pretraining_config() -> Dict[str, Any]:
     return {
         'pretraining_trunc_bio_file': config.pretraining_trunc_bio_file,
         'pretraining_full_bio_file': config.pretraining_full_bio_file,
+        'pretraining_dataset_file': config.pretraining_dataset_file,
         'trunc_bios_dir': config.pretraining_trunc_bio_dir,
         'full_bios_dir': config.pretraining_full_bio_dir,
         'model_name': config.bio_model_name,

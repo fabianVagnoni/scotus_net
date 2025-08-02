@@ -45,6 +45,7 @@ import os
 import sys
 
 # Add the current directory to Python path for imports
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 current_dir = os.path.dirname(os.path.abspath(__file__))
 if current_dir not in sys.path:
     sys.path.insert(0, current_dir)
@@ -101,6 +102,7 @@ def run_script(script_path: str, args: List[str] = None, description: str = ""):
 
 def load_case_dataset(dataset_file: str) -> Dict:
     """Load the case dataset and return it."""
+    dataset_file = os.path.join(PROJECT_ROOT, dataset_file)
     if not os.path.exists(dataset_file):
         raise FileNotFoundError(f"Dataset file not found: {dataset_file}")
     
@@ -507,6 +509,7 @@ def update_dataset_with_tokenizations(dataset_file: str, bio_tokenized_file: str
                                      description_tokenized_file: str) -> bool:
     """Update the dataset with tokenized file locations."""
     print("\n🔄 Updating dataset with tokenized file locations...")
+    dataset_file = os.path.join(PROJECT_ROOT, dataset_file)
     
     try:
         # Load the dataset
@@ -558,6 +561,7 @@ def validate_final_tokenizations(dataset_file: str, bio_tokenized_file: str,
     """Validate that all required files are tokenized."""
     print("\n🔍 Validating final tokenizations...")
     
+    dataset_file = os.path.join(PROJECT_ROOT, dataset_file)
     # Load dataset and analyze requirements
     dataset = load_case_dataset(dataset_file)
     unique_bio_paths, unique_case_paths, stats = analyze_tokenization_requirements(dataset)
