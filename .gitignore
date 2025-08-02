@@ -9,3 +9,6 @@ tests.py
 pickle_format_example.py
 logs/*
 tests/*
+__pycache__/
+*.py[cod]
+*$py.class
