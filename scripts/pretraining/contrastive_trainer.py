@@ -199,7 +199,7 @@ class ContrastiveJusticeTrainer:
                 patience_counter = 0
                 best_val_loss = val_loss
                 model_output_dir.mkdir(parents=True, exist_ok=True)
-                torch.save(model.state_dict(), str(model_output_dir / 'best_model.pth'))
+                torch.save(model.truncated_bio_model.state_dict(), str(model_output_dir / 'best_model.pth'))
                 self.logger.info(f"New best model saved with validation loss {val_loss:.4f}")
             else:
                 patience_counter += 1
@@ -210,7 +210,7 @@ class ContrastiveJusticeTrainer:
         # Load best model if available
         best_model_path = model_output_dir / 'best_model.pth'
         if best_model_path.exists():
-            model.load_state_dict(torch.load(str(best_model_path)))
+            model.truncated_bio_model.load_state_dict(torch.load(str(best_model_path)))
             self.logger.info(f"Loaded best model with validation loss {best_val_loss:.4f}")
         
         self.logger.info("Training completed successfully!")
