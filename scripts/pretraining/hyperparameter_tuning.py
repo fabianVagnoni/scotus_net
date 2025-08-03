@@ -31,11 +31,15 @@ try:
     from scripts.pretraining.loss import ContrastiveLoss
     from scripts.pretraining.config import ContrastiveJusticeConfig
     from scripts.utils.logger import get_logger
+    from scripts.utils.progress import get_progress_bar
 except ImportError:
     from constrastive_justice import ContrastiveJustice, ContrastiveJusticeDataset, collate_fn
     from loss import ContrastiveLoss
     from config import ContrastiveJusticeConfig
     from ..utils.logger import get_logger
+    from ..utils.progress import get_progress_bar
+
+
 
 
 def initialize_results_file(study_name: str, n_trials: int, experiment_name: str = None):
@@ -228,7 +232,14 @@ class HyperparameterTuner:
         justice_indices = []
         
         with torch.no_grad():
-            for batch_idx, batch in enumerate(val_loader):
+            # Progress bar for validation batches
+            val_pbar = get_progress_bar(
+                val_loader,
+                desc="Calculating MRR",
+                total=len(val_loader)
+            )
+            
+            for batch_idx, batch in enumerate(val_pbar):
                 try:
                     batch_trunc_bio_data = batch['trunc_bio_data']
                     batch_full_bio_data = batch['full_bio_data']
@@ -391,13 +402,20 @@ class HyperparameterTuner:
             # Use configurable number of epochs for hyperparameter tuning
             num_epochs = min(self.base_config.optuna_max_epochs, self.base_config.num_epochs)
             
-            # Training loop
+            # Training loop with progress bar
             for epoch in range(num_epochs):
                 model.train()
                 epoch_loss = 0.0
                 num_batches = 0
                 
-                for batch in train_loader:
+                # Progress bar for batches within each epoch
+                batch_pbar = get_progress_bar(
+                    train_loader, 
+                    desc=f"Trial {trial.number} - Epoch {epoch+1}/{num_epochs}",
+                    total=len(train_loader)
+                )
+                
+                for batch in batch_pbar:
                     try:
                         optimizer.zero_grad()
                         batch_trunc_bio_data = batch['trunc_bio_data']
@@ -411,6 +429,11 @@ class HyperparameterTuner:
                         
                         epoch_loss += batch_loss.item()
                         num_batches += 1
+                        
+                        # Update progress bar with current loss
+                        batch_pbar.set_description(
+                            f"Trial {trial.number} - Epoch {epoch+1}/{num_epochs} - Loss: {batch_loss.item():.4f}"
+                        )
                         
                     except Exception as e:
                         self.logger.warning(f"Error in training batch: {e}")
@@ -469,8 +492,9 @@ class HyperparameterTuner:
             )
         )
         
-        # Run optimization
-        study.optimize(self.objective, n_trials=n_trials)
+        # Run optimization with progress bar
+        print(f"🔍 Starting hyperparameter optimization with {n_trials} trials...")
+        study.optimize(self.objective, n_trials=n_trials, show_progress_bar=True)
         
         # Print results
         self.logger.info("Hyperparameter tuning completed!")
@@ -528,6 +552,12 @@ def main():
     print(f"📊 Experiment name: {args.experiment_name}")
     print(f"🧪 Study name: {args.study_name}")
     print(f"🎯 Number of trials: {args.n_trials}")
+    print("🚀 Progress bars will show:")
+    print("   - Overall trial progress (Optuna)")
+    print("   - Per-trial epoch progress")
+    print("   - Per-epoch batch progress with loss")
+    print("   - MRR calculation progress")
+    print("=" * 60)
     
     # Initialize tuner
     tuner = HyperparameterTuner(config_file=args.config_file, experiment_name=args.experiment_name)
