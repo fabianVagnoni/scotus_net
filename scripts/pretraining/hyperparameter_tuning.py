@@ -256,6 +256,11 @@ class HyperparameterTuner:
             return 0.0
         
         # Concatenate all embeddings
+        # Ensure all tensors are on the same device before concatenation
+        device = all_trunc_embeddings[0].device if all_trunc_embeddings else self.device
+        all_trunc_embeddings = [emb.to(device) for emb in all_trunc_embeddings]
+        all_full_embeddings = [emb.to(device) for emb in all_full_embeddings]
+        
         all_trunc_embeddings = torch.cat(all_trunc_embeddings, dim=0)  # (N, D)
         all_full_embeddings = torch.cat(all_full_embeddings, dim=0)    # (N, D)
         
@@ -272,7 +277,9 @@ class HyperparameterTuner:
             _, sorted_indices = torch.sort(similarities, descending=True)
             
             # Find the rank of the correct match (index i)
-            correct_rank = (sorted_indices == i).nonzero(as_tuple=True)[0].item() + 1  # +1 for 1-based ranking
+            # Create tensor for comparison to avoid device mismatch
+            target_idx = torch.tensor(i, device=similarity_matrix.device)
+            correct_rank = (sorted_indices == target_idx).nonzero(as_tuple=True)[0].item() + 1  # +1 for 1-based ranking
             
             # Add reciprocal rank
             reciprocal_ranks.append(1.0 / correct_rank)
@@ -366,14 +373,14 @@ class HyperparameterTuner:
                 batch_size=int(batch_size),
                 shuffle=True,
                 collate_fn=collate_fn,
-                num_workers=self.base_config.num_workers
+                num_workers=0  # Set to 0 to avoid device issues with multiprocessing
             )
             val_loader = DataLoader(
                 val_dataset,
                 batch_size=int(batch_size),
                 shuffle=False,
                 collate_fn=collate_fn,
-                num_workers=self.base_config.num_workers
+                num_workers=0  # Set to 0 to avoid device issues with multiprocessing
             )
             
             # Training setup

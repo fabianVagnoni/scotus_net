@@ -9,7 +9,13 @@ class ContrastiveLoss(nn.Module):
         self.alpha = alpha
         self.cross_entropy_loss = nn.CrossEntropyLoss()
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
-        self.to(self.device)
+        
+    def to(self, device):
+        """Override to method to ensure all components are moved to device."""
+        super().to(device)
+        self.device = device
+        self.cross_entropy_loss = self.cross_entropy_loss.to(device)
+        return self
 
     def _to_device(self, tensor):
         return tensor.to(self.device)
@@ -26,8 +32,7 @@ class ContrastiveLoss(nn.Module):
         e_t = F.normalize(e_t, dim=-1)
         e_f = F.normalize(e_f, dim=-1)
         sim = (e_t @ e_f.T) / self.temperature # (B,D) @ (D,B) => (B,B)
-        labels = torch.arange(sim.size(0))
-        labels = labels.to(self.device)
+        labels = torch.arange(sim.size(0), device=self.device)
         c1 = self.cross_entropy_loss(sim, labels)
         c2 = self.cross_entropy_loss(sim.T, labels)
         return (c1 + c2) * .5

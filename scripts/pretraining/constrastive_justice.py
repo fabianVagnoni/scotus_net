@@ -21,6 +21,14 @@ class ContrastiveJustice(nn.Module):
         self.padding_value = self.truncated_bio_model.config.pad_token_id
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         
+    def to(self, device):
+        """Override to method to ensure all submodules are moved to device."""
+        super().to(device)
+        self.device = device
+        self.truncated_bio_model = self.truncated_bio_model.to(device)
+        self.full_bio_model = self.full_bio_model.to(device)
+        return self
+        
     def forward(self, trunc_bio_data: List[str], full_bio_data: List[str]):
         """
         Forward pass for contrastive learning.
@@ -39,8 +47,11 @@ class ContrastiveJustice(nn.Module):
         trunc_attention_masks = []
         
         for data in trunc_bio_data:
-            trunc_input_ids.append(data['input_ids'])
-            trunc_attention_masks.append(data['attention_mask'])
+            # Ensure input tensors are on the correct device
+            input_ids = data['input_ids'].to(self.device) if hasattr(data['input_ids'], 'to') else data['input_ids']
+            attention_mask = data['attention_mask'].to(self.device) if hasattr(data['attention_mask'], 'to') else data['attention_mask']
+            trunc_input_ids.append(input_ids)
+            trunc_attention_masks.append(attention_mask)
         
         # Pad sequences for batch processing
         trunc_input_ids = pad_sequence(trunc_input_ids, batch_first=True, padding_value=self.padding_value)
@@ -51,12 +62,21 @@ class ContrastiveJustice(nn.Module):
         full_attention_masks = []
         
         for data in full_bio_data:
-            full_input_ids.append(data['input_ids'])
-            full_attention_masks.append(data['attention_mask'])
+            # Ensure input tensors are on the correct device
+            input_ids = data['input_ids'].to(self.device) if hasattr(data['input_ids'], 'to') else data['input_ids']
+            attention_mask = data['attention_mask'].to(self.device) if hasattr(data['attention_mask'], 'to') else data['attention_mask']
+            full_input_ids.append(input_ids)
+            full_attention_masks.append(attention_mask)
         
         # Pad sequences for batch processing
         full_input_ids = pad_sequence(full_input_ids, batch_first=True, padding_value=self.padding_value)
         full_attention_masks = pad_sequence(full_attention_masks, batch_first=True, padding_value=0)
+        
+        # Move tensors to device (in case pad_sequence created new tensors)
+        trunc_input_ids = trunc_input_ids.to(self.device)
+        trunc_attention_masks = trunc_attention_masks.to(self.device)
+        full_input_ids = full_input_ids.to(self.device)
+        full_attention_masks = full_attention_masks.to(self.device)
         
         # Get embeddings from models
         trunc_bio_outputs = self.truncated_bio_model(
