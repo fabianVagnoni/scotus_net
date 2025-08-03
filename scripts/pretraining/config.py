@@ -65,7 +65,29 @@ class ContrastiveJusticeConfig:
                         'PRETRAINING_DATASET_FILE': 'pretraining_dataset_file',
                         'TEST_SET_SIZE': 'test_set_size',
                         'VAL_SET_SIZE': 'val_set_size',
-                        'MODEL_OUTPUT_DIR': 'model_output_dir'
+                        'MODEL_OUTPUT_DIR': 'model_output_dir',
+                        # Optuna configuration
+                        'OPTUNA_N_TRIALS': 'optuna_n_trials',
+                        'OPTUNA_MAX_TRIAL_TIME': 'optuna_max_trial_time',
+                        'OPTUNA_MAX_EPOCHS': 'optuna_max_epochs',
+                        'OPTUNA_MIN_EPOCHS': 'optuna_min_epochs',
+                        'OPTUNA_EARLY_STOP_PATIENCE': 'optuna_early_stop_patience',
+                        'OPTUNA_PRUNER_STARTUP_TRIALS': 'optuna_pruner_startup_trials',
+                        'OPTUNA_PRUNER_WARMUP_STEPS': 'optuna_pruner_warmup_steps',
+                        # Tuning control
+                        'TUNE_BATCH_SIZE': 'tune_batch_size',
+                        'TUNE_LEARNING_RATE': 'tune_learning_rate',
+                        'TUNE_WEIGHT_DECAY': 'tune_weight_decay',
+                        'TUNE_DROPOUT_RATE': 'tune_dropout_rate',
+                        'TUNE_TEMPERATURE': 'tune_temperature',
+                        'TUNE_ALPHA': 'tune_alpha',
+                        # Search spaces
+                        'OPTUNA_BATCH_SIZE_OPTIONS': 'optuna_batch_size_options',
+                        'OPTUNA_LEARNING_RATE_RANGE': 'optuna_learning_rate_range',
+                        'OPTUNA_WEIGHT_DECAY_RANGE': 'optuna_weight_decay_range',
+                        'OPTUNA_DROPOUT_RATE_RANGE': 'optuna_dropout_rate_range',
+                        'OPTUNA_TEMPERATURE_RANGE': 'optuna_temperature_range',
+                        'OPTUNA_ALPHA_RANGE': 'optuna_alpha_range'
                     }
                     
                     # Get the corresponding attribute name
@@ -83,13 +105,19 @@ class ContrastiveJusticeConfig:
         # Define type mappings for different configuration keys
         int_keys = {
             'BATCH_SIZE', 'NUM_EPOCHS', 'NUM_WORKERS', 'LR_SCHEDULER_PATIENCE', 
-            'MAX_PATIENCE', 'TEST_SET_SIZE', 'VAL_SET_SIZE'
+            'MAX_PATIENCE', 'TEST_SET_SIZE', 'VAL_SET_SIZE',
+            'OPTUNA_N_TRIALS', 'OPTUNA_MAX_TRIAL_TIME', 'OPTUNA_MAX_EPOCHS',
+            'OPTUNA_MIN_EPOCHS', 'OPTUNA_EARLY_STOP_PATIENCE',
+            'OPTUNA_PRUNER_STARTUP_TRIALS', 'OPTUNA_PRUNER_WARMUP_STEPS'
         }
         float_keys = {
             'DROPOUT_RATE', 'LEARNING_RATE', 'WEIGHT_DECAY', 'TEMPERATURE', 
             'ALPHA', 'LR_SCHEDULER_FACTOR', 'VAL_SPLIT'
         }
-        bool_keys = set()  # No boolean keys in current config
+        bool_keys = {
+            'TUNE_BATCH_SIZE', 'TUNE_LEARNING_RATE', 'TUNE_WEIGHT_DECAY',
+            'TUNE_DROPOUT_RATE', 'TUNE_TEMPERATURE', 'TUNE_ALPHA'
+        }
         
         if key in int_keys:
             try:
@@ -106,6 +134,9 @@ class ContrastiveJusticeConfig:
         elif key in bool_keys:
             return value.lower() in ('true', '1', 'yes', 'on', 'enabled')
         else:
+            # Handle special parsing for search spaces
+            if key.startswith('OPTUNA_') and ('_OPTIONS' in key or '_RANGE' in key):
+                return self._parse_search_space(value)
             return value
     
     def _get_default_value(self, key: str) -> Any:
@@ -145,6 +176,25 @@ class ContrastiveJusticeConfig:
         }
         return defaults.get(key, None)
     
+    def _parse_search_space(self, value: str):
+        """Parse search space values (options or ranges)."""
+        if '_OPTIONS' in value or ',' in value:
+            # Parse comma-separated options
+            return [x.strip() for x in value.split(',')]
+        elif '_RANGE' in value:
+            # Parse range values (min,max,log_scale or min,max,step)
+            parts = value.split(',')
+            if len(parts) == 3:
+                try:
+                    # Try to parse as float range with log scale
+                    return (float(parts[0]), float(parts[1]), parts[2].lower() == 'true')
+                except ValueError:
+                    # Try to parse as float range with step
+                    return (float(parts[0]), float(parts[1]), float(parts[2]))
+            elif len(parts) == 2:
+                return (float(parts[0]), float(parts[1]), None)
+        return value
+    
     def _set_defaults(self):
         """Set default configuration values."""
         # Model configuration
@@ -178,6 +228,31 @@ class ContrastiveJusticeConfig:
         
         # Output configuration
         self.model_output_dir = self._get_default_value('MODEL_OUTPUT_DIR')
+        
+        # Optuna configuration defaults
+        self.optuna_n_trials = 50
+        self.optuna_max_trial_time = 600
+        self.optuna_max_epochs = 5
+        self.optuna_min_epochs = 2
+        self.optuna_early_stop_patience = 2
+        self.optuna_pruner_startup_trials = 5
+        self.optuna_pruner_warmup_steps = 2
+        
+        # Tuning control defaults
+        self.tune_batch_size = True
+        self.tune_learning_rate = True
+        self.tune_weight_decay = True
+        self.tune_dropout_rate = True
+        self.tune_temperature = True
+        self.tune_alpha = True
+        
+        # Search space defaults
+        self.optuna_batch_size_options = [4, 8, 16, 32]
+        self.optuna_learning_rate_range = (1e-6, 1e-4, True)
+        self.optuna_weight_decay_range = (1e-5, 1e-2, True)
+        self.optuna_dropout_rate_range = (0.0, 0.5, 0.1)
+        self.optuna_temperature_range = (0.01, 1.0, True)
+        self.optuna_alpha_range = (0.0, 1.0, 0.1)
     
     def print_config(self):
         """Print current configuration."""

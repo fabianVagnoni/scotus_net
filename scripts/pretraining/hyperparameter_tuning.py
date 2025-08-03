@@ -18,6 +18,8 @@ import os
 from pathlib import Path
 import numpy as np
 from typing import Dict, List, Tuple
+from datetime import datetime
+import argparse
 
 # Add current directory to path for imports
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -36,12 +38,157 @@ except ImportError:
     from ..utils.logger import get_logger
 
 
+def initialize_results_file(study_name: str, n_trials: int, experiment_name: str = None):
+    """
+    Initialize the tuning results file with header information.
+    
+    Args:
+        study_name: Name of the optimization study
+        n_trials: Number of trials to run
+        experiment_name: Name of the experiment (for file naming)
+    """
+    if experiment_name:
+        results_file = Path(f"logs/hyperparameter_tunning_logs/pretraining_hy_tunning_{experiment_name}.txt")
+    else:
+        results_file = Path("logs/hyperparameter_tunning_logs/pretraining_hy_tunning_default.txt")
+    
+    # Create directory if it doesn't exist
+    results_file.parent.mkdir(parents=True, exist_ok=True)
+    
+    # Prepare header
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    header_lines = [
+        f"{'#' * 80}",
+        f"# SCOTUS AI Pretraining Hyperparameter Optimization Results",
+        f"# Study: {study_name}",
+        f"# Experiment: {experiment_name or 'default'}",
+        f"# Started: {timestamp}",
+        f"# Number of trials: {n_trials}",
+        f"# Metric: Mean Reciprocal Rank (MRR) - Higher is better",
+        f"{'#' * 80}",
+        "",
+    ]
+    
+    # Write header to file (overwrite mode to start fresh)
+    try:
+        with open(results_file, 'w', encoding='utf-8') as f:
+            f.write('\n'.join(header_lines) + '\n')
+    except Exception as e:
+        logger = get_logger(__name__)
+        logger.warning(f"Failed to initialize results file: {e}")
+
+
+def append_trial_results(trial, mrr_score: float, hyperparams: Dict[str, any] = None, trial_status: str = "COMPLETED", experiment_name: str = None):
+    """
+    Append trial results to the tuning results file.
+    
+    Args:
+        trial: Optuna trial object
+        mrr_score: MRR score achieved
+        hyperparams: Trial hyperparameters (optional, will be extracted from trial if not provided)
+        trial_status: Status of the trial (COMPLETED, PRUNED, FAILED)
+        experiment_name: Name of the experiment (for file naming)
+    """
+    # Create the results file path
+    if experiment_name:
+        results_file = Path(f"logs/hyperparameter_tunning_logs/pretraining_hy_tunning_{experiment_name}.txt")
+    else:
+        results_file = Path("logs/hyperparameter_tunning_logs/pretraining_hy_tunning_default.txt")
+    
+    # Create directory if it doesn't exist
+    results_file.parent.mkdir(parents=True, exist_ok=True)
+    
+    # Get hyperparameters if not provided
+    if hyperparams is None:
+        hyperparams = trial.params
+    
+    # Prepare trial results text
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    # Format results
+    result_lines = [
+        f"=" * 80,
+        f"Trial #{trial.number} - {timestamp}",
+        f"Mean Reciprocal Rank (MRR): {mrr_score:.6f}",
+        f"Trial Status: {trial_status}",
+        f"Parameters:",
+    ]
+    
+    # Add hyperparameters
+    for key, value in hyperparams.items():
+        result_lines.append(f"  {key}: {value}")
+    
+    result_lines.extend([
+        "",  # Empty line for separation
+    ])
+    
+    # Write to file (append mode)
+    try:
+        with open(results_file, 'a', encoding='utf-8') as f:
+            f.write('\n'.join(result_lines) + '\n')
+    except Exception as e:
+        logger = get_logger(__name__)
+        logger.warning(f"Failed to append trial results to file: {e}")
+
+
+def append_optimization_summary(study: optuna.Study, experiment_name: str = None):
+    """
+    Append optimization summary to the results file.
+    
+    Args:
+        study: Completed Optuna study
+        experiment_name: Name of the experiment (for file naming)
+    """
+    if experiment_name:
+        results_file = Path(f"logs/hyperparameter_tunning_logs/pretraining_hy_tunning_{experiment_name}.txt")
+    else:
+        results_file = Path("logs/hyperparameter_tunning_logs/pretraining_hy_tunning_default.txt")
+    
+    # Prepare summary
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    summary_lines = [
+        f"{'#' * 80}",
+        f"# OPTIMIZATION SUMMARY - {timestamp}",
+        f"{'#' * 80}",
+        f"Total trials: {len(study.trials)}",
+        f"Completed trials: {len([t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE])}",
+        f"Pruned trials: {len([t for t in study.trials if t.state == optuna.trial.TrialState.PRUNED])}",
+        f"Failed trials: {len([t for t in study.trials if t.state == optuna.trial.TrialState.FAIL])}",
+        "",
+        f"BEST TRIAL: #{study.best_trial.number}",
+        f"Best MRR Score: {study.best_value:.6f}",
+        f"Best parameters:",
+    ]
+    
+    # Add best parameters
+    for key, value in study.best_params.items():
+        summary_lines.append(f"  {key}: {value}")
+    
+    summary_lines.extend([
+        "",
+        f"Study completed at: {timestamp}",
+        f"{'#' * 80}",
+        "",
+    ])
+    
+    # Write to file (append mode)
+    try:
+        with open(results_file, 'a', encoding='utf-8') as f:
+            f.write('\n'.join(summary_lines) + '\n')
+    except Exception as e:
+        logger = get_logger(__name__)
+        logger.warning(f"Failed to append optimization summary to file: {e}")
+
+
 class HyperparameterTuner:
-    def __init__(self, config_file: str = None):
+    def __init__(self, config_file: str = None, experiment_name: str = None):
         """Initialize the hyperparameter tuner."""
         self.logger = get_logger(__name__)
         self.base_config = ContrastiveJusticeConfig(config_file)
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.experiment_name = experiment_name
         self.logger.info(f"Using device: {self.device}")
         
         # Load and split the dataset once
@@ -135,13 +282,58 @@ class HyperparameterTuner:
     
     def objective(self, trial):
         """Optuna objective function to maximize MRR."""
-        # Sample hyperparameters
-        batch_size = trial.suggest_categorical('batch_size', [4, 8, 16, 32])
-        weight_decay = trial.suggest_float('weight_decay', 1e-5, 1e-1, log=True)
-        dropout_rate = trial.suggest_float('dropout_rate', 0.0, 0.5)
-        learning_rate = trial.suggest_float('learning_rate', 1e-6, 1e-3, log=True)
-        temperature = trial.suggest_float('temperature', 0.01, 1.0, log=True)
-        alpha = trial.suggest_float('alpha', 0.0, 1.0)
+        # Sample hyperparameters using config
+        if self.base_config.tune_batch_size:
+            #print("batch_size options: ", self.base_config.optuna_batch_size_options)
+            batch_size = trial.suggest_categorical('batch_size', self.base_config.optuna_batch_size_options)
+        else:
+            #print("batch_size options from config: ", self.base_config.batch_size)
+            batch_size = self.base_config.batch_size
+            
+        if self.base_config.tune_weight_decay:
+            #print("weight_decay options: ", self.base_config.optuna_weight_decay_range)
+            wd_min, wd_max, wd_log = self.base_config.optuna_weight_decay_range
+            wd_kwargs = {'log': bool(wd_log)} if wd_log else {}
+            weight_decay = trial.suggest_float('weight_decay', float(wd_min), float(wd_max), **wd_kwargs)
+        else:
+            #print("weight_decay options from config: ", self.base_config.weight_decay)
+            weight_decay = self.base_config.weight_decay
+            
+        if self.base_config.tune_dropout_rate:
+            #print("dropout_rate options: ", self.base_config.optuna_dropout_rate_range)
+            dropout_min, dropout_max, dropout_step = self.base_config.optuna_dropout_rate_range
+            dropout_kwargs = {'step': float(dropout_step)} if dropout_step is not None else {}
+            dropout_rate = trial.suggest_float('dropout_rate', float(dropout_min), float(dropout_max), **dropout_kwargs)
+        else:
+            #print("dropout_rate options from config: ", self.base_config.dropout_rate)
+            dropout_rate = self.base_config.dropout_rate
+
+        if self.base_config.tune_learning_rate:
+            #print("learning_rate options: ", self.base_config.optuna_learning_rate_range)
+            lr_min, lr_max, lr_log = self.base_config.optuna_learning_rate_range
+            lr_kwargs = {'log': bool(lr_log)} if lr_log else {}
+            learning_rate = trial.suggest_float('learning_rate', float(lr_min), float(lr_max), **lr_kwargs)
+        else:
+            #print("learning_rate options from config: ", self.base_config.learning_rate)
+            learning_rate = self.base_config.learning_rate
+            
+        if self.base_config.tune_temperature:
+            #print("temperature options: ", self.base_config.optuna_temperature_range)
+            temp_min, temp_max, temp_log = self.base_config.optuna_temperature_range
+            temp_kwargs = {'log': bool(temp_log)} if temp_log else {}
+            temperature = trial.suggest_float('temperature', float(temp_min), float(temp_max), **temp_kwargs)
+        else:
+            #print("temperature options from config: ", self.base_config.temperature)
+            temperature = self.base_config.temperature
+            
+        if self.base_config.tune_alpha:
+            #print("alpha options: ", self.base_config.optuna_alpha_range)
+            alpha_min, alpha_max, alpha_step = self.base_config.optuna_alpha_range
+            alpha_kwargs = {'step': float(alpha_step)} if alpha_step is not None else {}
+            alpha = trial.suggest_float('alpha', float(alpha_min), float(alpha_max), **alpha_kwargs)
+        else:
+            #print("alpha options from config: ", self.base_config.alpha)
+            alpha = self.base_config.alpha
         
         self.logger.info(f"Trial {trial.number}: batch_size={batch_size}, weight_decay={weight_decay:.2e}, "
                         f"dropout_rate={dropout_rate:.3f}, learning_rate={learning_rate:.2e}, "
@@ -189,8 +381,8 @@ class HyperparameterTuner:
             loss_fn = ContrastiveLoss(temperature=temperature, alpha=alpha)
             loss_fn.to(self.device)
             
-            # Reduced number of epochs for hyperparameter tuning
-            num_epochs = min(5, self.base_config.num_epochs)  # Use fewer epochs for tuning
+            # Use configurable number of epochs for hyperparameter tuning
+            num_epochs = min(self.base_config.optuna_max_epochs, self.base_config.num_epochs)
             
             # Training loop
             for epoch in range(num_epochs):
@@ -218,6 +410,8 @@ class HyperparameterTuner:
                         continue
                 
                 if num_batches == 0:
+                    # Log failed trial
+                    append_trial_results(trial, 0.0, trial_status="FAILED", experiment_name=self.experiment_name)
                     return 0.0  # Return poor score if no successful batches
                 
                 # Report intermediate values for pruning
@@ -227,27 +421,45 @@ class HyperparameterTuner:
                     
                     # Handle pruning
                     if trial.should_prune():
+                        # Log pruned trial
+                        append_trial_results(trial, intermediate_mrr, trial_status="PRUNED", experiment_name=self.experiment_name)
                         raise optuna.exceptions.TrialPruned()
             
             # Calculate final MRR
             final_mrr = self.calculate_mrr(model, val_loader)
             self.logger.info(f"Trial {trial.number} final MRR: {final_mrr:.4f}")
             
+            # Log successful trial
+            append_trial_results(trial, final_mrr, trial_status="COMPLETED", experiment_name=self.experiment_name)
+            
             return final_mrr
             
+        except optuna.exceptions.TrialPruned:
+            # Re-raise pruned trials
+            raise
         except Exception as e:
             self.logger.error(f"Error in trial {trial.number}: {e}")
+            # Log failed trial
+            append_trial_results(trial, 0.0, trial_status="FAILED", experiment_name=self.experiment_name)
             return 0.0  # Return poor score for failed trials
     
-    def tune_hyperparameters(self, n_trials: int = 50, study_name: str = "contrastive_justice_tuning"):
+    def tune_hyperparameters(self, n_trials: int = None, study_name: str = "contrastive_justice_tuning"):
         """Run hyperparameter tuning with Optuna."""
+        if n_trials is None:
+            n_trials = self.base_config.optuna_n_trials
         self.logger.info(f"Starting hyperparameter tuning with {n_trials} trials")
+        
+        # Initialize results file
+        initialize_results_file(study_name, n_trials, self.experiment_name)
         
         # Create study
         study = optuna.create_study(
             direction='maximize',  # We want to maximize MRR
             study_name=study_name,
-            pruner=optuna.pruners.MedianPruner(n_startup_trials=5, n_warmup_steps=2)
+            pruner=optuna.pruners.MedianPruner(
+                n_startup_trials=self.base_config.optuna_pruner_startup_trials, 
+                n_warmup_steps=self.base_config.optuna_pruner_warmup_steps
+            )
         )
         
         # Run optimization
@@ -260,7 +472,10 @@ class HyperparameterTuner:
         for key, value in study.best_params.items():
             self.logger.info(f"  {key}: {value}")
         
-        # Save results
+        # Append final summary to results file
+        append_optimization_summary(study, self.experiment_name)
+        
+        # Save results (keeping existing functionality)
         results_dir = Path("results")
         results_dir.mkdir(exist_ok=True)
         
@@ -286,20 +501,42 @@ class HyperparameterTuner:
 
 def main():
     """Main function to run hyperparameter tuning."""
+    parser = argparse.ArgumentParser(description="Hyperparameter tuning for Contrastive Justice pretraining model")
+    parser.add_argument("--experiment-name", type=str, required=True, 
+                       help="Name for the experiment (used in output filenames)")
+    parser.add_argument("--n-trials", type=int, default=None, 
+                       help="Number of optimization trials (default: from config)")
+    parser.add_argument("--study-name", type=str, help="Name for the optimization study")
+    parser.add_argument("--config-file", type=str, help="Path to configuration file")
+    
+    args = parser.parse_args()
+    
+    # Set default study name if not provided
+    if args.study_name is None:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        args.study_name = f"contrastive_justice_tuning_{args.experiment_name}_{timestamp}"
+    
     print("🔍 Starting Hyperparameter Tuning for Contrastive Justice Model")
     print("=" * 60)
+    print(f"📊 Experiment name: {args.experiment_name}")
+    print(f"🧪 Study name: {args.study_name}")
+    print(f"🎯 Number of trials: {args.n_trials}")
     
     # Initialize tuner
-    tuner = HyperparameterTuner()
+    tuner = HyperparameterTuner(config_file=args.config_file, experiment_name=args.experiment_name)
     
     # Run tuning
-    best_params, best_mrr = tuner.tune_hyperparameters(n_trials=50)
+    best_params, best_mrr = tuner.tune_hyperparameters(n_trials=args.n_trials, study_name=args.study_name)
     
     print("\n🎉 Tuning Complete!")
     print(f"Best MRR: {best_mrr:.4f}")
     print("Best Parameters:")
     for key, value in best_params.items():
         print(f"  {key}: {value}")
+    
+    # Print summary with experiment name
+    print(f"\n🎯 Experiment '{args.experiment_name}' completed!")
+    print(f"📊 Results saved to: logs/hyperparameter_tunning_logs/pretraining_hy_tunning_{args.experiment_name}.txt")
 
 
 if __name__ == "__main__":
