@@ -363,14 +363,14 @@ class HyperparameterTuner:
             
             train_loader = DataLoader(
                 train_dataset,
-                batch_size=batch_size,
+                batch_size=int(batch_size),
                 shuffle=True,
                 collate_fn=collate_fn,
                 num_workers=self.base_config.num_workers
             )
             val_loader = DataLoader(
                 val_dataset,
-                batch_size=batch_size,
+                batch_size=int(batch_size),
                 shuffle=False,
                 collate_fn=collate_fn,
                 num_workers=self.base_config.num_workers
