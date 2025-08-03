@@ -230,6 +230,8 @@ show_usage() {
     echo "  train                    Train the model with optimized hyperparameters"
 echo "  hyperparameter-tuning    Run hyperparameter optimization"
 echo "  tune                     Alias for hyperparameter-tuning"
+    echo "  pretrain                 Run contrastive justice pretraining"
+    echo "  pretrain-tune            Run pretraining hyperparameter optimization"
     echo "  augmentation            Run the augmentation pipeline"
     echo "  check                    Check data status"
     echo "  setup-gpu                Configure Docker for GPU support (requires sudo)"
@@ -247,6 +249,8 @@ echo "  tune                     Alias for hyperparameter-tuning"
     echo "  $0 train --experiment-name production_v1    # Train the model"
     echo "  $0 tune --experiment-name arch_test         # Run hyperparameter tuning"
     echo "  $0 hyperparameter-tuning --n-trials 50     # Run 50 optimization trials"
+    echo "  $0 pretrain                                 # Run contrastive pretraining"
+    echo "  $0 pretrain-tune --experiment-name pre_test # Run pretraining optimization"
     echo "  $0 augmentation                             # Run full augmentation pipeline"
     echo "  $0 augmentation --bios-only                 # Only augment justice bios"
     echo "  $0 augmentation --descriptions-only         # Only augment case descriptions"
@@ -336,6 +340,36 @@ case "${1:-}" in
         fi
         shift
         run_container "hyperparameter-tuning" "$@"
+        ;;
+    pretrain)
+        if [ "$2" = "--help" ] || [ "$2" = "-h" ]; then
+            print_info "Contrastive Justice Pretraining:"
+            echo "  Runs contrastive learning on justice biographies"
+            echo "  Uses configuration from scripts/pretraining/config.env"
+            echo ""
+            echo "Examples:"
+            echo "  $0 pretrain"
+            echo ""
+            exit 0
+        fi
+        shift
+        run_container "pretrain" "$@"
+        ;;
+    pretrain-tune)
+        if [ "$2" = "--help" ] || [ "$2" = "-h" ]; then
+            print_info "Pretraining Hyperparameter Tuning Options:"
+            echo "  --experiment-name NAME    Name for the experiment (required)"
+            echo "  --n-trials N             Number of trials (default: from config)"
+            echo "  --config-file PATH       Path to configuration file"
+            echo ""
+            echo "Examples:"
+            echo "  $0 pretrain-tune --experiment-name pre_test --n-trials 50"
+            echo "  $0 pretrain-tune --experiment-name lr_study"
+            echo ""
+            exit 0
+        fi
+        shift
+        run_container "pretrain-tune" "$@"
         ;;
     check)
         shift

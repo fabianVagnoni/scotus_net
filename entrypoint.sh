@@ -47,6 +47,8 @@ echo "  encoding           - Run the encoding pipeline"
 echo "  augmentation       - Run the augmentation pipeline"
 echo "  train              - Train the model with optimized hyperparameters"
 echo "  hyperparameter-tuning - Run hyperparameter optimization"
+echo "  pretrain           - Run contrastive justice pretraining"
+echo "  pretrain-tune      - Run pretraining hyperparameter optimization"
 echo "  check              - Check data status"
 echo "  bash               - Open bash shell"
 echo ""
@@ -57,6 +59,8 @@ echo "  docker run -it scotus-ai encoding"
 echo "  docker run -it scotus-ai augmentation"
 echo "  docker run -it scotus-ai train --experiment-name production_v1"
 echo "  docker run -it scotus-ai hyperparameter-tuning --experiment-name test"
+echo "  docker run -it scotus-ai pretrain"
+echo "  docker run -it scotus-ai pretrain-tune --experiment-name pretrain_test"
 echo "  docker run -it scotus-ai bash"
 echo ""
 
@@ -93,6 +97,14 @@ case "$1" in
     hyperparameter-tuning)
         shift
         exec python3 -m scripts.models.hyperparameter_optimization "$@"
+        ;;
+    pretrain)
+        shift
+        exec python3 -m scripts.pretraining.run_training "$@"
+        ;;
+    pretrain-tune)
+        shift
+        exec python3 -m scripts.pretraining.hyperparameter_tuning "$@"
         ;;
     check)
         shift
