@@ -206,17 +206,25 @@ class HyperparameterTuner:
         # Create a list of (justice_name, year) tuples and sort by year
         justice_year_pairs = []
         for justice_name, data in pretraining_dataset.items():
-            year = int(data[0]) if data[0] is not None else 0
+            year = int(data[0]) if data[0] is not None else 1
             justice_year_pairs.append((justice_name, year))
         
-        # Sort by year and extract just the justice names
+        # Sort by year (ascending) and extract just the justice names
+        #self.logger.info(f"Justice year pairs:")
+        #self.logger.info(justice_year_pairs)
         ordered_justices = [justice for justice, year in sorted(justice_year_pairs, key=lambda x: x[1])]
         
         # Split the data
-        self.test_justices = ordered_justices[:self.base_config.test_set_size]
-        self.val_justices = ordered_justices[self.base_config.test_set_size:self.base_config.test_set_size + self.base_config.val_set_size]
-        self.train_justices = ordered_justices[self.base_config.test_set_size + self.base_config.val_set_size:]
+        self.test_justices = ordered_justices[-self.base_config.test_set_size:]
+        self.val_justices = ordered_justices[-self.base_config.test_set_size - self.base_config.val_set_size:-self.base_config.test_set_size]
+        self.train_justices = ordered_justices[:-self.base_config.test_set_size - self.base_config.val_set_size]
         
+        # Print val justices names
+        self.logger.info(f"Val justices names:")
+        self.logger.info(self.val_justices)
+        # Print test justices
+        self.logger.info(f"Test justices names:")
+        self.logger.info(self.test_justices)
         self.logger.info(f"Data split - Train: {len(self.train_justices)}, Val: {len(self.val_justices)}, Test: {len(self.test_justices)}")
     
     def calculate_mrr(self, model: ContrastiveJustice, val_loader: DataLoader) -> float:
