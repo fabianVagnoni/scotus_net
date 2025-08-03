@@ -27,6 +27,7 @@ class ContrastiveLoss(nn.Module):
         e_f = F.normalize(e_f, dim=-1)
         sim = (e_t @ e_f.T) / self.temperature # (B,D) @ (D,B) => (B,B)
         labels = torch.arange(sim.size(0))
+        labels = labels.to(self.device)
         c1 = self.cross_entropy_loss(sim, labels)
         c2 = self.cross_entropy_loss(sim.T, labels)
         return (c1 + c2) * .5
