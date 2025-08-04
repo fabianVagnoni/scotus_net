@@ -11,19 +11,20 @@ from torch.nn.utils.rnn import pad_sequence
 
 class SCOTUSVotingModel(nn.Module):
     """
-    SCOTUS Voting Prediction Model using dual sentence transformers.
+    Simplified SCOTUS Voting Prediction Model using dual sentence transformers.
     
     Architecture:
     1. Legal sentence transformer for case descriptions
     2. General sentence transformer for justice biographies
     3. Concatenate embeddings and pass through FC layer
     4. Output 3 neurons with softmax for voting percentages
+    
+    Note: This simplified version only handles batch processing.
+    Single samples should be passed as batches of size 1.
     """
     
     def __init__(
         self,
-        bio_tokenized_file: str,  # Required: Path to pre-tokenized biography data
-        description_tokenized_file: str,  # Required: Path to pre-tokenized case description data
         bio_model_name: str,  # Required: Model name for biographies
         description_model_name: str,  # Required: Model name for case descriptions
         embedding_dim: int = 384,
@@ -46,21 +47,6 @@ class SCOTUSVotingModel(nn.Module):
         self.use_noise_reg = use_noise_reg
         self.noise_reg_alpha = noise_reg_alpha
         self.device = device
-        
-        # Pre-tokenized data storage
-        self.bio_tokenized_data = {}
-        self.description_tokenized_data = {}
-        self.bio_metadata = {}
-        self.description_metadata = {}
-        
-        # Load required pre-tokenized data
-        if not os.path.exists(bio_tokenized_file):
-            raise FileNotFoundError(f"Biography tokenized file not found: {bio_tokenized_file}")
-        if not os.path.exists(description_tokenized_file):
-            raise FileNotFoundError(f"Description tokenized file not found: {description_tokenized_file}")
-            
-        self._load_bio_tokenized_data(bio_tokenized_file)
-        self._load_description_tokenized_data(description_tokenized_file)
         
         # Initialize sentence transformer models
         print(f"📥 Loading sentence transformer models...")
@@ -90,8 +76,6 @@ class SCOTUSVotingModel(nn.Module):
         else:
             print(f"Description model embedding dimension {desc_actual_dim} matches expected {embedding_dim}")
         
-        print(f"✅ Model initialized with {len(self.bio_tokenized_data)} biography and {len(self.description_tokenized_data)} case description tokenized files")
-        
         # Justice attention mechanism or concatenation
         self.justice_dropout = nn.Dropout(dropout_rate)
         if use_justice_attention:
@@ -118,345 +102,178 @@ class SCOTUSVotingModel(nn.Module):
             nn.Dropout(dropout_rate),
             nn.Linear(hidden_dim // 2, 3)  # 3 output neurons for voting percentages
         )
-        
-        # Layer normalization for embeddings (if needed)
-        self.layer_norm = nn.LayerNorm(embedding_dim)
     
-    def _load_bio_tokenized_data(self, tokenized_file: str):
-        """Load pre-tokenized biography data."""
-        print(f"📥 Loading pre-tokenized biographies from: {tokenized_file}")
-        
-        with open(tokenized_file, 'rb') as f:
-            data = pickle.load(f)
-        
-        # Load tokenized data and move to specified device
-        self.bio_tokenized_data = {}
-        for path, tokenized_info in data['tokenized_data'].items():
-            self.bio_tokenized_data[path] = {
-                'input_ids': tokenized_info['input_ids'].to(self.device),
-                'attention_mask': tokenized_info['attention_mask'].to(self.device)
-            }
-        
-        self.bio_metadata = data['metadata']
-        
-        print(f"✅ Loaded {self.bio_metadata['num_tokenized']} pre-tokenized biographies to {self.device}")
-    
-    def _load_description_tokenized_data(self, tokenized_file: str):
-        """Load pre-tokenized case description data."""
-        print(f"📥 Loading pre-tokenized descriptions from: {tokenized_file}")
-        
-        with open(tokenized_file, 'rb') as f:
-            data = pickle.load(f)
-        
-        # Load tokenized data and move to specified device
-        self.description_tokenized_data = {}
-        for path, tokenized_info in data['tokenized_data'].items():
-            self.description_tokenized_data[path] = {
-                'input_ids': tokenized_info['input_ids'].to(self.device),
-                'attention_mask': tokenized_info['attention_mask'].to(self.device)
-            }
-        
-        self.description_metadata = data['metadata']
-        
-        print(f"✅ Loaded {self.description_metadata['num_tokenized']} pre-tokenized descriptions to {self.device}")
-    
-    def encode_case_description(self, case_description_path: str) -> torch.Tensor:
+    def encode_case_descriptions(self, input_ids: torch.Tensor, attention_mask: torch.Tensor) -> torch.Tensor:
         """
-        Encode case description using pre-tokenized data and sentence transformer.
+        Encode case descriptions using input_ids and attention_mask.
         
         Args:
-            case_description_path: Path to case description file (for pre-tokenized lookup)
+            input_ids: Tensor of shape (batch_size, seq_len)
+            attention_mask: Tensor of shape (batch_size, seq_len)
             
         Returns:
-            Tensor of shape (embedding_dim,) representing the case
-            
-        Raises:
-            KeyError: If the case description path is not found in pre-tokenized data
+            Tensor of shape (batch_size, embedding_dim) representing the cases
         """
-        if not case_description_path:
-            raise ValueError("case_description_path is required when using pre-tokenized data")
+        # Prepare features for sentence transformer
+        features = {
+            'input_ids': input_ids,
+            'attention_mask': attention_mask
+        }
         
-        # Normalize path for consistent lookup
-        normalized_path = case_description_path.replace('\\', '/')
-        
-        # Try different path variations for robust lookup
-        path_variations = [
-            normalized_path,
-            os.path.abspath(normalized_path).replace('\\', '/'),
-            os.path.normpath(normalized_path).replace('\\', '/'),
-        ]
-        
-        tokenized_data = None
-        for path_variant in path_variations:
-            if path_variant in self.description_tokenized_data:
-                tokenized_data = self.description_tokenized_data[path_variant]
-                break
-        
-        if tokenized_data is None:
-            # If not found, raise error with helpful message
-            available_paths = list(self.description_tokenized_data.keys())[:5]  # Show first 5 for debugging
-            raise KeyError(
-                f"Case description path not found in pre-tokenized data: {case_description_path}\n"
-                f"Tried variations: {path_variations}\n"
-                f"Available paths (first 5): {available_paths}\n"
-                f"Total available: {len(self.description_tokenized_data)}"
-            )
-        
-        # Pass through sentence transformer model
-        # Note: SentenceTransformer expects batch, so we add batch dimension
-        input_ids = tokenized_data['input_ids'].unsqueeze(0)  # (1, seq_len)
-        attention_mask = tokenized_data['attention_mask'].unsqueeze(0)  # (1, seq_len)
-        attention_mask_unsqueezed = attention_mask.unsqueeze(1).unsqueeze(2).float()
-        
-        transformer_model = None
-        for module in self.description_model._modules.values():
-            if hasattr(module, 'auto_model'):  # This is the Transformer module
-                transformer_model = module.auto_model
-                break
-        
-        if transformer_model is None:
-            # Fallback: try to get the first module that looks like a transformer
-            for module in self.description_model._modules.values():
-                if hasattr(module, 'embeddings') and hasattr(module, 'encoder'):
-                    transformer_model = module
-                    break
-        if transformer_model is None:
-            raise RuntimeError("Could not find transformer model in SentenceTransformer")
-    
-
-        # Use the sentence transformer's internal encoding
+        # Use the sentence transformer's encoding
         with torch.no_grad() if not self.training else torch.enable_grad():
-            # Get embeddings from the underlying transformer model
-            word_embeddings = transformer_model.embeddings.word_embeddings(input_ids)
+            embeddings = self.description_model(features)['sentence_embedding']
+            
             if self.use_noise_reg and self.training:
-                word_embeddings = self.noise_reg(word_embeddings)
-            # Get position and token type embeddings if they exist
-            if hasattr(transformer_model.embeddings, 'position_embeddings'):
-                seq_length = input_ids.size(1)
-                position_ids = torch.arange(seq_length, dtype=torch.long, device=input_ids.device)
-                position_ids = position_ids.unsqueeze(0).expand_as(input_ids)
-                position_embeddings = transformer_model.embeddings.position_embeddings(position_ids)
-                word_embeddings += position_embeddings
-            
-            if hasattr(transformer_model.embeddings, 'token_type_embeddings'):
-                token_type_ids = torch.zeros_like(input_ids)
-                token_type_embeddings = transformer_model.embeddings.token_type_embeddings(token_type_ids)
-                word_embeddings += token_type_embeddings
-            
-            # Apply LayerNorm and dropout if they exist in embeddings
-            if hasattr(transformer_model.embeddings, 'LayerNorm'):
-                word_embeddings = transformer_model.embeddings.LayerNorm(word_embeddings)
-            if hasattr(transformer_model.embeddings, 'dropout'):
-                word_embeddings = transformer_model.embeddings.dropout(word_embeddings)
-            # Pass through the encoder layers
-            encoder_outputs = transformer_model.encoder(
-                hidden_states=word_embeddings,
-                attention_mask=attention_mask_unsqueezed
-            )
-            
-            # Get the last hidden state
-            last_hidden_state = encoder_outputs.last_hidden_state  # (1, seq_len, hidden_dim)
-            # Apply pooling (mean pooling by default for sentence transformers)
-            # Mask out padding tokens for proper mean pooling
-            mask_3d = attention_mask.unsqueeze(-1).float() 
-            sum_embeddings = torch.sum(last_hidden_state * mask_3d, 1)
-            sum_mask = torch.clamp(mask_3d.sum(1), min=1e-9)
-            sentence_embedding = sum_embeddings / sum_mask  # (1, hidden_dim)
-            
-            # Apply projection layer if exists
+                embeddings = self.noise_reg(embeddings)
+                
             if self.description_projection_layer:
-                sentence_embedding = self.description_projection_layer(sentence_embedding)
+                embeddings = self.description_projection_layer(embeddings)
         
-        return sentence_embedding.squeeze(0)  # Remove batch dimension
-
+        return embeddings
     
-    def encode_justice_bio(self, justice_bio_path: str) -> torch.Tensor:
+    def encode_justice_bios(self, input_ids: torch.Tensor, attention_mask: torch.Tensor) -> torch.Tensor:
         """
-        Encode justice biography using pre-tokenized data and sentence transformer.
+        Encode justice biographies using input_ids and attention_mask.
         
         Args:
-            justice_bio_path: Path to justice biography file (for pre-tokenized lookup)
+            input_ids: Tensor of shape (total_justices, seq_len)
+            attention_mask: Tensor of shape (total_justices, seq_len)
             
         Returns:
-            Tensor of shape (embedding_dim,) representing the justice
-            
-        Raises:
-            KeyError: If the justice biography path is not found in pre-tokenized data
+            Tensor of shape (total_justices, embedding_dim) representing the justices
         """
-        if not justice_bio_path:
-            raise ValueError("justice_bio_path is required when using pre-tokenized data")
+        # Prepare features for sentence transformer
+        features = {
+            'input_ids': input_ids,
+            'attention_mask': attention_mask
+        }
         
-        # Normalize path for consistent lookup
-        normalized_path = justice_bio_path.replace('\\', '/')
-        
-        # Try different path variations for robust lookup
-        path_variations = [
-            normalized_path,
-            os.path.abspath(normalized_path).replace('\\', '/'),
-            os.path.normpath(normalized_path).replace('\\', '/'),
-        ]
-        
-        tokenized_data = None
-        for path_variant in path_variations:
-            if path_variant in self.bio_tokenized_data:
-                tokenized_data = self.bio_tokenized_data[path_variant]
-                break
-        
-        if tokenized_data is None:
-            # If not found, raise error with helpful message
-            available_paths = list(self.bio_tokenized_data.keys())[:5]  # Show first 5 for debugging
-            raise KeyError(
-                f"Justice biography path not found in pre-tokenized data: {justice_bio_path}\n"
-                f"Tried variations: {path_variations}\n"
-                f"Available paths (first 5): {available_paths}\n"
-                f"Total available: {len(self.bio_tokenized_data)}"
-            )
-        
-        # Pass through sentence transformer model
-        # Note: SentenceTransformer expects batch, so we add batch dimension
-        input_ids = tokenized_data['input_ids'].unsqueeze(0)  # (1, seq_len)
-        attention_mask = tokenized_data['attention_mask'].unsqueeze(0)  # (1, seq_len)
-        
-        # Use the sentence transformer's internal encoding
+        # Use the sentence transformer's encoding
         with torch.no_grad() if not self.training else torch.enable_grad():
-            # Get embeddings from the underlying transformer model
-            features = {
-                'input_ids': input_ids,
-                'attention_mask': attention_mask
-            }
-            embedding = self.bio_model(features)['sentence_embedding']
+            embeddings = self.bio_model(features)['sentence_embedding']
+            
             if self.use_noise_reg and self.training:
-                embedding = self.noise_reg(embedding)
+                embeddings = self.noise_reg(embeddings)
+                
             if self.bio_projection_layer:
-                embedding = self.bio_projection_layer(embedding)
-            
-        return embedding.squeeze(0)  # Remove batch dimension
+                embeddings = self.bio_projection_layer(embeddings)
+        
+        return embeddings
     
-    def forward(self, case_description_path: str, justice_bio_paths: List[str]) -> torch.Tensor:
+    def forward(self, 
+                case_input_ids: torch.Tensor, 
+                case_attention_mask: torch.Tensor,
+                justice_input_ids: List[torch.Tensor], 
+                justice_attention_mask: List[torch.Tensor],
+                justice_counts: List[int]) -> torch.Tensor:
         """
-        Forward pass of the model using pre-tokenized data and sentence transformers.
+        Forward pass of the model using tokenized inputs.
         
         Args:
-            case_description_path: Path to case description file (for pre-tokenized lookup)
-            justice_bio_paths: List of paths to justice biography files (for pre-tokenized lookup)
+            case_input_ids: Tensor of shape (batch_size, case_seq_len)
+            case_attention_mask: Tensor of shape (batch_size, case_seq_len)
+            justice_input_ids: List of tensors, each of shape (num_justices_i, justice_seq_len)
+            justice_attention_mask: List of tensors, each of shape (num_justices_i, justice_seq_len)
+            justice_counts: List of integers indicating number of justices per case
             
         Returns:
-            Tensor of shape (3,) with voting percentage predictions
+            Tensor of shape (batch_size, 3) with voting percentage predictions
         """
-        # Encode case description
-        case_embedding = self.encode_case_description(case_description_path)
+        batch_size = case_input_ids.size(0)
         
-        # Encode justice biographies
-        justice_embeddings = []
-        for bio_path in justice_bio_paths:
-            if bio_path:  # Skip None/empty paths
-                justice_embedding = self.encode_justice_bio(bio_path)
-                justice_embeddings.append(justice_embedding)
+        # Encode case descriptions
+        case_embeddings = self.encode_case_descriptions(case_input_ids, case_attention_mask)  # (batch_size, embedding_dim)
         
-        # Number of real justices with valid bio paths
-        num_real_justices = len(justice_embeddings)
+        # Encode all justice biographies
+        all_justice_input_ids = torch.cat(justice_input_ids, dim=0)  # (total_justices, justice_seq_len)
+        all_justice_attention_mask = torch.cat(justice_attention_mask, dim=0)  # (total_justices, justice_seq_len)
+        all_justice_embeddings = self.encode_justice_bios(all_justice_input_ids, all_justice_attention_mask)  # (total_justices, embedding_dim)
         
-        # Ensure there is at least one justice to process
-        if num_real_justices == 0:
-            raise ValueError("Cannot process a case with no valid justice biographies.")
-
-        # Pad with zeros if fewer justices than max_justices
-        while len(justice_embeddings) < self.max_justices:
-            zero_embedding = torch.zeros(self.embedding_dim, device=case_embedding.device)
-            justice_embeddings.append(zero_embedding)
+        # Process each case with its justices
+        batch_outputs = []
+        justice_start_idx = 0
         
-        # Truncate if more justices than max_justices
-        justice_embeddings = justice_embeddings[:self.max_justices]
-
-        if self.use_justice_attention:
-            # Use attention mechanism
-            # Stack justice embeddings: (max_justices, embedding_dim)
-            justice_embs_tensor = torch.stack(justice_embeddings)
-            justice_embs_tensor = self.justice_dropout(justice_embs_tensor)
-            if self.use_noise_reg and self.training:
-                justice_embs_tensor = self.noise_reg(justice_embs_tensor)
+        for case_idx in range(batch_size):
+            num_justices = justice_counts[case_idx]
             
-            # Create mask for real vs padded justices
-            justice_mask = torch.zeros(self.max_justices, dtype=torch.bool, device=case_embedding.device)
-            justice_mask[:num_real_justices] = True  # True for real justices, False for padding
+            # Get embeddings for this case
+            case_embedding = case_embeddings[case_idx]  # (embedding_dim,)
+            case_justice_embeddings = all_justice_embeddings[justice_start_idx:justice_start_idx + num_justices]  # (num_justices, embedding_dim)
+            justice_start_idx += num_justices
             
-            # Apply cross-attention
-            court_embedding = self.justice_attention(
-                case_emb=case_embedding,
-                justice_embs=justice_embs_tensor,
-                justice_mask=justice_mask
-            )
+            # Convert to list for easier manipulation
+            case_justice_embeddings_list = [case_justice_embeddings[i] for i in range(num_justices)]
             
-            # Combine case and court embeddings
-            combined_embedding = torch.cat([case_embedding, court_embedding], dim=0)
-        else:
-            # Original concatenation approach
-            all_embeddings = [case_embedding] + justice_embeddings
-            combined_embedding = torch.cat(all_embeddings, dim=0)
-            combined_embedding = self.justice_dropout(combined_embedding)
-            if self.use_noise_reg and self.training:
-                combined_embedding = self.noise_reg(combined_embedding)
+            # Pad with zeros if fewer justices than max_justices
+            while len(case_justice_embeddings_list) < self.max_justices:
+                zero_embedding = torch.zeros(self.embedding_dim, device=case_embedding.device)
+                case_justice_embeddings_list.append(zero_embedding)
+            
+            # Truncate if more justices than max_justices
+            case_justice_embeddings_list = case_justice_embeddings_list[:self.max_justices]
+            
+            if self.use_justice_attention:
+                # Use attention mechanism
+                # Stack justice embeddings: (max_justices, embedding_dim)
+                justice_embs_tensor = torch.stack(case_justice_embeddings_list)
+                justice_embs_tensor = self.justice_dropout(justice_embs_tensor)
+                
+                if self.use_noise_reg and self.training:
+                    justice_embs_tensor = self.noise_reg(justice_embs_tensor)
+                
+                # Create mask for real vs padded justices
+                justice_mask = torch.zeros(self.max_justices, dtype=torch.bool, device=case_embedding.device)
+                justice_mask[:num_justices] = True  # True for real justices, False for padding
+                
+                # Apply cross-attention
+                court_embedding = self.justice_attention(
+                    case_emb=case_embedding,
+                    justice_embs=justice_embs_tensor,
+                    justice_mask=justice_mask
+                )
+                
+                # Combine case and court embeddings
+                combined_embedding = torch.cat([case_embedding, court_embedding], dim=0)
+            else:
+                # Original concatenation approach
+                all_embeddings = [case_embedding] + case_justice_embeddings_list
+                combined_embedding = torch.cat(all_embeddings, dim=0)
+                combined_embedding = self.justice_dropout(combined_embedding)
+                
+                if self.use_noise_reg and self.training:
+                    combined_embedding = self.noise_reg(combined_embedding)
+            
+            # Pass through fully connected layers
+            output = self.fc_layers(combined_embedding)  # (3,)
+            batch_outputs.append(output)
         
-        # Pass through fully connected layers
-        output = self.fc_layers(combined_embedding)
-        
-        return output
+        # Stack all outputs
+        return torch.stack(batch_outputs)  # (batch_size, 3)
     
-    def predict_from_files(self, case_description_path: str, justice_bio_paths: List[str]) -> torch.Tensor:
+    def predict_probabilities(self, 
+                            case_input_ids: torch.Tensor, 
+                            case_attention_mask: torch.Tensor,
+                            justice_input_ids: List[torch.Tensor], 
+                            justice_attention_mask: List[torch.Tensor],
+                            justice_counts: List[int]) -> torch.Tensor:
         """
-        Make prediction from file paths using pre-tokenized data.
+        Make predictions returning probabilities.
         
         Args:
-            case_description_path: Path to case description file
-            justice_bio_paths: List of paths to justice biography files
+            case_input_ids: Tensor of shape (batch_size, case_seq_len)
+            case_attention_mask: Tensor of shape (batch_size, case_seq_len)
+            justice_input_ids: List of tensors, each of shape (num_justices_i, justice_seq_len)
+            justice_attention_mask: List of tensors, each of shape (num_justices_i, justice_seq_len)
+            justice_counts: List of integers indicating number of justices per case
             
         Returns:
-            Tensor of shape (3,) with voting percentage predictions (probabilities)
-            
-        Note:
-            This method requires all files to be pre-tokenized in the .pkl files.
-            Sentence transformers are applied during forward pass for potential fine-tuning.
+            Tensor of shape (batch_size, 3) with voting percentage predictions (probabilities)
         """
         with torch.no_grad():
-            logits = self.forward(case_description_path, justice_bio_paths)
-            probabilities = F.softmax(logits, dim=0)
+            logits = self.forward(case_input_ids, case_attention_mask, justice_input_ids, justice_attention_mask, justice_counts)
+            probabilities = F.softmax(logits, dim=-1)
         return probabilities
-    
-    def predict_logits_from_files(self, case_description_path: str, justice_bio_paths: List[str]) -> torch.Tensor:
-        """
-        Make prediction from file paths returning raw logits (for training/loss computation).
-        
-        Args:
-            case_description_path: Path to case description file
-            justice_bio_paths: List of paths to justice biography files
-            
-        Returns:
-            Tensor of shape (3,) with raw logits
-        """
-        return self.forward(case_description_path, justice_bio_paths)
-    
-    def predict_batch_from_dataset(self, dataset_entries: List[Tuple[List[str], str, List[float]]], 
-                                   return_probabilities: bool = True) -> torch.Tensor:
-        """
-        Make batch predictions from dataset entries.
-        
-        Args:
-            dataset_entries: List of (justice_bio_paths, case_description_path, voting_percentages)
-            return_probabilities: If True, returns probabilities; if False, returns raw logits
-            
-        Returns:
-            Tensor of shape (batch_size, 3) with predictions
-        """
-        batch_predictions = []
-        
-        for justice_bio_paths, case_description_path, _ in dataset_entries:
-            if return_probabilities:
-                prediction = self.predict_from_files(case_description_path, justice_bio_paths)
-            else:
-                prediction = self.predict_logits_from_files(case_description_path, justice_bio_paths)
-            batch_predictions.append(prediction)
-        
-        return torch.stack(batch_predictions)
     
     def save_model(self, filepath: str):
         """Save the model state dict."""
@@ -467,14 +284,11 @@ class SCOTUSVotingModel(nn.Module):
             'max_justices': self.max_justices,
             'num_attention_heads': self.num_attention_heads,
             'use_justice_attention': self.use_justice_attention,
-            'bio_metadata': self.bio_metadata,
-            'description_metadata': self.description_metadata,
             'device': self.device
         }, filepath)
     
     @classmethod
-    def load_model(cls, filepath: str, bio_tokenized_file: str, description_tokenized_file: str,
-                   bio_model_name: str, description_model_name: str, device: str = None):
+    def load_model(cls, filepath: str, bio_model_name: str, description_model_name: str, device: str = None):
         """Load a saved model."""
         checkpoint = torch.load(filepath, map_location='cpu')  # Load to CPU first
         
@@ -483,8 +297,6 @@ class SCOTUSVotingModel(nn.Module):
             device = checkpoint.get('device', 'cpu')
         
         model = cls(
-            bio_tokenized_file=bio_tokenized_file,
-            description_tokenized_file=description_tokenized_file,
             bio_model_name=bio_model_name,
             description_model_name=description_model_name,
             embedding_dim=checkpoint['embedding_dim'],
@@ -499,25 +311,6 @@ class SCOTUSVotingModel(nn.Module):
         model.to(device)
         
         return model
-    
-    def get_tokenized_stats(self) -> Dict[str, Any]:
-        """Get statistics about loaded tokenized data."""
-        stats = {
-            'bio_tokenized_loaded': len(self.bio_tokenized_data),
-            'description_tokenized_loaded': len(self.description_tokenized_data),
-            'bio_metadata': self.bio_metadata,
-            'description_metadata': self.description_metadata,
-            'device': self.device
-        }
-            
-        return stats
-    
-    def get_available_paths(self) -> Dict[str, List[str]]:
-        """Get lists of available file paths in tokenized data."""
-        return {
-            'bio_paths': list(self.bio_tokenized_data.keys()),
-            'description_paths': list(self.description_tokenized_data.keys())
-        }
     
     def noise_reg(self, embedding: torch.Tensor) -> torch.Tensor:
         """Apply noise regularization to an embedding following NEFTune (arXiv:2310.05914)."""
@@ -562,19 +355,6 @@ class SCOTUSVotingModel(nn.Module):
         for param in self.description_model.parameters():
             param.requires_grad = True
 
-    def unfreeze_models_selectively(self, unfreeze_bio: bool = True, unfreeze_description: bool = True):
-        """
-        Selectively unfreeze sentence transformer models.
-        
-        Args:
-            unfreeze_bio: Whether to unfreeze the biography model
-            unfreeze_description: Whether to unfreeze the description model
-        """
-        if unfreeze_bio:
-            self.unfreeze_bio_model()
-        if unfreeze_description:
-            self.unfreeze_description_model()
-
     def get_sentence_transformer_status(self) -> Dict[str, bool]:
         """
         Get the frozen/unfrozen status of sentence transformers.
@@ -591,514 +371,28 @@ class SCOTUSVotingModel(nn.Module):
             'any_trainable': bio_trainable or desc_trainable
         }
 
-    def get_sentence_transformer_layer_info(self) -> Dict[str, Any]:
-        """
-        Get information about the layers in sentence transformers.
-        
-        Returns:
-            Dictionary with layer information for both models
-        """
-        bio_layer_info = self._get_transformer_layer_info(self.bio_model)
-        desc_layer_info = self._get_transformer_layer_info(self.description_model)
-        
-        return {
-            'bio_model': bio_layer_info,
-            'description_model': desc_layer_info
-        }
-
-    def _get_transformer_layer_info(self, sentence_transformer) -> Dict[str, Any]:
-        """
-        Get layer information for a sentence transformer.
-        
-        Args:
-            sentence_transformer: SentenceTransformer model
-            
-        Returns:
-            Dictionary with layer information
-        """
-        # Access the underlying transformer model
-        # SentenceTransformer typically has an auto_model attribute
-        if hasattr(sentence_transformer, 'auto_model'):
-            transformer_model = sentence_transformer.auto_model
-        elif hasattr(sentence_transformer, '_modules'):
-            # Find the transformer component
-            for module in sentence_transformer._modules.values():
-                if hasattr(module, 'encoder') and hasattr(module.encoder, 'layer'):
-                    transformer_model = module
-                    break
-            else:
-                return {'error': 'Could not find transformer model'}
-        else:
-            return {'error': 'Could not access transformer model'}
-        
-        # Get layer information
-        layer_info = {
-            'total_layers': 0,
-            'layer_names': [],
-            'encoder_layers': 0,
-            'has_encoder': False,
-            'model_type': type(transformer_model).__name__
-        }
-        
-        # Check for encoder layers (most common structure)
-        if hasattr(transformer_model, 'encoder') and hasattr(transformer_model.encoder, 'layer'):
-            layer_info['has_encoder'] = True
-            layer_info['encoder_layers'] = len(transformer_model.encoder.layer)
-            layer_info['total_layers'] = layer_info['encoder_layers']
-            
-            # Get layer names
-            for i, layer in enumerate(transformer_model.encoder.layer):
-                layer_info['layer_names'].append(f'encoder.layer.{i}')
-        
-        # Also check for other layer structures
-        for name, module in transformer_model.named_modules():
-            if 'layer' in name.lower() and hasattr(module, 'parameters'):
-                if name not in layer_info['layer_names']:
-                    layer_info['layer_names'].append(name)
-        
-        return layer_info
-
-    def unfreeze_final_layers(self, n_layers: int, unfreeze_bio: bool = True, unfreeze_description: bool = True):
-        """
-        Unfreeze only the final N layers of sentence transformers.
-        
-        Args:
-            n_layers: Number of final layers to unfreeze (0 = unfreeze all)
-            unfreeze_bio: Whether to unfreeze bio model layers
-            unfreeze_description: Whether to unfreeze description model layers
-        """
-        if unfreeze_bio:
-            self._unfreeze_model_final_layers(self.bio_model, n_layers)
-        
-        if unfreeze_description:
-            self._unfreeze_model_final_layers(self.description_model, n_layers)
-
-    def _unfreeze_model_final_layers(self, sentence_transformer, n_layers: int):
-        """
-        Unfreeze final N layers of a sentence transformer.
-        
-        Args:
-            sentence_transformer: SentenceTransformer model
-            n_layers: Number of final layers to unfreeze (0 = unfreeze all)
-        """
-        # First, freeze everything
-        for param in sentence_transformer.parameters():
-            param.requires_grad = False
-        
-        if n_layers == 0:
-            # Unfreeze all layers
-            for param in sentence_transformer.parameters():
-                param.requires_grad = True
-            return
-        
-        # Access the underlying transformer model
-        if hasattr(sentence_transformer, 'auto_model'):
-            transformer_model = sentence_transformer.auto_model
-        elif hasattr(sentence_transformer, '_modules'):
-            # Find the transformer component
-            for module in sentence_transformer._modules.values():
-                if hasattr(module, 'encoder') and hasattr(module.encoder, 'layer'):
-                    transformer_model = module
-                    break
-            else:
-                return
-        else:
-            return
-        
-        # Unfreeze final N layers
-        if hasattr(transformer_model, 'encoder') and hasattr(transformer_model.encoder, 'layer'):
-            total_layers = len(transformer_model.encoder.layer)
-            start_layer = max(0, total_layers - n_layers)
-            
-            # Unfreeze the final N layers
-            for i in range(start_layer, total_layers):
-                for param in transformer_model.encoder.layer[i].parameters():
-                    param.requires_grad = True
-            
-            # Also unfreeze the pooler and final classification layers if they exist
-            if hasattr(transformer_model, 'pooler'):
-                for param in transformer_model.pooler.parameters():
-                    param.requires_grad = True
-            
-            # Unfreeze any final layers outside the encoder
-            for name, module in transformer_model.named_modules():
-                if name in ['cls', 'classifier', 'pooler', 'dense']:
-                    for param in module.parameters():
-                        param.requires_grad = True
-
-    def get_layer_trainable_status(self) -> Dict[str, Any]:
-        """
-        Get detailed trainable status of layers in sentence transformers.
-        
-        Returns:
-            Dictionary with detailed layer status
-        """
-        bio_status = self._get_model_layer_status(self.bio_model, 'bio_model')
-        desc_status = self._get_model_layer_status(self.description_model, 'description_model')
-        
-        return {
-            'bio_model': bio_status,
-            'description_model': desc_status
-        }
-
-    def _get_model_layer_status(self, sentence_transformer, model_name: str) -> Dict[str, Any]:
-        """
-        Get layer-wise trainable status for a sentence transformer.
-        
-        Args:
-            sentence_transformer: SentenceTransformer model
-            model_name: Name of the model for logging
-            
-        Returns:
-            Dictionary with layer status
-        """
-        status = {
-            'total_trainable_params': 0,
-            'total_params': 0,
-            'trainable_layers': [],
-            'frozen_layers': []
-        }
-        
-        # Access the underlying transformer model
-        if hasattr(sentence_transformer, 'auto_model'):
-            transformer_model = sentence_transformer.auto_model
-        elif hasattr(sentence_transformer, '_modules'):
-            # Find the transformer component
-            for module in sentence_transformer._modules.values():
-                if hasattr(module, 'encoder') and hasattr(module.encoder, 'layer'):
-                    transformer_model = module
-                    break
-            else:
-                return status
-        else:
-            return status
-        
-        # Check layer-wise status
-        if hasattr(transformer_model, 'encoder') and hasattr(transformer_model.encoder, 'layer'):
-            for i, layer in enumerate(transformer_model.encoder.layer):
-                layer_name = f'encoder.layer.{i}'
-                layer_trainable = any(param.requires_grad for param in layer.parameters())
-                layer_param_count = sum(param.numel() for param in layer.parameters())
-                
-                if layer_trainable:
-                    status['trainable_layers'].append(layer_name)
-                    status['total_trainable_params'] += layer_param_count
-                else:
-                    status['frozen_layers'].append(layer_name)
-                
-                status['total_params'] += layer_param_count
-        
-        return status
-
-    def encode_case_description_batch(self, case_description_paths: List[str]) -> torch.Tensor:
-        """
-        Encode multiple case descriptions in a batch using pre-tokenized data and sentence transformer.
-        
-        Args:
-            case_description_paths: List of paths to case description files
-            
-        Returns:
-            Tensor of shape (batch_size, embedding_dim) representing the cases
-            
-        Raises:
-            KeyError: If any case description path is not found in pre-tokenized data
-        """
-        if not case_description_paths:
-            raise ValueError("case_description_paths list cannot be empty")
-        
-        batch_input_ids = []
-        batch_attention_masks = []
-        
-        for case_description_path in case_description_paths:
-            if not case_description_path:
-                raise ValueError("case_description_path is required when using pre-tokenized data")
-            
-            # Normalize path for consistent lookup
-            normalized_path = case_description_path.replace('\\', '/')
-            
-            # Try different path variations for robust lookup
-            path_variations = [
-                normalized_path,
-                os.path.abspath(normalized_path).replace('\\', '/'),
-                os.path.normpath(normalized_path).replace('\\', '/'),
-            ]
-            
-            tokenized_data = None
-            for path_variant in path_variations:
-                if path_variant in self.description_tokenized_data:
-                    tokenized_data = self.description_tokenized_data[path_variant]
-                    break
-            
-            if tokenized_data is None:
-                # If not found, raise error with helpful message
-                available_paths = list(self.description_tokenized_data.keys())[:5]  # Show first 5 for debugging
-                raise KeyError(
-                    f"Case description path not found in pre-tokenized data: {case_description_path}\n"
-                    f"Tried variations: {path_variations}\n"
-                    f"Available paths (first 5): {available_paths}\n"
-                    f"Total available: {len(self.description_tokenized_data)}"
-                )
-            
-            batch_input_ids.append(tokenized_data['input_ids'])
-            batch_attention_masks.append(tokenized_data['attention_mask'])
-        
-        pad_id = self.description_model.tokenizer.pad_token_id
-        batch_input_ids = pad_sequence(batch_input_ids, batch_first=True, padding_value=pad_id)
-        batch_attention_masks = pad_sequence(batch_attention_masks, batch_first=True, padding_value=0)
-        batch_attention_masks_unsqueezed = batch_attention_masks.unsqueeze(1).unsqueeze(2).float()
-
-        transformer_model = None
-        for module in self.description_model._modules.values():
-            if hasattr(module, 'auto_model'):  # This is the Transformer module
-                transformer_model = module.auto_model
-                break
-        
-        if transformer_model is None:
-            raise RuntimeError("Could not find transformer model in SentenceTransformer")
-
-        # Use the sentence transformer's internal encoding
-        with torch.no_grad() if not self.training else torch.enable_grad():
-            # Get embeddings from the underlying transformer model
-            word_embeddings = transformer_model.embeddings.word_embeddings(batch_input_ids) # (B,L,D)
-            if self.use_noise_reg and self.training:
-                word_embeddings = self.noise_reg(word_embeddings)
-            # Get position and token type embeddings if they exist
-            if hasattr(transformer_model.embeddings, 'position_embeddings'):
-                seq_length = batch_input_ids.size(1) # L
-                position_ids = torch.arange(seq_length, dtype=torch.long, device=batch_input_ids.device)
-                position_ids = position_ids.unsqueeze(0).expand_as(batch_input_ids) # (B,L)
-                position_embeddings = transformer_model.embeddings.position_embeddings(position_ids)
-                word_embeddings += position_embeddings
-            
-            if hasattr(transformer_model.embeddings, 'token_type_embeddings'):
-                token_type_ids = torch.zeros_like(batch_input_ids) # (B,L)
-                token_type_embeddings = transformer_model.embeddings.token_type_embeddings(token_type_ids) # (B,L,D)
-                word_embeddings += token_type_embeddings
-            
-            # Apply LayerNorm and dropout if they exist in embeddings
-            if hasattr(transformer_model.embeddings, 'LayerNorm'):
-                word_embeddings = transformer_model.embeddings.LayerNorm(word_embeddings)
-            if hasattr(transformer_model.embeddings, 'dropout'):
-                word_embeddings = transformer_model.embeddings.dropout(word_embeddings)
-                
-            # Pass through the encoder layers
-            encoder_outputs = transformer_model.encoder(
-                hidden_states=word_embeddings,
-                attention_mask=batch_attention_masks_unsqueezed
-            )
-
-            # Get the last hidden state
-            last_hidden_state = encoder_outputs.last_hidden_state  # (B,L,D)
-            
-            # Apply pooling (mean pooling by default for sentence transformers)
-            # Mask out padding tokens for proper mean pooling
-            mask_2d = batch_attention_masks.unsqueeze(-1) # (B,L,1)
-            
-            sum_embeddings = torch.sum(last_hidden_state * mask_2d, 1)
-            
-            sum_mask = torch.clamp(mask_2d.sum(1), min=1e-9)
-            
-            sentence_embedding = sum_embeddings / sum_mask  # (1, hidden_dim)
-            
-            
-            # Apply projection layer if exists
-            if self.description_projection_layer:
-                sentence_embedding = self.description_projection_layer(sentence_embedding)
-            
-        return sentence_embedding  # Remove batch dimension  
-    
-    def encode_justice_bio_batch(self, justice_bio_paths_list: List[List[str]]) -> torch.Tensor:
-        """
-        Encode multiple justice biographies in a batch using pre-tokenized data and sentence transformer.
-        
-        Args:
-            justice_bio_paths_list: List of lists, where each inner list contains paths to justice biography files
-            
-        Returns:
-            Tensor of shape (total_justices, embedding_dim) representing all justices
-            
-        Raises:
-            KeyError: If any justice biography path is not found in pre-tokenized data
-        """
-        if not justice_bio_paths_list:
-            raise ValueError("justice_bio_paths_list cannot be empty")
-        
-        all_input_ids = []
-        all_attention_masks = []
-        justice_to_case_mapping = []  # Track which justice belongs to which case
-        
-        for case_idx, justice_bio_paths in enumerate(justice_bio_paths_list):
-            for justice_idx, bio_path in enumerate(justice_bio_paths):
-                if not bio_path:  # Skip None/empty paths
-                    continue
-                
-                # Normalize path for consistent lookup
-                normalized_path = bio_path.replace('\\', '/')
-                
-                # Try different path variations for robust lookup
-                path_variations = [
-                    normalized_path,
-                    os.path.abspath(normalized_path).replace('\\', '/'),
-                    os.path.normpath(normalized_path).replace('\\', '/'),
-                ]
-                
-                tokenized_data = None
-                for path_variant in path_variations:
-                    if path_variant in self.bio_tokenized_data:
-                        tokenized_data = self.bio_tokenized_data[path_variant]
-                        break
-                
-                if tokenized_data is None:
-                    # If not found, raise error with helpful message
-                    available_paths = list(self.bio_tokenized_data.keys())[:5]  # Show first 5 for debugging
-                    raise KeyError(
-                        f"Justice biography path not found in pre-tokenized data: {bio_path}\n"
-                        f"Tried variations: {path_variations}\n"
-                        f"Available paths (first 5): {available_paths}\n"
-                        f"Total available: {len(self.bio_tokenized_data)}"
-                    )
-                
-                all_input_ids.append(tokenized_data['input_ids'])
-                all_attention_masks.append(tokenized_data['attention_mask'])
-                justice_to_case_mapping.append((case_idx, justice_idx))
-        
-        if not all_input_ids:
-            raise ValueError("No valid justice biography paths found")
-        
-        pad_id = self.bio_model.tokenizer.pad_token_id
-        batch_input_ids = pad_sequence(all_input_ids, batch_first=True, padding_value=pad_id)
-        batch_attention_masks = pad_sequence(all_attention_masks, batch_first=True, padding_value=0)
-        
-        transformer_model = None
-        for module in self.bio_model._modules.values():
-            if hasattr(module, 'auto_model'):  # This is the Transformer module
-                transformer_model = module.auto_model
-                break
-        
-        # Use the sentence transformer's internal encoding
-        with torch.no_grad() if not self.training else torch.enable_grad():
-            # Get embeddings from the underlying transformer model
-            features = {
-                'input_ids': batch_input_ids,
-                'attention_mask': batch_attention_masks
-            }
-            embeddings = self.bio_model(features)['sentence_embedding']  # (total_justices, embedding_dim)
-            if self.use_noise_reg and self.training:
-                embeddings = self.noise_reg(embeddings)
-            if self.bio_projection_layer:
-                embeddings = self.bio_projection_layer(embeddings)
-        
-        # Store mapping for later use
-        self._justice_to_case_mapping = justice_to_case_mapping
-                
-        return embeddings  # (total_justices, embedding_dim)
-    
-    def forward_batch(self, case_description_paths: List[str], justice_bio_paths_list: List[List[str]]) -> torch.Tensor:
-        """
-        Forward pass of the model using pre-tokenized data and sentence transformers with true batch processing.
-        
-        Args:
-            case_description_paths: List of paths to case description files
-            justice_bio_paths_list: List of lists, where each inner list contains paths to justice biography files
-            
-        Returns:
-            Tensor of shape (batch_size, 3) with voting percentage predictions
-        """
-        batch_size = len(case_description_paths)
-        
-        # Encode case descriptions in batch
-        case_embeddings = self.encode_case_description_batch(case_description_paths)  # (batch_size, embedding_dim)
-        
-        # Encode justice biographies in batch
-        justice_embeddings_batch = self.encode_justice_bio_batch(justice_bio_paths_list)  # (total_justices, embedding_dim)
-        
-        # Process each case with its justices
-        batch_outputs = []
-        
-        # Create mapping from case_idx to justice embeddings indices
-        case_to_justice_indices = {}
-        for mapping_idx, (case_idx, justice_idx) in enumerate(self._justice_to_case_mapping):
-            if case_idx not in case_to_justice_indices:
-                case_to_justice_indices[case_idx] = []
-            case_to_justice_indices[case_idx].append(mapping_idx)
-        
-        for case_idx in range(batch_size):
-            # Get justices for this case
-            case_justice_embeddings = []
-            if case_idx in case_to_justice_indices:
-                for justice_idx in case_to_justice_indices[case_idx]:
-                    case_justice_embeddings.append(justice_embeddings_batch[justice_idx])
-            
-            # Get case embedding for this sample
-            case_embedding = case_embeddings[case_idx]  # (embedding_dim,)
-            
-            # Number of real justices for this case
-            num_real_justices = len(case_justice_embeddings)
-            
-            # Ensure there is at least one justice to process
-            if num_real_justices == 0:
-                raise ValueError(f"Cannot process case {case_idx} with no valid justice biographies.")
-            
-            # Pad with zeros if fewer justices than max_justices
-            while len(case_justice_embeddings) < self.max_justices:
-                zero_embedding = torch.zeros(self.embedding_dim, device=case_embedding.device)
-                case_justice_embeddings.append(zero_embedding)
-            
-            # Truncate if more justices than max_justices
-            case_justice_embeddings = case_justice_embeddings[:self.max_justices]
-            
-            if self.use_justice_attention:
-                # Use attention mechanism
-                # Stack justice embeddings: (max_justices, embedding_dim)
-                justice_embs_tensor = torch.stack(case_justice_embeddings)
-                justice_embs_tensor = self.justice_dropout(justice_embs_tensor)
-                if self.use_noise_reg and self.training:
-                    justice_embs_tensor = self.noise_reg(justice_embs_tensor)
-                
-                # Create mask for real vs padded justices
-                justice_mask = torch.zeros(self.max_justices, dtype=torch.bool, device=case_embedding.device)
-                justice_mask[:num_real_justices] = True  # True for real justices, False for padding
-                
-                # Apply cross-attention
-                court_embedding = self.justice_attention(
-                    case_emb=case_embedding,
-                    justice_embs=justice_embs_tensor,
-                    justice_mask=justice_mask
-                )
-                
-                # Combine case and court embeddings
-                combined_embedding = torch.cat([case_embedding, court_embedding], dim=0)
-            else:
-                # Original concatenation approach
-                all_embeddings = [case_embedding] + case_justice_embeddings
-                combined_embedding = torch.cat(all_embeddings, dim=0)
-                combined_embedding = self.justice_dropout(combined_embedding)
-                if self.use_noise_reg and self.training:
-                    combined_embedding = self.noise_reg(combined_embedding)
-                
-                # Pass through fully connected layers
-                output = self.fc_layers(combined_embedding)  # (3,)
-                batch_outputs.append(output)
-            
-        # Stack all outputs
-        return torch.stack(batch_outputs)  # (batch_size, 3)
-
 
 def collate_fn(batch):
     """
     Custom collate function for the DataLoader.
     """
     case_ids = [item['case_id'] for item in batch]
-    justice_bio_paths = [item['justice_bio_paths'] for item in batch]
-    case_description_paths = [item['case_description_path'] for item in batch]
+    case_input_ids = torch.stack([item['case_input_ids'] for item in batch])
+    case_attention_mask = torch.stack([item['case_attention_mask'] for item in batch])
+    justice_input_ids = [item['justice_input_ids'] for item in batch]
+    justice_attention_mask = [item['justice_attention_mask'] for item in batch]
+    justice_counts = [item['justice_count'] for item in batch]
     targets = torch.stack([item['target'] for item in batch])
     
     return {
-            'case_ids': case_ids,
-            'justice_bio_paths': justice_bio_paths,
-            'case_description_paths': case_description_paths,
-            'targets': targets
-        } 
+        'case_ids': case_ids,
+        'case_input_ids': case_input_ids,
+        'case_attention_mask': case_attention_mask,
+        'justice_input_ids': justice_input_ids,
+        'justice_attention_mask': justice_attention_mask,
+        'justice_counts': justice_counts,
+        'targets': targets
+    }
 
 
 class SCOTUSDataset(torch.utils.data.Dataset):
@@ -1106,34 +400,21 @@ class SCOTUSDataset(torch.utils.data.Dataset):
     PyTorch Dataset for SCOTUS voting data.
     """
     
-    def __init__(self, dataset_dict: Dict[str, List], transform=None):
+    def __init__(self, processed_data: List[Dict], transform=None):
         """
         Initialize dataset.
         
         Args:
-            dataset_dict: Dictionary with case_id as keys and 
-                         [justice_bio_paths, case_description_path, voting_percentages] as values
+            processed_data: List of processed data dictionaries with tokenized inputs
         """
-        self.dataset_dict = dataset_dict
-        self.case_ids = list(dataset_dict.keys())
+        self.data = processed_data
         self.transform = transform
     
     def __len__(self):
-        return len(self.case_ids)
+        return len(self.data)
     
     def __getitem__(self, idx):
-        case_id = self.case_ids[idx]
-        justice_bio_paths, case_description_path, voting_percentages = self.dataset_dict[case_id]
-        
-        # Convert voting percentages to tensor
-        target = torch.tensor(voting_percentages, dtype=torch.float32)
-        
-        sample = {
-            'case_id': case_id,
-            'justice_bio_paths': justice_bio_paths,
-            'case_description_path': case_description_path,
-            'target': target
-        }
+        sample = self.data[idx].copy()
         
         if self.transform:
             sample = self.transform(sample)

@@ -34,8 +34,8 @@ class ContrastiveJustice(nn.Module):
         Forward pass for contrastive learning.
         
         Args:
-            justice_trunc_bio_paths: List of paths to truncated biography files
-            justice_full_bio_paths: List of paths to full biography files
+            justice_trunc_bio_paths: List of tokens of truncated biography
+            justice_full_bio_paths: List of tokens of full biography
             
         Returns:
             Tuple of (truncated_embeddings, full_embeddings)

@@ -113,6 +113,9 @@ class ContrastiveJusticeTrainer:
         
         # Create the directory structure if it doesn't exist
         model_output_dir.mkdir(parents=True, exist_ok=True)
+        if not os.access(model_output_dir, os.W_OK):
+            self.logger.error(f"Cannot write to {model_output_dir}")
+            raise PermissionError(f"Cannot write to {model_output_dir}")
         self.logger.info(f"Model will be saved to: {model_output_dir.absolute()}")
 
         # Model configuration

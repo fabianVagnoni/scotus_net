@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Hyperparameter Optimization for SCOTUS Voting Model using Optuna.
+Simplified Hyperparameter Optimization for SCOTUS Voting Model using Optuna.
 
-This script performs hyperparameter tuning for both model architecture and training parameters
-to find the optimal configuration for SCOTUS voting prediction.
+This simplified version performs hyperparameter tuning for basic model architecture and training parameters
+without complex unfreezing strategies.
 """
 
 import os
@@ -28,7 +28,7 @@ from tqdm import tqdm
 from scripts.models.model_trainer import SCOTUSModelTrainer
 from scripts.models.scotus_voting_model import SCOTUSVotingModel, SCOTUSDataset, collate_fn
 from torch.utils.data import DataLoader
-from scripts.models.config import ModelConfig
+from scripts.utils.config import ModelConfig
 from scripts.utils.logger import get_logger
 from scripts.utils.holdout_test_set import HoldoutTestSetManager
 from scripts.models.losses import create_scotus_loss_function
@@ -37,7 +37,7 @@ from scripts.utils.metrics import calculate_f1_macro
 
 class OptunaModelTrainer(SCOTUSModelTrainer):
     """
-    Extended model trainer for Optuna optimization with early stopping and validation tracking.
+    Simplified model trainer for Optuna optimization.
     """
     
     def __init__(self, trial: Trial, base_config: ModelConfig):
@@ -57,7 +57,6 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
         
         Returns:
             Combined metric: (KL Divergence Loss + (1 - F1-Score Macro)) / 2
-            This balances probabilistic accuracy (loss) with classification performance (F1)
         """
         start_time = time.time()
         max_trial_time = self.base_config.optuna_max_trial_time
@@ -67,8 +66,9 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
             # Load dataset
             dataset = self.load_case_dataset(dataset_file)
             
-            # Get tokenized file paths
+            # Get tokenized file paths and load tokenized data
             bio_tokenized_file, description_tokenized_file = self.get_tokenized_file_paths(dataset)
+            bio_data, description_data = self.load_tokenized_data(bio_tokenized_file, description_tokenized_file)
             
             self.logger.info("Splitting dataset...")
             # Split dataset (use smaller validation set for faster optimization)
@@ -83,298 +83,178 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
             hyperparams = self._suggest_hyperparameters()
             self.logger.info(f"Trial hyperparameters: {hyperparams}")
             
-            # Log which parameters are tuned vs fixed
-            tuned_params = []
-            fixed_params = []
+            # Process datasets
+            train_processed = self.prepare_processed_data(train_dataset, bio_data, description_data, verbose=False)
+            val_processed = self.prepare_processed_data(val_dataset, bio_data, description_data, verbose=False)
             
-            # Core model parameters
-            for param_name in ['hidden_dim', 'dropout_rate', 'num_attention_heads', 'learning_rate', 'batch_size', 'weight_decay']:
-                tune_flag = getattr(self.base_config, f'tune_{param_name}', False)
-                if tune_flag:
-                    tuned_params.append(f"{param_name}={hyperparams[param_name]}")
-                else:
-                    if param_name in hyperparams:
-                        fixed_params.append(f"{param_name}={hyperparams[param_name]}")
+            # Create datasets and data loaders
+            train_dataset_obj = SCOTUSDataset(train_processed)
+            val_dataset_obj = SCOTUSDataset(val_processed)
             
-            # Fine-tuning strategy parameters
-            if self.base_config.tune_fine_tuning_strategy:
-                tuned_params.append(f"fine_tuning_strategy=({hyperparams['first_unfreeze_epoch']}, {hyperparams['second_unfreeze_epoch']}, {hyperparams['initial_layers_to_unfreeze']}, {hyperparams['lr_reduction_factor']})")
-            else:
-                fixed_params.append(f"fine_tuning_strategy=({hyperparams['first_unfreeze_epoch']}, {hyperparams['second_unfreeze_epoch']}, {hyperparams['initial_layers_to_unfreeze']}, {hyperparams['lr_reduction_factor']})")
+            train_loader = DataLoader(
+                train_dataset_obj,
+                batch_size=hyperparams['batch_size'],
+                shuffle=True,
+                collate_fn=collate_fn,
+                num_workers=self.config.num_workers
+            )
             
-            if tuned_params:
-                self.logger.info(f"Tuned parameters: {', '.join(tuned_params)}")
-            if fixed_params:
-                self.logger.info(f"Fixed parameters: {', '.join(fixed_params)}")
+            val_loader = DataLoader(
+                val_dataset_obj,
+                batch_size=hyperparams['batch_size'],
+                shuffle=False,
+                collate_fn=collate_fn,
+                num_workers=self.config.num_workers
+            )
             
-            # Create trial-specific config
-            trial_config = self._create_trial_config(hyperparams)
-            
-            self.logger.info("Initializing model...")
             # Initialize model with trial hyperparameters
             model = SCOTUSVotingModel(
-                bio_tokenized_file=bio_tokenized_file,
-                description_tokenized_file=description_tokenized_file,
                 bio_model_name=self.base_config.bio_model_name,
                 description_model_name=self.base_config.description_model_name,
-                embedding_dim=self.base_config.embedding_dim,  # Keep fixed for compatibility
+                embedding_dim=self.base_config.embedding_dim,
                 hidden_dim=hyperparams['hidden_dim'],
                 dropout_rate=hyperparams['dropout_rate'],
-                max_justices=self.base_config.max_justices,  # Keep fixed
+                max_justices=self.base_config.max_justices,
                 num_attention_heads=hyperparams['num_attention_heads'],
                 use_justice_attention=hyperparams['use_justice_attention'],
                 use_noise_reg=hyperparams['use_noise_reg'],
                 noise_reg_alpha=hyperparams['noise_reg_alpha'],
-                device=str(self.device)
+                device=self.device
             )
-            
             model.to(self.device)
-            self.logger.info("Model moved to device")
             
-            # Log the fine-tuning strategy for this trial
-            self.logger.info(f"Trial fine-tuning strategy:")
-            if trial_config.first_unfreeze_epoch == -1 and trial_config.second_unfreeze_epoch == -1:
-                self.logger.info(f"  - No fine-tuning (frozen underlying models)")
-            elif trial_config.first_unfreeze_epoch == -1:
-                self.logger.info(f"  - Step 1 → Step 3: Skip Step 2, full unfreezing at epoch {trial_config.second_unfreeze_epoch}")
-            elif trial_config.second_unfreeze_epoch == -1:
-                self.logger.info(f"  - Step 1 → Step 2: Partial unfreezing at epoch {trial_config.first_unfreeze_epoch} (final {trial_config.initial_layers_to_unfreeze} layers only)")
-            else:
-                self.logger.info(f"  - Full three-step: Step 2 at epoch {trial_config.first_unfreeze_epoch} ({trial_config.initial_layers_to_unfreeze} layers), Step 3 at epoch {trial_config.second_unfreeze_epoch} (all layers)")
-            self.logger.info(f"  - LR reduction factor: {trial_config.lr_reduction_factor} (applied cumulatively)")
+            # Create loss function
+            criterion = create_scotus_loss_function(self.base_config)
             
-            self.logger.info("Preparing datasets...")
-            # Prepare datasets
-            train_dataset_dict = self.prepare_dataset_dict(train_dataset, verbose=False)
-            val_dataset_dict = self.prepare_dataset_dict(val_dataset, verbose=False)
-            
-            if not train_dataset_dict or not val_dataset_dict:
-                raise ValueError("No valid training or validation cases found")
-            
-            # Limit dataset size for faster optimization
-            max_train_samples = len(train_dataset_dict)
-            max_val_samples = len(val_dataset_dict)
-            
-            if self.base_config.optuna_max_train_samples > 0:
-                max_train_samples = min(len(train_dataset_dict), self.base_config.optuna_max_train_samples)
-            if self.base_config.optuna_max_val_samples > 0:
-                max_val_samples = min(len(val_dataset_dict), self.base_config.optuna_max_val_samples)
-            
-            self.logger.info(f"Using {max_train_samples} training samples and {max_val_samples} validation samples")
-            
-            train_keys = list(train_dataset_dict.keys())[:max_train_samples]
-            val_keys = list(val_dataset_dict.keys())[:max_val_samples]
-            
-            train_subset = {k: train_dataset_dict[k] for k in train_keys}
-            val_subset = {k: val_dataset_dict[k] for k in val_keys}
-            
-            train_pytorch_dataset = SCOTUSDataset(train_subset)
-            val_pytorch_dataset = SCOTUSDataset(val_subset)
-            
-            self.logger.info("Creating data loaders...")
-            # Data loaders with trial batch size
-            train_loader = DataLoader(
-                train_pytorch_dataset, 
-                batch_size=hyperparams['batch_size'], 
-                shuffle=True, 
-                collate_fn=collate_fn,
-                num_workers=0  # Keep 0 for stability
-            )
-            val_loader = DataLoader(
-                val_pytorch_dataset, 
-                batch_size=hyperparams['batch_size'], 
-                shuffle=False, 
-                collate_fn=collate_fn,
-                num_workers=0
-            )
-            
-            self.logger.info("Setting up optimizer and loss function...")
-            # Training setup with trial hyperparameters
-            optimizer = torch.optim.AdamW(
-                model.parameters(), 
-                lr=hyperparams['learning_rate'], 
+            # Create optimizer for non-transformer parameters
+            main_optimizer = torch.optim.Adam(
+                [p for p in model.parameters() if p.requires_grad],
+                lr=hyperparams['learning_rate'],
                 weight_decay=hyperparams['weight_decay']
             )
             
-            # Setup sentence transformer fine-tuning if enabled
+            # Initialize sentence transformer optimizer (will be used if models are unfrozen)
             sentence_transformer_optimizer = None
-            if (self.base_config.enable_sentence_transformer_finetuning and 
-                (trial_config.first_unfreeze_epoch != -1 or trial_config.second_unfreeze_epoch != -1)):
-                # Create separate optimizer for sentence transformers
-                sentence_transformer_params = []
-                if self.base_config.unfreeze_bio_model:
-                    sentence_transformer_params.extend(model.bio_model.parameters())
-                if self.base_config.unfreeze_description_model:
-                    sentence_transformer_params.extend(model.description_model.parameters())
-                
-                if sentence_transformer_params:
-                    sentence_transformer_optimizer = torch.optim.AdamW(
-                        sentence_transformer_params, 
-                        lr=self.base_config.sentence_transformer_learning_rate, 
-                        weight_decay=hyperparams['weight_decay']
-                    )
             
-            # Setup loss function using the new modular system
-            criterion = create_scotus_loss_function(self.base_config.loss_function, self.base_config)
+            self.logger.info("🚀 Starting optimization training...")
+            self.logger.info(f"   Training samples: {len(train_processed)}")
+            self.logger.info(f"   Validation samples: {len(val_processed)}")
             
-            # Learning rate scheduler
-            scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-                optimizer, mode='min', factor=0.5, patience=2
-            )
-            
-            self.logger.info("Starting training loop...")
-            # Training loop with early stopping
-            model.train()
-            best_combined_metric = float('inf')
+            # Training loop
+            num_epochs = self.base_config.optuna_max_epochs
             patience_counter = 0
             
-            # Track unfreezing status for trial
-            first_unfreeze_done = False
-            second_unfreeze_done = False
-            
-            max_epochs = self.base_config.optuna_max_epochs
-            
-            for epoch in range(max_epochs):
-                # Check timeout (if enabled)
-                if max_trial_time > 0 and time.time() - start_time > max_trial_time:
-                    self.logger.warning(f"Trial timeout after {max_trial_time} seconds")
+            for epoch in range(num_epochs):
+                # Check trial timeout
+                if time.time() - start_time > max_trial_time:
+                    self.logger.warning(f"Trial timeout reached ({max_trial_time}s). Stopping early.")
                     break
                 
-                # Handle three-step fine-tuning strategy for this trial
-                if self.base_config.enable_sentence_transformer_finetuning:
-                    unfreeze_status = self._handle_trial_fine_tuning_strategy(
-                        model, epoch, optimizer, sentence_transformer_optimizer,
-                        first_unfreeze_done, second_unfreeze_done, trial_config
-                    )
-                    first_unfreeze_done = unfreeze_status.get('first_unfreeze_done', first_unfreeze_done)
-                    second_unfreeze_done = unfreeze_status.get('second_unfreeze_done', second_unfreeze_done)
-                
-                self.logger.info(f"Starting epoch {epoch+1}/{max_epochs}")
                 # Training phase
                 model.train()
-                train_loss = 0.0
-                num_batches = 0
+                total_train_loss = 0.0
+                num_train_batches = 0
                 
-                # Training progress bar
-                train_pbar = tqdm(
-                    enumerate(train_loader), 
-                    total=len(train_loader),
-                    desc=f"Epoch {epoch+1}/{max_epochs} - Training",
-                    leave=False,
-                    ncols=100
-                )
-                
-                for batch_idx, batch in train_pbar:
-                    try:
-                        optimizer.zero_grad()
-                        if sentence_transformer_optimizer is not None:
-                            sentence_transformer_optimizer.zero_grad()
-                        
-                        batch_predictions = []
-                        batch_targets = batch['targets'].to(self.device)
-                        
-                        # Process each sample in the batch
-                        for i in range(len(batch['case_ids'])):
-                            case_description_path = batch['case_description_paths'][i]
-                            justice_bio_paths = batch['justice_bio_paths'][i]
-                            
-                            # Forward pass
-                            prediction = model(case_description_path, justice_bio_paths)
-                            batch_predictions.append(prediction)
-                        
-                        # Stack predictions and compute loss
-                        predictions_tensor = torch.stack(batch_predictions)
-                        
-                        # Compute loss using modular loss system (pass epoch for annealing)
-                        loss = criterion(predictions_tensor, batch_targets, epoch=epoch)
-                        
-                        # Check for NaN loss and provide debugging information
-                        if torch.isnan(loss):
-                            self.logger.error(f"NaN loss detected in batch {batch_idx}!")
-                            self.logger.error(f"Predictions tensor: {predictions_tensor}")
-                            self.logger.error(f"Targets tensor: {batch_targets}")
-                            self.logger.error(f"Predictions stats - Min: {predictions_tensor.min()}, Max: {predictions_tensor.max()}, Mean: {predictions_tensor.mean()}")
-                            self.logger.error(f"Targets stats - Min: {batch_targets.min()}, Max: {batch_targets.max()}, Mean: {batch_targets.mean()}")
-                            
-                            # Check for NaN in model parameters
-                            nan_params = []
-                            for name, param in model.named_parameters():
-                                if torch.isnan(param).any():
-                                    nan_params.append(name)
-                            if nan_params:
-                                self.logger.error(f"NaN found in model parameters: {nan_params}")
-                            
-                            raise ValueError(f"NaN loss encountered in batch {batch_idx}")
-                        
-                        # Backward pass
-                        loss.backward()
-                        
-                        # Gradient clipping
-                        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
-                        
-                        optimizer.step()
-                        if sentence_transformer_optimizer is not None:
-                            # Check if sentence transformers are actually unfrozen before stepping
-                            status = model.get_sentence_transformer_status()
-                            if status['any_trainable']:
-                                sentence_transformer_optimizer.step()
-                        
-                        train_loss += loss.item()
-                        num_batches += 1
-                        
-                        # Update progress bar with current loss
-                        current_avg_loss = train_loss / num_batches
-                        train_pbar.set_postfix({'loss': f'{current_avg_loss:.4f}'})
-                        
-                    except Exception as e:
-                        self.logger.warning(f"Error in training batch {batch_idx}: {e}")
-                        continue
-                
-                train_pbar.close()
-                
-                if num_batches == 0:
-                    raise ValueError("No successful training batches")
+                for batch in train_loader:
+                    main_optimizer.zero_grad()
+                    if sentence_transformer_optimizer:
+                        sentence_transformer_optimizer.zero_grad()
                     
-                avg_train_loss = train_loss / num_batches
-                
-                self.logger.info(f"Epoch {epoch+1} training completed, avg loss: {avg_train_loss:.4f}")
+                    # Move batch to device
+                    case_input_ids = batch['case_input_ids'].to(self.device)
+                    case_attention_mask = batch['case_attention_mask'].to(self.device)
+                    justice_input_ids = [j.to(self.device) for j in batch['justice_input_ids']]
+                    justice_attention_mask = [j.to(self.device) for j in batch['justice_attention_mask']]
+                    justice_counts = batch['justice_counts']
+                    targets = batch['targets'].to(self.device)
+                    
+                    # Forward pass
+                    predictions = model(case_input_ids, case_attention_mask, justice_input_ids, justice_attention_mask, justice_counts)
+                    
+                    # Compute loss
+                    loss = criterion(predictions, targets)
+                    
+                    # Backward pass
+                    loss.backward()
+                    
+                    # Gradient clipping
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+                    
+                    # Optimizer steps
+                    main_optimizer.step()
+                    if sentence_transformer_optimizer:
+                        sentence_transformer_optimizer.step()
+                    
+                    total_train_loss += loss.item()
+                    num_train_batches += 1
                 
                 # Validation phase
-                self.logger.info(f"Starting validation for epoch {epoch+1}")
-                combined_metric = self._evaluate_model_for_optimization(model, val_loader, criterion)
+                val_loss, val_f1 = self._evaluate_model_for_optimization(model, val_loader, criterion)
                 
-                # Learning rate scheduling (using combined metric)
-                scheduler.step(combined_metric)
+                avg_train_loss = total_train_loss / num_train_batches if num_train_batches > 0 else 0.0
                 
-                # Early stopping check
-                if combined_metric < best_combined_metric:
-                    best_combined_metric = combined_metric
+                # Combined metric for optimization
+                combined_metric = (val_loss + (1 - val_f1)) / 2
+                
+                self.logger.info(f"Trial Epoch {epoch+1}/{num_epochs} - "
+                               f"Train Loss: {avg_train_loss:.4f}, "
+                               f"Val Loss: {val_loss:.4f}, "
+                               f"Val F1: {val_f1:.4f}, "
+                               f"Combined Metric: {combined_metric:.4f}")
+                
+                # Handle unfreezing at specified epoch
+                if epoch + 1 == hyperparams.get('unfreeze_at_epoch', float('inf')):
+                    self.logger.info("🔓 Unfreezing sentence transformers...")
+                    if hyperparams.get('unfreeze_bio_model', False):
+                        model.unfreeze_bio_model()
+                        self.logger.info("   - Bio model unfrozen")
+                    if hyperparams.get('unfreeze_description_model', False):
+                        model.unfreeze_description_model()
+                        self.logger.info("   - Description model unfrozen")
+                    
+                    # Create sentence transformer optimizer if models were unfrozen
+                    if model.get_sentence_transformer_status()['any_trainable']:
+                        st_params = []
+                        if hyperparams.get('unfreeze_bio_model', False):
+                            st_params.extend(model.bio_model.parameters())
+                        if hyperparams.get('unfreeze_description_model', False):
+                            st_params.extend(model.description_model.parameters())
+                        
+                        sentence_transformer_optimizer = torch.optim.Adam(
+                            st_params,
+                            lr=hyperparams.get('sentence_transformer_learning_rate', hyperparams['learning_rate'] * 0.1),
+                            weight_decay=hyperparams['weight_decay']
+                        )
+                        self.logger.info(f"   - Sentence transformer optimizer created")
+                
+                # Early stopping based on combined metric
+                if combined_metric < self.best_val_loss:
+                    self.best_val_loss = combined_metric
                     patience_counter = 0
                 else:
                     patience_counter += 1
+                    if patience_counter >= self.early_stop_patience and epoch >= self.min_epochs:
+                        self.logger.info(f"Early stopping triggered after {epoch+1} epochs")
+                        break
                 
-                self.logger.info(f"Epoch {epoch+1} completed - Train Loss: {avg_train_loss:.4f}, Combined Metric: {combined_metric:.4f}")
-                
-                # Report intermediate value to Optuna
+                # Report intermediate values to Optuna
                 self.trial.report(combined_metric, epoch)
                 
-                # Check if trial should be pruned
+                # Handle pruning based on the intermediate value
                 if self.trial.should_prune():
                     self.logger.info(f"Trial pruned at epoch {epoch+1}")
-                    raise optuna.TrialPruned()
-                
-                # Early stopping
-                if patience_counter >= self.early_stop_patience and epoch >= self.min_epochs:
-                    self.logger.info(f"Early stopping at epoch {epoch+1}")
-                    break
+                    raise optuna.exceptions.TrialPruned()
             
-            self.logger.info(f"Trial completed with best combined metric: {best_combined_metric:.4f}")
-            return best_combined_metric
+            self.logger.info(f"✅ Trial completed with combined metric: {self.best_val_loss:.4f}")
+            return self.best_val_loss
             
+        except optuna.exceptions.TrialPruned:
+            raise
         except Exception as e:
-            self.logger.error(f"Error in trial: {e}")
-            return float('inf')
-    
+            self.logger.error(f"❌ Trial failed with error: {str(e)}")
+            # Return a high penalty value for failed trials
+            return 10.0
+
     def _suggest_hyperparameters(self) -> Dict[str, Any]:
         """Suggest hyperparameters for the current trial."""
         hyperparams = {}
@@ -427,7 +307,7 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
         else:
             hyperparams['weight_decay'] = self.base_config.weight_decay
 
-        # Regularization - Use NEFTune (single control for both use and alpha)
+        # Regularization - Use NEFTune
         if self.base_config.tune_use_noise_reg:
             hyperparams['use_noise_reg'] = self.trial.suggest_categorical('use_noise_reg', self.base_config.optuna_use_noise_reg_options)
             # Only tune alpha if noise_reg is enabled
@@ -436,460 +316,144 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
                 alpha_kwargs = {'log': alpha_log} if alpha_log else {}
                 hyperparams['noise_reg_alpha'] = self.trial.suggest_float('noise_reg_alpha', alpha_min, alpha_max, **alpha_kwargs)
             else:
-                hyperparams['noise_reg_alpha'] = self.base_config.noise_reg_alpha  # Use default when disabled
+                hyperparams['noise_reg_alpha'] = self.base_config.noise_reg_alpha
         else:
             hyperparams['use_noise_reg'] = self.base_config.use_noise_reg
             hyperparams['noise_reg_alpha'] = self.base_config.noise_reg_alpha
         
-        # Fine-tuning Strategy
-        if self.base_config.tune_fine_tuning_strategy:
-            hyperparams['first_unfreeze_epoch'] = self.trial.suggest_categorical('first_unfreeze_epoch', self.base_config.optuna_first_unfreeze_epoch_options)
-            hyperparams['second_unfreeze_epoch'] = self.trial.suggest_categorical('second_unfreeze_epoch', self.base_config.optuna_second_unfreeze_epoch_options)
-            hyperparams['initial_layers_to_unfreeze'] = self.trial.suggest_categorical('initial_layers_to_unfreeze', self.base_config.optuna_initial_layers_to_unfreeze_options)
+        # Simplified unfreezing strategy (optional)
+        if self.base_config.tune_unfreezing:
+            hyperparams['unfreeze_at_epoch'] = self.trial.suggest_categorical('unfreeze_at_epoch', self.base_config.optuna_unfreeze_at_epoch_options)
+            hyperparams['unfreeze_bio_model'] = self.trial.suggest_categorical('unfreeze_bio_model', [True, False])
+            hyperparams['unfreeze_description_model'] = self.trial.suggest_categorical('unfreeze_description_model', [True, False])
             
-            lr_min, lr_max, lr_step = self.base_config.optuna_lr_reduction_factor_range
-            lr_kwargs = {'step': lr_step} if lr_step is not None else {}
-            hyperparams['lr_reduction_factor'] = self.trial.suggest_float('lr_reduction_factor', lr_min, lr_max, **lr_kwargs)
+            if hyperparams['unfreeze_bio_model'] or hyperparams['unfreeze_description_model']:
+                st_lr_min, st_lr_max, st_lr_log = self.base_config.optuna_sentence_transformer_lr_range
+                st_lr_kwargs = {'log': st_lr_log} if st_lr_log else {}
+                hyperparams['sentence_transformer_learning_rate'] = self.trial.suggest_float('sentence_transformer_learning_rate', st_lr_min, st_lr_max, **st_lr_kwargs)
         else:
-            hyperparams['first_unfreeze_epoch'] = self.base_config.first_unfreeze_epoch
-            hyperparams['second_unfreeze_epoch'] = self.base_config.second_unfreeze_epoch
-            hyperparams['initial_layers_to_unfreeze'] = self.base_config.initial_layers_to_unfreeze
-            hyperparams['lr_reduction_factor'] = self.base_config.lr_reduction_factor
+            hyperparams['unfreeze_at_epoch'] = self.base_config.unfreeze_at_epoch
+            hyperparams['unfreeze_bio_model'] = self.base_config.unfreeze_bio_model
+            hyperparams['unfreeze_description_model'] = self.base_config.unfreeze_description_model
+            hyperparams['sentence_transformer_learning_rate'] = self.base_config.sentence_transformer_learning_rate
         
         return hyperparams
-    
-    def _create_trial_config(self, hyperparams: Dict[str, Any]):
+
+    def _evaluate_model_for_optimization(self, model: SCOTUSVotingModel, data_loader: DataLoader, criterion) -> tuple:
         """
-        Create a trial-specific configuration object with the suggested hyperparameters.
-        
-        Args:
-            hyperparams: Dictionary of hyperparameters for this trial
-            
-        Returns:
-            Modified configuration object
-        """
-        # Create a copy-like object with trial-specific values
-        class TrialConfig:
-            def __init__(self, base_config, hyperparams):
-                # Copy all attributes from base config
-                for attr in dir(base_config):
-                    if not attr.startswith('_'):
-                        setattr(self, attr, getattr(base_config, attr))
-                
-                # Override with trial-specific values
-                self.first_unfreeze_epoch = hyperparams.get('first_unfreeze_epoch', base_config.first_unfreeze_epoch)
-                self.second_unfreeze_epoch = hyperparams.get('second_unfreeze_epoch', base_config.second_unfreeze_epoch)
-                self.initial_layers_to_unfreeze = hyperparams.get('initial_layers_to_unfreeze', base_config.initial_layers_to_unfreeze)
-                self.lr_reduction_factor = hyperparams.get('lr_reduction_factor', base_config.lr_reduction_factor)
-        
-        return TrialConfig(self.base_config, hyperparams)
-    
-    def _handle_trial_fine_tuning_strategy(self, model, epoch, optimizer, sentence_transformer_optimizer, 
-                                          first_unfreeze_done, second_unfreeze_done, trial_config):
-        """
-        Handle three-step fine-tuning for a specific trial with trial-specific configuration.
-        
-        Three-step strategy:
-        Step 1: Train only the head (frozen underlying models)
-        Step 2: Unfreeze N last layers + reduce LR
-        Step 3: Unfreeze all layers + reduce LR further
-        
-        Args:
-            model: The SCOTUS model
-            epoch: Current epoch
-            optimizer: Main optimizer
-            sentence_transformer_optimizer: Sentence transformer optimizer
-            first_unfreeze_done: Whether first unfreezing has been done
-            second_unfreeze_done: Whether second unfreezing has been done
-            trial_config: Trial-specific configuration
-            
-        Returns:
-            Dictionary with updated unfreezing status
-        """
-        status = {
-            'first_unfreeze_done': first_unfreeze_done,
-            'second_unfreeze_done': second_unfreeze_done
-        }
-        
-        # Step 2: Partial unfreezing (unfreeze N last layers)
-        if (trial_config.first_unfreeze_epoch != -1 and  # Check that Step 2 is enabled
-            trial_config.first_unfreeze_epoch == epoch and 
-            not first_unfreeze_done and sentence_transformer_optimizer is not None):
-            
-            self.logger.info(f"🔓 Step 2: Partial unfreezing at epoch {epoch + 1}")
-            
-            # Unfreeze final N layers
-            n_layers = trial_config.initial_layers_to_unfreeze
-            self.logger.info(f"   Unfreezing final {n_layers} layers")
-            model.unfreeze_final_layers(
-                n_layers=n_layers,
-                unfreeze_bio=trial_config.unfreeze_bio_model,
-                unfreeze_description=trial_config.unfreeze_description_model
-            )
-            
-            # Apply learning rate reduction
-            if trial_config.reduce_main_lr_on_unfreeze:
-                self._reduce_learning_rate(optimizer, trial_config.lr_reduction_factor)
-                self.logger.info(f"   Reduced main optimizer LR by factor {trial_config.lr_reduction_factor}")
-            
-            if sentence_transformer_optimizer is not None:
-                self._reduce_learning_rate(sentence_transformer_optimizer, trial_config.lr_reduction_factor)
-                self.logger.info(f"   Reduced sentence transformer optimizer LR by factor {trial_config.lr_reduction_factor}")
-            
-            # Log the status
-            self._log_trial_unfreezing_status(model, "Step 2: Partial unfreezing")
-            
-            status['first_unfreeze_done'] = True
-        
-        # Step 3: Full unfreezing (unfreeze all layers)
-        # This can happen either after Step 2 or directly from Step 1 if Step 2 is skipped
-        if (trial_config.second_unfreeze_epoch != -1 and  # Check that Step 3 is enabled
-            trial_config.second_unfreeze_epoch == epoch and 
-            not second_unfreeze_done and 
-            sentence_transformer_optimizer is not None):
-            
-            self.logger.info(f"🔓 Step 3: Full unfreezing at epoch {epoch + 1}")
-            self.logger.info(f"   Unfreezing all layers")
-            
-            # Unfreeze all layers
-            model.unfreeze_models_selectively(
-                unfreeze_bio=trial_config.unfreeze_bio_model,
-                unfreeze_description=trial_config.unfreeze_description_model
-            )
-            
-            # Apply learning rate reduction
-            if trial_config.reduce_main_lr_on_unfreeze:
-                self._reduce_learning_rate(optimizer, trial_config.lr_reduction_factor)
-                self.logger.info(f"   Reduced main optimizer LR by factor {trial_config.lr_reduction_factor}")
-            
-            if sentence_transformer_optimizer is not None:
-                self._reduce_learning_rate(sentence_transformer_optimizer, trial_config.lr_reduction_factor)
-                self.logger.info(f"   Reduced sentence transformer optimizer LR by factor {trial_config.lr_reduction_factor}")
-            
-            # Log the status
-            self._log_trial_unfreezing_status(model, "Step 3: Full unfreezing")
-            
-            status['second_unfreeze_done'] = True
-        
-        return status
-    
-    def _reduce_learning_rate(self, optimizer, reduction_factor):
-        """
-        Reduce learning rate for an optimizer.
-        
-        Args:
-            optimizer: PyTorch optimizer
-            reduction_factor: Factor to multiply learning rate by
-        """
-        for param_group in optimizer.param_groups:
-            old_lr = param_group['lr']
-            new_lr = old_lr * reduction_factor
-            param_group['lr'] = new_lr
-    
-    def _log_trial_unfreezing_status(self, model, step_name):
-        """
-        Log the unfreezing status after a step for a trial.
-        
-        Args:
-            model: The SCOTUS model
-            step_name: Name of the unfreezing step
-        """
-        # Get basic status
-        status = model.get_sentence_transformer_status()
-        self.logger.info(f"   {step_name} completed:")
-        self.logger.info(f"     Bio model trainable: {status['bio_model_trainable']}")
-        self.logger.info(f"     Description model trainable: {status['description_model_trainable']}")
-        
-        # Get detailed layer status
-        try:
-            layer_status = model.get_layer_trainable_status()
-            
-            for model_name, model_status in layer_status.items():
-                if model_status['trainable_layers']:
-                    self.logger.info(f"     {model_name} trainable layers: {len(model_status['trainable_layers'])}")
-                    
-                    # Show which layers are trainable (abbreviated for trials)
-                    if len(model_status['trainable_layers']) <= 3:
-                        self.logger.info(f"       Trainable layers: {', '.join(model_status['trainable_layers'])}")
-                    else:
-                        self.logger.info(f"       Trainable layers: {', '.join(model_status['trainable_layers'][:2])} ... {model_status['trainable_layers'][-1]}")
-        except Exception as e:
-            self.logger.debug(f"Could not get detailed layer status: {e}")
-    
-    def _evaluate_model_for_optimization(self, model: SCOTUSVotingModel, data_loader, criterion) -> float:
-        """
-        Evaluate model for optimization using combined loss and F1-Score Macro.
+        Evaluate model for optimization, returning both loss and F1 score.
         
         Returns:
-            Combined metric: (KL Divergence Loss + (1 - F1-Score Macro)) / 2
-            This ensures both metrics are in the same direction (lower is better)
+            Tuple of (val_loss, val_f1_macro)
         """
         model.eval()
         total_loss = 0.0
         num_batches = 0
-        first_batch_logged = False
-        
-        # For F1-Score calculation
         all_predictions = []
         all_targets = []
         
         with torch.no_grad():
-            for batch_idx, batch in enumerate(data_loader):
-                try:
-                    batch_predictions = []
-                    batch_targets = batch['targets'].to(self.device)
-                    
-                    # Process each sample in the batch
-                    for i in range(len(batch['case_ids'])):
-                        case_description_path = batch['case_description_paths'][i]
-                        justice_bio_paths = batch['justice_bio_paths'][i]
-                        
-                        # Forward pass
-                        prediction = model(case_description_path, justice_bio_paths)
-                        batch_predictions.append(prediction)
-                    
-                    # Stack predictions and compute loss
-                    predictions_tensor = torch.stack(batch_predictions)
-                    
-                    # Compute loss using modular loss system
-                    loss = criterion(predictions_tensor, batch_targets)
-                    
-                    # Store predictions and targets for F1-Score calculation
-                    # Convert to class predictions (argmax) for F1-Score
-                    predicted_classes = torch.argmax(predictions_tensor, dim=1).cpu().numpy()
-                    target_classes = torch.argmax(batch_targets, dim=1).cpu().numpy()
-                    
-                    all_predictions.extend(predicted_classes)
-                    all_targets.extend(target_classes)
-                    
-                    # Log predictions vs targets for first batch only
-                    if not first_batch_logged and batch_idx == 0:
-                        self.logger.info("=== VALIDATION PREDICTIONS vs TARGETS ===")
-                        
-                        # Convert log predictions back to probabilities for display
-                        display_predictions = torch.softmax(predictions_tensor, dim=1)
-                        
-                        # Show first few samples in the batch
-                        num_samples_to_show = min(3, len(batch['case_ids']))
-                        
-                        for i in range(num_samples_to_show):
-                            case_id = batch['case_ids'][i]
-                            pred = display_predictions[i].cpu().numpy()
-                            target = batch_targets[i].cpu().numpy()
-                            
-                            self.logger.info(f"Sample {i+1} (Case ID: {case_id}):")
-                            self.logger.info(f"  Predicted:  [{pred[0]:.4f}, {pred[1]:.4f}, {pred[2]:.4f}]")
-                            self.logger.info(f"  Target:     [{target[0]:.4f}, {target[1]:.4f}, {target[2]:.4f}]")
-                            
-                            # Calculate and show the difference
-                            diff = pred - target
-                            self.logger.info(f"  Difference: [{diff[0]:+.4f}, {diff[1]:+.4f}, {diff[2]:+.4f}]")
-                            
-                            # Show which class has highest prediction vs target
-                            pred_class = pred.argmax()
-                            target_class = target.argmax()
-                            class_names = ["Majority In Favor", "Majority Against", "Majority Absent"]
-                            self.logger.info(f"  Pred Class: {class_names[pred_class]} ({pred[pred_class]:.4f})")
-                            self.logger.info(f"  True Class: {class_names[target_class]} ({target[target_class]:.4f})")
-                            self.logger.info("")
-                        
-                        first_batch_logged = True
-                    
-                    total_loss += loss.item()
-                    num_batches += 1
-                    
-                except Exception as e:
-                    self.logger.warning(f"Error in evaluation batch: {e}")
-                    continue
+            for batch in data_loader:
+                # Move batch to device
+                case_input_ids = batch['case_input_ids'].to(self.device)
+                case_attention_mask = batch['case_attention_mask'].to(self.device)
+                justice_input_ids = [j.to(self.device) for j in batch['justice_input_ids']]
+                justice_attention_mask = [j.to(self.device) for j in batch['justice_attention_mask']]
+                justice_counts = batch['justice_counts']
+                targets = batch['targets'].to(self.device)
+                
+                # Forward pass
+                predictions = model(case_input_ids, case_attention_mask, justice_input_ids, justice_attention_mask, justice_counts)
+                
+                # Compute loss
+                loss = criterion(predictions, targets)
+                total_loss += loss.item()
+                num_batches += 1
+                
+                # Store predictions and targets for F1 calculation
+                # Convert to class predictions (highest probability)
+                pred_classes = torch.argmax(predictions, dim=1)
+                target_classes = torch.argmax(targets, dim=1)
+                
+                all_predictions.extend(pred_classes.cpu().numpy())
+                all_targets.extend(target_classes.cpu().numpy())
         
-        model.train()
+        val_loss = total_loss / num_batches if num_batches > 0 else float('inf')
+        val_f1 = calculate_f1_macro(all_targets, all_predictions)
         
-        if num_batches == 0:
-            return float('inf')
-        
-        # Calculate average loss
-        avg_loss = total_loss / num_batches
-        
-        # Calculate F1-Score Macro
-        f1_macro = calculate_f1_macro(all_predictions, all_targets, verbose=True)
-        
-        # Combine metrics: (Loss + (1 - F1)) / 2
-        # This ensures both metrics are minimized (lower is better)
-        combined_metric = (avg_loss + (1.0 - f1_macro)) / 2.0
-        
-        self.logger.info(f"Evaluation metrics - Loss: {avg_loss:.4f}, F1-Macro: {f1_macro:.4f}, Combined: {combined_metric:.4f}")
-        
-        return combined_metric
-    
-
-
-    def _log_tuning_configuration(self):
-        """Log the tuning configuration for debugging purposes."""
-        self.logger.info("Tuning configuration:")
-        self.logger.info(f"  - Hidden Dimension: {'Tuned' if self.base_config.tune_hidden_dim else 'Fixed'}")
-        self.logger.info(f"  - Dropout Rate: {'Tuned' if self.base_config.tune_dropout_rate else 'Fixed'}")
-        self.logger.info(f"  - Number of Attention Heads: {'Tuned' if self.base_config.tune_num_attention_heads else 'Fixed'}")
-        self.logger.info(f"  - Use Justice Attention: {'Tuned' if self.base_config.tune_use_justice_attention else 'Fixed'}")
-        self.logger.info(f"  - Learning Rate: {'Tuned' if self.base_config.tune_learning_rate else 'Fixed'}")
-        self.logger.info(f"  - Batch Size: {'Tuned' if self.base_config.tune_batch_size else 'Fixed'}")
-        self.logger.info(f"  - Weight Decay: {'Tuned' if self.base_config.tune_weight_decay else 'Fixed'}")
-        self.logger.info(f"  - Fine-tuning Strategy: {'Tuned' if self.base_config.tune_fine_tuning_strategy else 'Fixed'}")
-        
-        if self.base_config.tune_fine_tuning_strategy:
-            self.logger.info(f"    - First Unfreeze Epoch options: {self.base_config.optuna_first_unfreeze_epoch_options}")
-            self.logger.info(f"    - Second Unfreeze Epoch options: {self.base_config.optuna_second_unfreeze_epoch_options}")
-            self.logger.info(f"    - Initial Layers to Unfreeze options: {self.base_config.optuna_initial_layers_to_unfreeze_options}")
-            self.logger.info(f"    - LR Reduction Factor range: {self.base_config.optuna_lr_reduction_factor_range}")
-        else:
-            self.logger.info(f"    - First Unfreeze Epoch: {self.base_config.first_unfreeze_epoch}")
-            self.logger.info(f"    - Second Unfreeze Epoch: {self.base_config.second_unfreeze_epoch}")
-            self.logger.info(f"    - Initial Layers to Unfreeze: {self.base_config.initial_layers_to_unfreeze}")
-            self.logger.info(f"    - LR Reduction Factor: {self.base_config.lr_reduction_factor}")
+        return val_loss, val_f1
 
 
 def initialize_results_file(study_name: str, n_trials: int, dataset_file: str, experiment_name: str = None):
-    """
-    Initialize the tuning results file with header information.
+    """Initialize the results CSV file with headers."""
+    results_dir = Path("results/hyperparameter_optimization")
+    results_dir.mkdir(parents=True, exist_ok=True)
     
-    Args:
-        study_name: Name of the optimization study
-        n_trials: Number of trials to run
-        dataset_file: Path to dataset file
-        experiment_name: Name of the experiment (for file naming)
-    """
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     if experiment_name:
-        results_file = Path(f"logs/hyperparameter_tunning_logs/tunning_results_{experiment_name}.txt")
+        filename = f"{experiment_name}_{study_name}_optimization_results_{timestamp}.csv"
     else:
-        results_file = Path("logs/hyperparameter_tunning_logs/tunning_results.txt")
+        filename = f"{study_name}_optimization_results_{timestamp}.csv"
     
-    # Create directory if it doesn't exist
-    results_file.parent.mkdir(parents=True, exist_ok=True)
+    results_file = results_dir / filename
     
-    # Prepare header
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    
-    header_lines = [
-        f"{'#' * 80}",
-        f"# SCOTUS AI Hyperparameter Optimization Results",
-        f"# Study: {study_name}",
-        f"# Experiment: {experiment_name or 'default'}",
-        f"# Started: {timestamp}",
-        f"# Number of trials: {n_trials}",
-        f"# Dataset: {dataset_file}",
-        f"{'#' * 80}",
-        "",
+    # Create initial CSV with headers
+    headers = [
+        "trial_number", "trial_status", "trial_start_time", "trial_end_time", "duration_seconds",
+        "combined_metric", "val_loss", "val_f1_macro",
+        "hidden_dim", "dropout_rate", "num_attention_heads", "use_justice_attention",
+        "learning_rate", "batch_size", "weight_decay", "use_noise_reg", "noise_reg_alpha",
+        "unfreeze_at_epoch", "unfreeze_bio_model", "unfreeze_description_model", "sentence_transformer_learning_rate",
+        "dataset_file", "experiment_name"
     ]
     
-    # Write header to file (overwrite mode to start fresh)
-    try:
-        with open(results_file, 'w', encoding='utf-8') as f:
-            f.write('\n'.join(header_lines) + '\n')
-    except Exception as e:
-        logger = get_logger(__name__)
-        logger.warning(f"Failed to initialize results file: {e}")
+    df = pd.DataFrame(columns=headers)
+    df.to_csv(results_file, index=False)
+    
+    return str(results_file)
 
 
 def append_trial_results(trial: Trial, combined_metric: float, hyperparams: Dict[str, Any] = None, trial_status: str = "COMPLETED", experiment_name: str = None):
-    """
-    Append trial results to the tuning results file.
+    """Append trial results to the CSV file."""
+    results_dir = Path("results/hyperparameter_optimization")
     
-    Args:
-        trial: Optuna trial object
-        combined_metric: Combined optimization metric achieved
-        hyperparams: Trial hyperparameters (optional, will be extracted from trial if not provided)
-        trial_status: Status of the trial (COMPLETED, PRUNED, FAILED)
-        experiment_name: Name of the experiment (for file naming)
-    """
-    # Create the results file path
+    # Find the most recent results file
+    pattern = f"*_optimization_results_*.csv"
     if experiment_name:
-        results_file = Path(f"logs/hyperparameter_tunning_logs/tunning_results_{experiment_name}.txt")
-    else:
-        results_file = Path("logs/hyperparameter_tunning_logs/tunning_results.txt")
+        pattern = f"{experiment_name}_*_optimization_results_*.csv"
     
-    # Create directory if it doesn't exist
-    results_file.parent.mkdir(parents=True, exist_ok=True)
+    results_files = sorted(results_dir.glob(pattern))
+    if not results_files:
+        return
     
-    # Get hyperparameters if not provided
-    if hyperparams is None:
-        hyperparams = trial.params
+    results_file = results_files[-1]
     
-    # Prepare trial results text
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    
-    # Format results
-    result_lines = [
-        f"=" * 80,
-        f"Trial #{trial.number} - {timestamp}",
-        f"Combined Metric (Loss + (1-F1))/2: {combined_metric:.6f}",
-        f"Trial Status: {trial_status}",
-        f"Parameters:",
-    ]
+    # Extract values from trial
+    trial_data = {
+        "trial_number": trial.number,
+        "trial_status": trial_status,
+        "trial_start_time": trial.datetime_start.isoformat() if trial.datetime_start else None,
+        "trial_end_time": trial.datetime_complete.isoformat() if trial.datetime_complete else None,
+        "duration_seconds": trial.duration.total_seconds() if trial.duration else None,
+        "combined_metric": combined_metric,
+        "val_loss": trial.user_attrs.get("val_loss", None),
+        "val_f1_macro": trial.user_attrs.get("val_f1_macro", None)
+    }
     
     # Add hyperparameters
-    for key, value in hyperparams.items():
-        result_lines.append(f"  {key}: {value}")
-    
-    result_lines.extend([
-        "",  # Empty line for separation
-    ])
-    
-    # Write to file (append mode)
-    try:
-        with open(results_file, 'a', encoding='utf-8') as f:
-            f.write('\n'.join(result_lines) + '\n')
-    except Exception as e:
-        logger = get_logger(__name__)
-        logger.warning(f"Failed to append trial results to file: {e}")
-
-
-def append_optimization_summary(study: optuna.Study, experiment_name: str = None):
-    """
-    Append optimization summary to the results file.
-    
-    Args:
-        study: Completed Optuna study
-        experiment_name: Name of the experiment (for file naming)
-    """
-    if experiment_name:
-        results_file = Path(f"logs/hyperparameter_tunning_logs/tunning_results_{experiment_name}.txt")
+    if hyperparams:
+        for key, value in hyperparams.items():
+            trial_data[key] = value
     else:
-        results_file = Path("logs/hyperparameter_tunning_logs/tunning_results.txt")
+        # Extract from trial params
+        for key in trial.params:
+            trial_data[key] = trial.params[key]
     
-    # Prepare summary
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    trial_data["experiment_name"] = experiment_name
     
-    summary_lines = [
-        f"{'#' * 80}",
-        f"# OPTIMIZATION SUMMARY - {timestamp}",
-        f"{'#' * 80}",
-        f"Total trials: {len(study.trials)}",
-        f"Completed trials: {len([t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE])}",
-        f"Pruned trials: {len([t for t in study.trials if t.state == optuna.trial.TrialState.PRUNED])}",
-        f"Failed trials: {len([t for t in study.trials if t.state == optuna.trial.TrialState.FAIL])}",
-        "",
-        f"BEST TRIAL: #{study.best_trial.number}",
-        f"Best combined metric (Loss + (1-F1))/2: {study.best_value:.6f}",
-        f"Best parameters:",
-    ]
-    
-    # Add best parameters
-    for key, value in study.best_params.items():
-        summary_lines.append(f"  {key}: {value}")
-    
-    summary_lines.extend([
-        "",
-        f"Study completed at: {timestamp}",
-        f"{'#' * 80}",
-        "",
-    ])
-    
-    # Write to file (append mode)
-    try:
-        with open(results_file, 'a', encoding='utf-8') as f:
-            f.write('\n'.join(summary_lines) + '\n')
-    except Exception as e:
-        logger = get_logger(__name__)
-        logger.warning(f"Failed to append optimization summary to file: {e}")
+    # Append to CSV
+    df = pd.DataFrame([trial_data])
+    df.to_csv(results_file, mode='a', header=False, index=False)
 
 
 def objective(trial: Trial, base_config: ModelConfig, dataset_file: str, experiment_name: str = None) -> float:
@@ -900,39 +464,32 @@ def objective(trial: Trial, base_config: ModelConfig, dataset_file: str, experim
         trial: Optuna trial object
         base_config: Base configuration
         dataset_file: Path to dataset file
-        experiment_name: Name of the experiment (for file naming)
+        experiment_name: Optional experiment name for logging
         
     Returns:
-        Combined metric to minimize: (KL Divergence Loss + (1 - F1-Score Macro)) / 2
-        This balances probabilistic accuracy with classification performance
+        Combined metric to minimize
     """
-    logger = get_logger(__name__)
-    logger.info(f"Starting trial {trial.number}")
+    trainer = OptunaModelTrainer(trial, base_config)
     
     try:
-        # Create trainer for this trial
-        trainer = OptunaModelTrainer(trial, base_config)
-        
-        # Train model and get combined metric
         combined_metric = trainer.train_model_for_optimization(dataset_file)
         
-        logger.info(f"Trial {trial.number} completed with combined metric: {combined_metric:.4f}")
+        # Store additional metrics in trial user attributes
+        trial.set_user_attr("val_loss", trainer.best_val_loss)
         
-        # Append trial results to file
-        append_trial_results(trial, combined_metric, trial_status="COMPLETED", experiment_name=experiment_name)
+        # Log trial results
+        hyperparams = trainer._suggest_hyperparameters()
+        append_trial_results(trial, combined_metric, hyperparams, "COMPLETED", experiment_name)
         
         return combined_metric
         
-    except optuna.TrialPruned:
-        logger.info(f"Trial {trial.number} was pruned")
-        # Also log pruned trials
-        append_trial_results(trial, float('inf'), trial_status="PRUNED", experiment_name=experiment_name)
+    except optuna.exceptions.TrialPruned:
+        append_trial_results(trial, float('inf'), None, "PRUNED", experiment_name)
         raise
     except Exception as e:
-        logger.error(f"Trial {trial.number} failed with error: {e}")
-        # Log failed trials
-        append_trial_results(trial, float('inf'), trial_status="FAILED", experiment_name=experiment_name)
-        return float('inf')
+        trainer.logger.error(f"Trial {trial.number} failed: {str(e)}")
+        append_trial_results(trial, float('inf'), None, "FAILED", experiment_name)
+        return 10.0  # High penalty for failed trials
 
 
 def run_hyperparameter_optimization(
@@ -949,277 +506,118 @@ def run_hyperparameter_optimization(
     
     Args:
         n_trials: Number of trials to run
-        study_name: Name for the study (default: auto-generated)
+        study_name: Name of the study
         dataset_file: Path to dataset file
-        storage: Storage backend for study persistence
-        n_jobs: Number of parallel jobs (1 for sequential)
+        storage: Storage URL for study persistence
+        n_jobs: Number of parallel jobs
         timeout: Timeout in seconds
-        experiment_name: Name of the experiment (for file naming)
+        experiment_name: Optional experiment name
         
     Returns:
-        Optuna study object with results
+        Completed Optuna study
     """
     logger = get_logger(__name__)
+    config = ModelConfig()
     
-    # Load base configuration
-    base_config = ModelConfig()
+    # Use config defaults if not provided
+    n_trials = n_trials or config.optuna_n_trials
+    study_name = study_name or config.optuna_study_name
+    dataset_file = dataset_file or config.case_dataset_file
     
-    if dataset_file is None:
-        dataset_file = base_config.dataset_file
-    
-    if n_trials is None:
-        n_trials = base_config.optuna_n_trials
-    
-    if study_name is None:
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        study_name = f"scotus_optimization_{timestamp}"
-    
-    logger.info(f"🔍 Starting hyperparameter optimization")
-    logger.info(f"   📊 Study name: {study_name}")
-    logger.info(f"   🧪 Experiment name: {experiment_name or 'default'}")
-    logger.info(f"   🎯 Number of trials: {n_trials}")
-    logger.info(f"   📁 Dataset: {dataset_file}")
-    logger.info(f"   💾 Storage: {storage or 'in-memory'}")
-    
-    # Initialize results file with header
-    initialize_results_file(study_name, n_trials, dataset_file, experiment_name)
+    # Initialize results file
+    results_file = initialize_results_file(study_name, n_trials, dataset_file, experiment_name)
+    logger.info(f"📊 Results will be saved to: {results_file}")
     
     # Create study
-    study = optuna.create_study(
-        study_name=study_name,
-        direction='minimize',  # Minimize combined metric: (Loss + (1-F1))/2
-        storage=storage,
-        load_if_exists=True,
-        pruner=optuna.pruners.MedianPruner(
-            n_startup_trials=base_config.optuna_pruner_startup_trials, 
-            n_warmup_steps=base_config.optuna_pruner_warmup_steps
+    if storage:
+        study = optuna.create_study(
+            study_name=study_name,
+            storage=storage,
+            direction='minimize',
+            load_if_exists=True,
+            pruner=optuna.pruners.MedianPruner(n_startup_trials=5, n_warmup_steps=10)
         )
-    )
+    else:
+        study = optuna.create_study(
+            direction='minimize',
+            pruner=optuna.pruners.MedianPruner(n_startup_trials=5, n_warmup_steps=10)
+        )
+    
+    logger.info(f"🎯 Starting hyperparameter optimization...")
+    logger.info(f"   Study name: {study_name}")
+    logger.info(f"   Dataset: {dataset_file}")
+    logger.info(f"   Number of trials: {n_trials}")
+    logger.info(f"   Parallel jobs: {n_jobs}")
+    logger.info(f"   Timeout: {timeout}s" if timeout else "   Timeout: None")
     
     # Run optimization
     study.optimize(
-        lambda trial: objective(trial, base_config, dataset_file, experiment_name),
+        lambda trial: objective(trial, config, dataset_file, experiment_name),
         n_trials=n_trials,
-        n_jobs=n_jobs,
         timeout=timeout,
+        n_jobs=n_jobs,
         show_progress_bar=True
     )
     
-    # Print results
-    logger.info(f"🎉 Optimization completed!")
-    logger.info(f"   🏆 Best trial: {study.best_trial.number}")
-    logger.info(f"   📈 Best combined metric: {study.best_value:.4f}")
-    logger.info(f"   ⚙️  Best parameters:")
-    
-    for key, value in study.best_params.items():
-        logger.info(f"      {key}: {value}")
-    
-    # Append final summary to results file
-    append_optimization_summary(study, experiment_name)
+    # Log results
+    logger.info("🏆 Optimization completed!")
+    logger.info(f"   Best trial: {study.best_trial.number}")
+    logger.info(f"   Best combined metric: {study.best_value:.4f}")
+    logger.info(f"   Best parameters: {study.best_params}")
     
     return study
 
 
 def save_best_config(study: optuna.Study, base_config: ModelConfig, output_file: str = "best_config.env"):
-    """
-    Save the best hyperparameters as a new config file.
-    
-    Args:
-        study: Completed Optuna study
-        base_config: Base configuration used for optimization
-        output_file: Output configuration file path
-    """
-    logger = get_logger(__name__)
-    
-    # Create new config with best parameters
+    """Save the best configuration to a file."""
     best_params = study.best_params
     
-    # Determine which hyperparameters were studied
-    studied_params = []
-    
-    # Core model parameters
-    if base_config.tune_hidden_dim:
-        studied_params.append("HIDDEN_DIM")
-    if base_config.tune_dropout_rate:
-        studied_params.append("DROPOUT_RATE")
-    if base_config.tune_num_attention_heads:
-        studied_params.append("NUM_ATTENTION_HEADS")
-    if base_config.tune_use_justice_attention:
-        studied_params.append("USE_JUSTICE_ATTENTION")
-    if base_config.tune_learning_rate:
-        studied_params.append("LEARNING_RATE")
-    if base_config.tune_batch_size:
-        studied_params.append("BATCH_SIZE")
-    if base_config.tune_weight_decay:
-        studied_params.append("WEIGHT_DECAY")
-    if base_config.tune_use_noise_reg:
-        studied_params.append("USE_NOISE_REG (controls both use and alpha)")
-    
-    # Fine-tuning strategy parameters
-    if base_config.tune_fine_tuning_strategy:
-        studied_params.extend([
-            "FIRST_UNFREEZE_EPOCH",
-            "SECOND_UNFREEZE_EPOCH", 
-            "INITIAL_LAYERS_TO_UNFREEZE",
-            "LR_REDUCTION_FACTOR"
-        ])
-    
-    # Create hyperparameters studied section
-    hyperparams_section = ["# Hyperparameters studied: "]
-    if studied_params:
-        for param in studied_params:
-            hyperparams_section.append(f"#   - {param}")
-    else:
-        hyperparams_section.append("#   - None (all parameters used default values)")
-    hyperparams_section.append("")
-    
     config_lines = [
-        "# SCOTUS AI Model Configuration - Optimized with Optuna",
-        f"# Study: {study.study_name}",
-        f"# Best trial: {study.best_trial.number}",
-        f"# Best combined metric (Loss + (1-F1))/2: {study.best_value:.6f}",
-        f"# Optimization date: {datetime.now().isoformat()}",
-        f"# Note: Optimized using combined KL Divergence Loss and F1-Score Macro",
+        "# Best hyperparameters from Optuna optimization",
+        f"# Best combined metric: {study.best_value:.4f}",
+        f"# Trial number: {study.best_trial.number}",
         "",
-    ]
-    
-    # Add hyperparameters studied section
-    config_lines.extend(hyperparams_section)
-    
-    config_lines.extend([
         "# Model Architecture",
-        f"BIO_MODEL_NAME={base_config.bio_model_name}",
-        f"DESCRIPTION_MODEL_NAME={base_config.description_model_name}",
-        f"EMBEDDING_DIM={base_config.embedding_dim}",
         f"HIDDEN_DIM={best_params.get('hidden_dim', base_config.hidden_dim)}",
-        f"MAX_JUSTICES={base_config.max_justices}",
-        "",
-        "# Attention Mechanism",
-        f"USE_JUSTICE_ATTENTION={str(best_params.get('use_justice_attention', base_config.use_justice_attention)).lower()}",
+        f"DROPOUT_RATE={best_params.get('dropout_rate', base_config.dropout_rate)}",
         f"NUM_ATTENTION_HEADS={best_params.get('num_attention_heads', base_config.num_attention_heads)}",
+        f"USE_JUSTICE_ATTENTION={best_params.get('use_justice_attention', base_config.use_justice_attention)}",
+        "",
+        "# Training Parameters",
+        f"LEARNING_RATE={best_params.get('learning_rate', base_config.learning_rate)}",
+        f"BATCH_SIZE={best_params.get('batch_size', base_config.batch_size)}",
+        f"WEIGHT_DECAY={best_params.get('weight_decay', base_config.weight_decay)}",
         "",
         "# Regularization",
-        f"DROPOUT_RATE={best_params.get('dropout_rate', base_config.dropout_rate)}",
-        f"WEIGHT_DECAY={best_params.get('weight_decay', base_config.weight_decay)}",
-        f"USE_NOISE_REG={str(best_params.get('use_noise_reg', base_config.use_noise_reg)).lower()}",
+        f"USE_NOISE_REG={best_params.get('use_noise_reg', base_config.use_noise_reg)}",
         f"NOISE_REG_ALPHA={best_params.get('noise_reg_alpha', base_config.noise_reg_alpha)}",
         "",
-        "# Training Configuration",
-        f"LEARNING_RATE={best_params.get('learning_rate', base_config.learning_rate)}",
-        f"NUM_EPOCHS={base_config.num_epochs}",
-        f"BATCH_SIZE={best_params.get('batch_size', base_config.batch_size)}",
-        f"NUM_WORKERS={base_config.num_workers}",
-        "",
-        "# Loss Function",
-        f"LOSS_FUNCTION={base_config.loss_function}",
-        f"KL_REDUCTION={base_config.kl_reduction}",
-        "",
-        "# Other parameters (kept from base config)",
-        f"PATIENCE={base_config.patience}",
-        f"LR_SCHEDULER_FACTOR={base_config.lr_scheduler_factor}",
-        f"LR_SCHEDULER_PATIENCE={base_config.lr_scheduler_patience}",
-        f"MAX_GRAD_NORM={base_config.max_grad_norm}",
-        f"DEVICE={base_config.device}",
-        "",
-        "# Data Paths",
-        f"DATASET_FILE={base_config.dataset_file}",
-        f"BIO_TOKENIZED_FILE={base_config.bio_tokenized_file}",
-        f"DESCRIPTION_TOKENIZED_FILE={base_config.description_tokenized_file}",
-        "",
-        "# Output Paths",
-        f"MODEL_OUTPUT_DIR={base_config.model_output_dir}",
-        f"BEST_MODEL_NAME={base_config.best_model_name}",
-        "",
-        "# Dataset Splitting",
-        f"TRAIN_RATIO={base_config.train_ratio}",
-        f"VAL_RATIO={base_config.val_ratio}",
-        f"TEST_RATIO={base_config.test_ratio}",
-        f"SPLIT_RANDOM_STATE={base_config.split_random_state}",
-        "",
-        "# Validation and Evaluation",
-        f"VALIDATION_FREQUENCY={base_config.validation_frequency}",
-        f"EVALUATE_ON_TEST={str(base_config.evaluate_on_test).lower()}",
-        "",
-        "# Logging and Progress",
-        f"VERBOSE_TRAINING={str(base_config.verbose_training).lower()}",
-        f"LOG_FREQUENCY={base_config.log_frequency}",
-        "",
-        "# Memory Management",
-        f"CLEAR_CACHE_ON_OOM={str(base_config.clear_cache_on_oom).lower()}",
-        "",
-        "# Model Saving",
-        f"SAVE_CHECKPOINTS={str(base_config.save_checkpoints).lower()}",
-        f"CHECKPOINT_FREQUENCY={base_config.checkpoint_frequency}",
-        "",
-        "# Cross-Attention Specific",
-        f"USE_ATTENTION_FFN={str(base_config.use_attention_ffn).lower()}",
-        f"ATTENTION_FFN_MULTIPLIER={base_config.attention_ffn_multiplier}",
-        "",
-        "# Advanced Training",
-        f"USE_MIXED_PRECISION={str(base_config.use_mixed_precision).lower()}",
-        f"GRADIENT_ACCUMULATION_STEPS={base_config.gradient_accumulation_steps}",
-        "",
-        "# Three-Step Fine-tuning Strategy (Optimized)",
-        f"FIRST_UNFREEZE_EPOCH={best_params.get('first_unfreeze_epoch', base_config.first_unfreeze_epoch)}",
-        f"SECOND_UNFREEZE_EPOCH={best_params.get('second_unfreeze_epoch', base_config.second_unfreeze_epoch)}",
-        f"INITIAL_LAYERS_TO_UNFREEZE={best_params.get('initial_layers_to_unfreeze', base_config.initial_layers_to_unfreeze)}",
-        f"LR_REDUCTION_FACTOR={best_params.get('lr_reduction_factor', base_config.lr_reduction_factor)}",
-        f"REDUCE_MAIN_LR_ON_UNFREEZE={str(base_config.reduce_main_lr_on_unfreeze).lower()}",
-        "",
-        "# Random Seeds",
-        f"RANDOM_SEED={base_config.random_seed}",
-        f"TORCH_SEED={base_config.torch_seed}",
-        f"NUMPY_SEED={base_config.numpy_seed}",
-        "",
-        "# Model Loading and Caching",
-        f"USE_MODEL_CACHE={str(base_config.use_model_cache).lower()}",
-        f"DOWNLOAD_MODELS={str(base_config.download_models).lower()}",
-        "",
-        "# Data Validation",
-        f"MIN_JUSTICES_PER_CASE={base_config.min_justices_per_case}",
-        f"MAX_JUSTICES_PER_CASE={base_config.max_justices_per_case}",
-        f"SKIP_MISSING_DESCRIPTIONS={str(base_config.skip_missing_descriptions).lower()}",
-        f"SKIP_MISSING_BIOGRAPHIES={str(base_config.skip_missing_biographies).lower()}"
-    ])
+        "# Unfreezing Strategy",
+        f"UNFREEZE_AT_EPOCH={best_params.get('unfreeze_at_epoch', base_config.unfreeze_at_epoch)}",
+        f"UNFREEZE_BIO_MODEL={best_params.get('unfreeze_bio_model', base_config.unfreeze_bio_model)}",
+        f"UNFREEZE_DESCRIPTION_MODEL={best_params.get('unfreeze_description_model', base_config.unfreeze_description_model)}",
+        f"SENTENCE_TRANSFORMER_LEARNING_RATE={best_params.get('sentence_transformer_learning_rate', base_config.sentence_transformer_learning_rate)}"
+    ]
     
-    # Write config file
     with open(output_file, 'w') as f:
         f.write('\n'.join(config_lines))
     
-    logger.info(f"💾 Best configuration saved to: {output_file}")
-    if studied_params:
-        logger.info(f"📊 Optimized parameters: {', '.join(studied_params)}")
-    else:
-        logger.info(f"📊 No parameters were optimized (all used default values)")
+    print(f"💾 Best configuration saved to: {output_file}")
 
 
 def main():
-    """Main function for command-line usage."""
-    
-    # Load config to get defaults
-    base_config = ModelConfig()
-    
-    parser = argparse.ArgumentParser(description="Hyperparameter optimization for SCOTUS voting model")
-    parser.add_argument("--n-trials", type=int, default=base_config.optuna_n_trials, 
-                       help=f"Number of optimization trials (default: {base_config.optuna_n_trials})")
-    parser.add_argument("--study-name", type=str, help="Name for the optimization study")
-    parser.add_argument("--experiment-name", type=str, help="Name for the experiment (used in output filenames)")
-    parser.add_argument("--dataset-file", type=str, default=base_config.dataset_file,
-                       help=f"Path to dataset file (default: {base_config.dataset_file})")
-    parser.add_argument("--storage", type=str, help="Storage backend (e.g., sqlite:///study.db)")
+    """Main function for running hyperparameter optimization."""
+    parser = argparse.ArgumentParser(description="SCOTUS Model Hyperparameter Optimization")
+    parser.add_argument("--n-trials", type=int, help="Number of optimization trials")
+    parser.add_argument("--study-name", type=str, help="Name of the optimization study")
+    parser.add_argument("--dataset-file", type=str, help="Path to the dataset file")
+    parser.add_argument("--storage", type=str, help="Storage URL for study persistence")
     parser.add_argument("--n-jobs", type=int, default=1, help="Number of parallel jobs")
     parser.add_argument("--timeout", type=int, help="Timeout in seconds")
-    parser.add_argument("--output-config", type=str, help="Output file for best configuration (will use experiment name if not provided)")
-    parser.add_argument("--dashboard", action="store_true", help="Start Optuna dashboard after optimization")
+    parser.add_argument("--experiment-name", type=str, help="Optional experiment name for logging")
+    parser.add_argument("--save-best-config", type=str, help="Save best config to this file")
     
     args = parser.parse_args()
-    
-    # Set default output config filename based on experiment name
-    if args.output_config is None:
-        if args.experiment_name:
-            args.output_config = f"logs/hyperparameter_tunning_logs/optimized_config_{args.experiment_name}.env"
-        else:
-            args.output_config = "logs/hyperparameter_tunning_logs/optimized_config.env"
     
     # Run optimization
     study = run_hyperparameter_optimization(
@@ -1232,23 +630,11 @@ def main():
         experiment_name=args.experiment_name
     )
     
-    # Save best configuration (now passing base_config)
-    save_best_config(study, base_config, args.output_config)
-    
-    # Print summary with experiment name
-    print(f"\n🎯 Experiment '{args.experiment_name or 'default'}' completed!")
-    if args.experiment_name:
-        print(f"📊 Results saved to: logs/hyperparameter_tunning_logs/tunning_results_{args.experiment_name}.txt")
-    else:
-        print(f"📊 Results saved to: logs/hyperparameter_tunning_logs/tunning_results.txt")
-    print(f"⚙️  Best config saved to: {args.output_config}")
-    
-    # Start dashboard if requested
-    if args.dashboard and args.storage:
-        print(f"\n🌐 Starting Optuna dashboard...")
-        print(f"   Run: optuna-dashboard {args.storage}")
-        print(f"   Then open: http://localhost:8080")
+    # Save best config if requested
+    if args.save_best_config:
+        config = ModelConfig()
+        save_best_config(study, config, args.save_best_config)
 
 
 if __name__ == "__main__":
-    main() 
+    main()

@@ -10,6 +10,9 @@ pickle_format_example.py
 logs/*
 tests/*
 models/*
+models_output/*
+models_output/contrastive_justice/*
+models_output/scotus_net/*
 scripts/models/*
 __pycache__/
 *.py[cod]
