@@ -108,7 +108,13 @@ class ContrastiveJusticeTrainer:
         train_justices, val_justices, test_justices = self.split_pretraining_dataset(pretraining_dataset)
 
         # Load justices data & Save Directory
-        model_output_dir = Path(self.config.model_output_dir)
+        # Ensure model is saved in scotus_ai/models/model_output_dir
+        project_root = Path(__file__).parent.parent.parent  # Go up from scripts/pretraining/ to scotus_ai/
+        model_output_dir = project_root / "models" / "model_output_dir"
+        
+        # Create the directory structure if it doesn't exist
+        model_output_dir.mkdir(parents=True, exist_ok=True)
+        self.logger.info(f"Model will be saved to: {model_output_dir.absolute()}")
 
         # Model configuration
         model_name = self.config.model_name
@@ -258,9 +264,8 @@ class ContrastiveJusticeTrainer:
             if val_loss < best_val_loss:
                 patience_counter = 0
                 best_val_loss = val_loss
-                model_output_dir.mkdir(parents=True, exist_ok=True)
                 torch.save(model.truncated_bio_model.state_dict(), str(model_output_dir / 'best_model.pth'))
-                self.logger.info(f"New best model saved with validation loss {val_loss:.4f}")
+                self.logger.info(f"New best model saved with validation loss {val_loss:.4f} in location {(model_output_dir / 'best_model.pth').absolute()}")
             else:
                 patience_counter += 1
                 if patience_counter >= max_patience:
