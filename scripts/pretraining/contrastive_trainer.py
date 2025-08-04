@@ -108,8 +108,8 @@ class ContrastiveJusticeTrainer:
         train_justices, val_justices, test_justices = self.split_pretraining_dataset(pretraining_dataset)
 
         # Load justices data & Save Directory
-        # Force model to be saved in models directory (works both locally and in Docker)
-        model_output_dir = Path("models") / "model_output_dir"
+        # Use MODEL_OUTPUT_DIR from configuration
+        model_output_dir = Path(self.config.model_output_dir)
         
         # Create the directory structure if it doesn't exist
         model_output_dir.mkdir(parents=True, exist_ok=True)

@@ -118,13 +118,13 @@ EOF
 # Function to create necessary directories
 create_directories() {
     print_info "Creating necessary directories..."
-    mkdir -p data/raw data/processed data/augmented logs logs/hyperparameter_tunning_logs logs/training_logs models_output cache
+    mkdir -p data/raw data/processed data/augmented logs logs/hyperparameter_tunning_logs logs/training_logs models_output/contrastive_justice cache
     
-    # Ensure logs directory is writable by making it world-writable
-    # This is necessary for the container's non-root user to write log files
-    chmod 777 logs logs/hyperparameter_tunning_logs logs/training_logs 2>/dev/null || {
-        print_warning "Could not set write permissions on logs directory"
-        print_warning "You may need to run: sudo chmod 777 logs/ logs/hyperparameter_tunning_logs/ logs/training_logs/"
+    # Ensure logs and models_output directories are writable by making them world-writable
+    # This is necessary for the container's non-root user to write log files and save models
+    chmod 777 logs logs/hyperparameter_tunning_logs logs/training_logs models_output 2>/dev/null || {
+        print_warning "Could not set write permissions on logs/models directories"
+        print_warning "You may need to run: sudo chmod 777 logs/ logs/hyperparameter_tunning_logs/ logs/training_logs/ models_output/"
     }
     
     print_success "Directories created"
@@ -169,7 +169,7 @@ run_container() {
     docker_cmd="$docker_cmd \
         -v $(pwd)/data:/app/data \
         -v $(pwd)/logs:/app/logs \
-        -v $(pwd)/models_output:/app/models_output \
+        -v $(pwd)/models_output:/app/models \
         -v $(pwd)/cache:/app/.cache"
     
     # Add environment file if it exists
