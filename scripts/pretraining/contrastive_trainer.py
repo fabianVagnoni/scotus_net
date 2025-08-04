@@ -5,6 +5,7 @@ import json
 import os
 from typing import Dict, List, Tuple, Any
 import sys
+import torch.nn.functional as F
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 if current_dir not in sys.path:
@@ -14,12 +15,16 @@ try:
     from scripts.pretraining.constrastive_justice import ContrastiveJustice, ContrastiveJusticeDataset, collate_fn
     from scripts.utils.logger import get_logger
     from scripts.utils.holdout_test_set import HoldoutTestSetManager
+    from scripts.utils.metrics import calculate_mrr
+    from scripts.utils.progress import get_progress_bar
 except ImportError:
     # Fallback for when running as module from root
     from .loss import ContrastiveLoss
     from .constrastive_justice import ContrastiveJustice, ContrastiveJusticeDataset, collate_fn
     from ..utils.logger import get_logger
     from ..utils.holdout_test_set import HoldoutTestSetManager
+    from ..utils.metrics import calculate_mrr
+    from ..utils.progress import get_progress_bar
 
 
 class ContrastiveJusticeTrainer:
@@ -44,25 +49,43 @@ class ContrastiveJusticeTrainer:
         # Sort by year and extract just the justice names
         ordered_justices = [justice for justice, year in sorted(justice_year_pairs, key=lambda x: x[1])]
         
-        test_set = ordered_justices[:self.config.test_set_size]
-        val_set = ordered_justices[self.config.test_set_size:self.config.test_set_size + self.config.val_set_size]
-        train_set = ordered_justices[self.config.test_set_size + self.config.val_set_size:]
+        test_set = ordered_justices[-self.config.test_set_size:]
+        val_set = ordered_justices[-self.config.test_set_size - self.config.val_set_size:-self.config.test_set_size]
+        train_set = ordered_justices[:-self.config.test_set_size - self.config.val_set_size]
+
+        # Logging Split
+        self.logger.info(f"Val Justices: {val_set}")
+        self.logger.info(f"Test Justices: {test_set}")
+
         return train_set, val_set, test_set
 
-    def evaluate_model(self, model: ContrastiveJustice, val_loader: DataLoader, loss_fn: ContrastiveLoss) -> float:
+    def evaluate_model(self, model: ContrastiveJustice, val_loader: DataLoader, loss_fn: ContrastiveLoss) -> Tuple[float, float]:
         """Evaluate the model on validation data."""
         model.eval()
         total_loss = 0.0
         num_batches = 0
+        all_trunc_embeddings = []
+        all_full_embeddings = []
+        justice_indices = []
         
         with torch.no_grad():
-            for batch in val_loader:
+            for batch_idx, batch in enumerate(val_loader):
                 try:
                     batch_trunc_bio_data = batch['trunc_bio_data']
                     batch_full_bio_data = batch['full_bio_data']
                     
                     e_t, e_f = model.forward(batch_trunc_bio_data, batch_full_bio_data)
                     batch_loss = loss_fn(e_t, e_f)
+
+                    # Normalize embeddings for cosine similarity
+                    e_t = F.normalize(e_t, dim=-1)
+                    e_f = F.normalize(e_f, dim=-1)
+                    all_trunc_embeddings.append(e_t)
+                    all_full_embeddings.append(e_f)
+                    # Track which examples these are (for correct matching)
+                    batch_size = e_t.size(0)
+                    start_idx = batch_idx * val_loader.batch_size
+                    justice_indices.extend(range(start_idx, start_idx + batch_size))
                     
                     total_loss += batch_loss.item()
                     num_batches += 1
@@ -70,10 +93,12 @@ class ContrastiveJusticeTrainer:
                     self.logger.error(f"Error in validation batch: {e}")
                     continue
         
-        if num_batches == 0:
-            return float('inf')
+        mrr = calculate_mrr(all_trunc_embeddings, all_full_embeddings)
         
-        return total_loss / num_batches
+        if num_batches == 0:
+            return float('inf'), 0.0
+        
+        return total_loss / num_batches, mrr
 
     def train_model(self, justices_file: str = None):
         """Train the contrastive justice model."""
@@ -153,12 +178,26 @@ class ContrastiveJusticeTrainer:
         patience_counter = 0
         max_patience = self.config.max_patience
         
-        for epoch in range(num_epochs):
+        # Progress bar for epochs
+        epoch_pbar = get_progress_bar(
+            range(num_epochs),
+            desc="Training Progress",
+            total=num_epochs
+        )
+        
+        for epoch in epoch_pbar:
             model.train()
             train_loss = 0.0
             num_batches = 0
             
-            for batch_idx, batch in enumerate(train_loader):
+            # Progress bar for batches within each epoch
+            batch_pbar = get_progress_bar(
+                train_loader,
+                desc=f"Epoch {epoch+1}/{num_epochs}",
+                total=len(train_loader)
+            )
+            
+            for batch in batch_pbar:
                 try:
                     optimizer.zero_grad()
                     batch_trunc_bio_data = batch['trunc_bio_data']
@@ -171,8 +210,14 @@ class ContrastiveJusticeTrainer:
                     num_batches += 1
                     batch_loss.backward()
                     optimizer.step()
+                    
+                    # Update batch progress bar with current loss
+                    batch_pbar.set_description(
+                        f"Epoch {epoch+1}/{num_epochs} - Loss: {batch_loss.item():.4f}"
+                    )
+                    
                 except Exception as e:
-                    self.logger.error(f"Error in batch {batch_idx}: {e}")
+                    self.logger.error(f"Error in training batch: {e}")
                     continue
             
             if num_batches == 0:
@@ -180,10 +225,25 @@ class ContrastiveJusticeTrainer:
                 break
             
             avg_train_loss = train_loss / num_batches
+            
+            # Update epoch progress bar with training loss
+            epoch_pbar.set_description(
+                f"Epoch {epoch+1}/{num_epochs} - Train Loss: {avg_train_loss:.4f}"
+            )
+            
+            # Validation
+            val_loss, val_mrr = self.evaluate_model(model, val_loader, loss_fn)
+            
+            # Update epoch progress bar with validation metrics
+            epoch_pbar.set_description(
+                f"Epoch {epoch+1}/{num_epochs} - Train: {avg_train_loss:.4f}, Val: {val_loss:.4f}, MRR: {val_mrr:.4f}"
+            )
+            
+            # Log detailed information
             self.logger.info(f"Epoch {epoch+1}/{num_epochs}:")
             self.logger.info(f"Training Loss: {avg_train_loss:.4f}")
-            val_loss = self.evaluate_model(model, val_loader, loss_fn)
             self.logger.info(f"Validation Loss: {val_loss:.4f}")
+            self.logger.info(f"Validation MRR: {val_mrr:.4f}")
 
             # Learning rate scheduling
             current_lr = optimizer.param_groups[0]['lr']

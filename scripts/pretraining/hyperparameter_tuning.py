@@ -32,12 +32,14 @@ try:
     from scripts.pretraining.config import ContrastiveJusticeConfig
     from scripts.utils.logger import get_logger
     from scripts.utils.progress import get_progress_bar
+    from scripts.utils.metrics import calculate_mrr
 except ImportError:
     from constrastive_justice import ContrastiveJustice, ContrastiveJusticeDataset, collate_fn
     from loss import ContrastiveLoss
     from config import ContrastiveJusticeConfig
     from ..utils.logger import get_logger
     from ..utils.progress import get_progress_bar
+    from ..utils.metrics import calculate_mrr
 
 
 
@@ -237,7 +239,6 @@ class HyperparameterTuner:
         model.eval()
         all_trunc_embeddings = []
         all_full_embeddings = []
-        justice_indices = []
         
         with torch.no_grad():
             # Progress bar for validation batches
@@ -262,49 +263,12 @@ class HyperparameterTuner:
                     all_trunc_embeddings.append(e_t)
                     all_full_embeddings.append(e_f)
                     
-                    # Track which examples these are (for correct matching)
-                    batch_size = e_t.size(0)
-                    start_idx = batch_idx * val_loader.batch_size
-                    justice_indices.extend(range(start_idx, start_idx + batch_size))
-                    
                 except Exception as e:
                     self.logger.warning(f"Error in MRR batch {batch_idx}: {e}")
                     continue
         
-        if not all_trunc_embeddings:
-            return 0.0
-        
-        # Concatenate all embeddings
-        # Ensure all tensors are on the same device before concatenation
-        device = all_trunc_embeddings[0].device if all_trunc_embeddings else self.device
-        all_trunc_embeddings = [emb.to(device) for emb in all_trunc_embeddings]
-        all_full_embeddings = [emb.to(device) for emb in all_full_embeddings]
-        
-        all_trunc_embeddings = torch.cat(all_trunc_embeddings, dim=0)  # (N, D)
-        all_full_embeddings = torch.cat(all_full_embeddings, dim=0)    # (N, D)
-        
-        # Calculate similarity matrix
-        similarity_matrix = torch.mm(all_trunc_embeddings, all_full_embeddings.t())  # (N, N)
-        
-        # Calculate MRR
-        reciprocal_ranks = []
-        for i in range(similarity_matrix.size(0)):
-            # Get similarities for this truncated bio with all full bios
-            similarities = similarity_matrix[i]  # (N,)
-            
-            # Sort in descending order and get ranks
-            _, sorted_indices = torch.sort(similarities, descending=True)
-            
-            # Find the rank of the correct match (index i)
-            # Create tensor for comparison to avoid device mismatch
-            target_idx = torch.tensor(i, device=similarity_matrix.device)
-            correct_rank = (sorted_indices == target_idx).nonzero(as_tuple=True)[0].item() + 1  # +1 for 1-based ranking
-            
-            # Add reciprocal rank
-            reciprocal_ranks.append(1.0 / correct_rank)
-        
-        mrr = np.mean(reciprocal_ranks)
-        return mrr
+        # Use the centralized calculate_mrr function
+        return calculate_mrr(all_trunc_embeddings, all_full_embeddings)
     
     def objective(self, trial):
         """Optuna objective function to maximize MRR."""
