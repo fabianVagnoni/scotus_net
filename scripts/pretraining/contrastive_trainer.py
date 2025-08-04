@@ -108,9 +108,8 @@ class ContrastiveJusticeTrainer:
         train_justices, val_justices, test_justices = self.split_pretraining_dataset(pretraining_dataset)
 
         # Load justices data & Save Directory
-        # Ensure model is saved in scotus_ai/models/model_output_dir
-        project_root = Path(__file__).parent.parent.parent  # Go up from scripts/pretraining/ to scotus_ai/
-        model_output_dir = project_root / "models" / "model_output_dir"
+        # Force model to be saved in models directory (works both locally and in Docker)
+        model_output_dir = Path("models") / "model_output_dir"
         
         # Create the directory structure if it doesn't exist
         model_output_dir.mkdir(parents=True, exist_ok=True)
