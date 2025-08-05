@@ -31,7 +31,7 @@ try:
     from scripts.utils.logger import get_logger
     from scripts.utils.holdout_test_set import HoldoutTestSetManager
     from scripts.utils.progress import get_progress_bar
-    from scripts.utils.config import ModelConfig
+    from scripts.models.config import ModelConfig
 except ImportError:
     # Fallback for when running as module from root
     from .scotus_voting_model import SCOTUSVotingModel, SCOTUSDataset, collate_fn
@@ -39,7 +39,7 @@ except ImportError:
     from ..utils.logger import get_logger
     from ..utils.holdout_test_set import HoldoutTestSetManager
     from ..utils.progress import get_progress_bar
-    from ..utils.config import ModelConfig
+    from .config import ModelConfig
 
 
 class SCOTUSModelTrainer:
@@ -55,7 +55,7 @@ class SCOTUSModelTrainer:
     def load_case_dataset(self, dataset_file: str = None) -> Dict:
         """Load the case dataset."""
         if dataset_file is None:
-            dataset_file = self.config.case_dataset_file
+            dataset_file = self.config.dataset_file
             
         self.logger.info(f"📂 Loading case dataset from: {dataset_file}")
         
@@ -87,20 +87,14 @@ class SCOTUSModelTrainer:
         
         return train_dataset, val_dataset
 
-    def get_tokenized_file_paths(self, dataset: Dict) -> Tuple[str, str]:
-        """Get paths to tokenized files based on dataset content."""
-        # Get a sample case to determine the paths
-        sample_case = next(iter(dataset.values()))
-        justice_bio_paths, case_description_path, _ = sample_case
-        
-        # Create tokenized file paths based on the pattern
+    def get_tokenized_file_paths(self) -> Tuple[str, str]:
+        """Get paths to tokenized files."""
+        # Use fixed filenames for the tokenized data
         bio_tokenized_file = os.path.join(
-            self.config.tokenized_data_dir,
-            f"bio_embeddings_{self.config.bio_model_name.replace('/', '_')}.pkl"
+            self.config.bio_tokenized_file
         )
         description_tokenized_file = os.path.join(
-            self.config.tokenized_data_dir,
-            f"description_embeddings_{self.config.description_model_name.replace('/', '_')}.pkl"
+            self.config.description_tokenized_file
         )
         
         self.logger.info(f"🔗 Bio tokenized file: {bio_tokenized_file}")
@@ -127,66 +121,36 @@ class SCOTUSModelTrainer:
         processed_data = []
         
         bio_tokenized_data = bio_data['tokenized_data']
+        bio_tokenized_data = {k.split('\\')[-1]: v for k, v in bio_tokenized_data.items()}
         description_tokenized_data = description_data['tokenized_data']
+        description_tokenized_data = {k.split('\\')[-1]: v for k, v in description_tokenized_data.items()}
         
         if verbose:
             self.logger.info("🔄 Processing dataset entries...")
         
         skipped_cases = []
         
-        for case_id, (justice_bio_paths, case_description_path, voting_percentages) in dataset.items():
+        for case_id, case_data in dataset.items():
             try:
-                # Process case description
-                case_path_normalized = case_description_path.replace('\\', '/')
-                if case_path_normalized not in description_tokenized_data:
-                    # Try alternative path formats
-                    alt_paths = [
-                        os.path.abspath(case_path_normalized).replace('\\', '/'),
-                        os.path.normpath(case_path_normalized).replace('\\', '/')
-                    ]
-                    found_case = False
-                    for alt_path in alt_paths:
-                        if alt_path in description_tokenized_data:
-                            case_path_normalized = alt_path
-                            found_case = True
-                            break
-                    
-                    if not found_case:
-                        skipped_cases.append(f"{case_id}: case description path not found")
-                        continue
-                
-                case_tokenized = description_tokenized_data[case_path_normalized]
+                # Extract data based on the format: [justice_bio_paths, case_description_path, voting_percentages, metadata]
+                justice_bio_paths = case_data[0]
+                case_description_path = case_data[1].split('\\')[-1]
+                voting_percentages = case_data[2]
+                case_tokenized = description_tokenized_data[case_description_path]
                 
                 # Process justice biographies
                 justice_tokenized_list = []
                 valid_justice_count = 0
                 
                 for bio_path in justice_bio_paths:
-                    if not bio_path:  # Skip None/empty paths
+                    bio_path = bio_path.split('\\')[-1]
+                    try:
+                        bio_tokenized = bio_tokenized_data[bio_path]
+                        justice_tokenized_list.append(bio_tokenized)
+                        valid_justice_count += 1
+                    except Exception as e:
+                        self.logger.warning(f"🔗 Bio path not found for {case_id}: {bio_path}")
                         continue
-                        
-                    bio_path_normalized = bio_path.replace('\\', '/')
-                    if bio_path_normalized not in bio_tokenized_data:
-                        # Try alternative path formats
-                        alt_paths = [
-                            os.path.abspath(bio_path_normalized).replace('\\', '/'),
-                            os.path.normpath(bio_path_normalized).replace('\\', '/')
-                        ]
-                        found_bio = False
-                        for alt_path in alt_paths:
-                            if alt_path in bio_tokenized_data:
-                                bio_path_normalized = alt_path
-                                found_bio = True
-                                break
-                        
-                        if not found_bio:
-                            if verbose:
-                                self.logger.warning(f"Bio path not found for {case_id}: {bio_path}")
-                            continue
-                    
-                    bio_tokenized = bio_tokenized_data[bio_path_normalized]
-                    justice_tokenized_list.append(bio_tokenized)
-                    valid_justice_count += 1
                 
                 if valid_justice_count == 0:
                     skipped_cases.append(f"{case_id}: no valid justice biographies found")
@@ -230,7 +194,7 @@ class SCOTUSModelTrainer:
         train_dataset, val_dataset = self.split_dataset(dataset)
         
         # Get tokenized file paths and load tokenized data
-        bio_tokenized_file, description_tokenized_file = self.get_tokenized_file_paths(dataset)
+        bio_tokenized_file, description_tokenized_file = self.get_tokenized_file_paths()
         bio_data, description_data = self.load_tokenized_data(bio_tokenized_file, description_tokenized_file)
         
         # Process datasets
@@ -301,7 +265,7 @@ class SCOTUSModelTrainer:
         num_epochs = self.config.num_epochs
         best_val_loss = float('inf')
         patience_counter = 0
-        max_patience = self.config.early_stopping_patience
+        max_patience = self.config.patience
         
         for epoch in range(num_epochs):
             # Training phase
@@ -438,7 +402,7 @@ class SCOTUSModelTrainer:
         if model_path is None:
             model_path = os.path.join(self.config.model_output_dir, 'best_model.pth')
         
-        bio_tokenized_file, description_tokenized_file = self.get_tokenized_file_paths(test_cases)
+        bio_tokenized_file, description_tokenized_file = self.get_tokenized_file_paths()
         model = SCOTUSVotingModel.load_model(
             model_path,
             bio_model_name=self.config.bio_model_name,

@@ -4,10 +4,20 @@ from transformers import AutoTokenizer, AutoModel
 from sentence_transformers import SentenceTransformer
 from typing import List, Optional, Dict, Any, Tuple
 import torch.nn.functional as F
+from torch.nn.utils.rnn import pad_sequence
 import os
 import pickle
-from models.justice_cross_attention import JusticeCrossAttention
-from torch.nn.utils.rnn import pad_sequence
+import sys
+
+# Add current directory to path for imports
+current_dir = os.path.dirname(os.path.abspath(__file__))
+if current_dir not in sys.path:
+    sys.path.insert(0, current_dir)
+try:
+    from models.justice_cross_attention import JusticeCrossAttention
+except ImportError:
+    from .justice_cross_attention import JusticeCrossAttention
+
 
 class SCOTUSVotingModel(nn.Module):
     """

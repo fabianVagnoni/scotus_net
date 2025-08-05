@@ -22,7 +22,7 @@ if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 from scripts.models.model_trainer import SCOTUSModelTrainer
-from scripts.utils.config import ModelConfig
+from scripts.models.config import ModelConfig
 from scripts.utils.logger import get_logger
 
 
@@ -95,7 +95,7 @@ def main():
     
     logger.info("🚀 Starting SCOTUS Voting Model Training")
     logger.info(f"   Experiment: {args.experiment_name}")
-    logger.info(f"   Dataset: {args.dataset_file or config.case_dataset_file}")
+    logger.info(f"   Dataset: {args.dataset_file or config.dataset_file}")
     logger.info(f"   Bio Model: {config.bio_model_name}")
     logger.info(f"   Description Model: {config.description_model_name}")
     logger.info(f"   Embedding Dim: {config.embedding_dim}")
@@ -106,14 +106,6 @@ def main():
     logger.info(f"   Epochs: {config.num_epochs}")
     logger.info(f"   Use Justice Attention: {config.use_justice_attention}")
     logger.info(f"   Use Noise Regularization: {config.use_noise_reg}")
-    
-    if config.unfreeze_transformers:
-        logger.info(f"   Unfreeze at Epoch: {config.unfreeze_at_epoch}")
-        logger.info(f"   Unfreeze Bio Model: {config.unfreeze_bio_model}")
-        logger.info(f"   Unfreeze Description Model: {config.unfreeze_description_model}")
-        logger.info(f"   Sentence Transformer LR: {config.sentence_transformer_learning_rate}")
-    else:
-        logger.info("   Transformers will remain frozen")
     
     try:
         # Initialize trainer
