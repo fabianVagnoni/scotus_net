@@ -393,6 +393,7 @@ def collate_fn(batch):
     #print(f"justice_input_ids: {justice_input_ids.shape}")
     justice_attention_mask = pad_sequence(justice_attention_mask, batch_first=True)
     #print(f"justice_attention_mask: {justice_attention_mask.shape}")
+    print("justice_input_ids", justice_input_ids.__class__.__name__)
 
     justice_counts = [item['justice_count'] for item in batch]
     targets = torch.stack([item['target'] for item in batch])
