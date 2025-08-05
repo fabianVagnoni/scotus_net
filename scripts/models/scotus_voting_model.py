@@ -58,6 +58,8 @@ class SCOTUSVotingModel(nn.Module):
         self.use_noise_reg = use_noise_reg
         self.noise_reg_alpha = noise_reg_alpha
         self.device = device
+        self.frozen_bio_model = True
+        self.frozen_description_model = True
         
         # Initialize sentence transformer models
         print(f"📥 Loading sentence transformer models...")
@@ -132,7 +134,7 @@ class SCOTUSVotingModel(nn.Module):
         }
         
         # Use the sentence transformer's encoding
-        with torch.no_grad() if not self.training else torch.enable_grad():
+        with torch.no_grad() if not self.training or self.frozen_description_model else torch.enable_grad():
             embeddings = self.description_model(features)['sentence_embedding']
             
             if self.use_noise_reg and self.training:
@@ -161,7 +163,7 @@ class SCOTUSVotingModel(nn.Module):
         }
         
         # Use the sentence transformer's encoding
-        with torch.no_grad() if not self.training else torch.enable_grad():
+        with torch.no_grad() if not self.training or self.frozen_bio_model else torch.enable_grad():
             embeddings = self.bio_model(features)['sentence_embedding']
             
             if self.use_noise_reg and self.training:
@@ -205,11 +207,11 @@ class SCOTUSVotingModel(nn.Module):
         all_justice_embeddings = self.encode_justice_bios(justice_input_ids_flat, justice_attention_mask_flat)
         
         # Reshape back to batch format: (batch_size, max_justices, embedding_dim)
-        justice_embeddings = all_justice_embeddings.view(batch_size, self.max_justices, self.embedding_dim)
+        justice_embeddings = all_justice_embeddings.view(batch_size, MAX_JUSTICES, self.embedding_dim)
         
         if self.use_justice_attention:
             # Create batch masks for real vs padded justices
-            justice_masks = torch.zeros(batch_size, self.max_justices, dtype=torch.bool, device=case_embeddings.device)
+            justice_masks = torch.zeros(batch_size, MAX_JUSTICES, dtype=torch.bool, device=case_embeddings.device)
             for i, count in enumerate(justice_counts):
                 justice_masks[i, :count] = True  # True for real justices, False for padding
             
@@ -320,6 +322,8 @@ class SCOTUSVotingModel(nn.Module):
 
     def freeze_sentence_transformers(self):
         """Freeze all sentence transformers."""
+        self.frozen_bio_model = True
+        self.frozen_description_model = True
         for param in self.bio_model.parameters():
             param.requires_grad = False
         for param in self.description_model.parameters():
@@ -327,6 +331,8 @@ class SCOTUSVotingModel(nn.Module):
 
     def unfreeze_sentence_transformers(self):
         """Unfreeze all sentence transformers."""
+        self.frozen_bio_model = False
+        self.frozen_description_model = False
         for param in self.bio_model.parameters():
             param.requires_grad = True
         for param in self.description_model.parameters():
@@ -334,21 +340,25 @@ class SCOTUSVotingModel(nn.Module):
 
     def freeze_bio_model(self):
         """Freeze only the biography sentence transformer."""
+        self.frozen_bio_model = True
         for param in self.bio_model.parameters():
             param.requires_grad = False
 
     def unfreeze_bio_model(self):
         """Unfreeze only the biography sentence transformer."""
+        self.frozen_bio_model = False
         for param in self.bio_model.parameters():
             param.requires_grad = True
 
     def freeze_description_model(self):
         """Freeze only the description sentence transformer."""
+        self.frozen_description_model = True
         for param in self.description_model.parameters():
             param.requires_grad = False
 
     def unfreeze_description_model(self):
         """Unfreeze only the description sentence transformer."""
+        self.frozen_description_model = False
         for param in self.description_model.parameters():
             param.requires_grad = True
 
@@ -393,7 +403,7 @@ def collate_fn(batch):
     #print(f"justice_input_ids: {justice_input_ids.shape}")
     justice_attention_mask = pad_sequence(justice_attention_mask, batch_first=True)
     #print(f"justice_attention_mask: {justice_attention_mask.shape}")
-    print("justice_input_ids", justice_input_ids.__class__.__name__)
+    #print("justice_input_ids", justice_input_ids.__class__.__name__)
 
     justice_counts = [item['justice_count'] for item in batch]
     targets = torch.stack([item['target'] for item in batch])

@@ -212,7 +212,8 @@ class SCOTUSModelTrainer:
             batch_size=self.config.batch_size,
             shuffle=True,
             collate_fn=collate_fn,
-            num_workers=self.config.num_workers
+            num_workers=self.config.num_workers,
+            pin_memory=True
         )
         
         val_loader = DataLoader(
@@ -220,7 +221,8 @@ class SCOTUSModelTrainer:
             batch_size=self.config.batch_size,
             shuffle=False,
             collate_fn=collate_fn,
-            num_workers=self.config.num_workers
+            num_workers=self.config.num_workers,
+            pin_memory=True
         )
         
         # Initialize model
@@ -423,7 +425,8 @@ class SCOTUSModelTrainer:
             batch_size=self.config.batch_size,
             shuffle=False,
             collate_fn=collate_fn,
-            num_workers=self.config.num_workers
+            num_workers=self.config.num_workers,
+            pin_memory=True
         )
         
         # Evaluate
