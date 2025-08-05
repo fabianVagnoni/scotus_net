@@ -122,8 +122,10 @@ class SCOTUSModelTrainer:
         
         bio_tokenized_data = bio_data['tokenized_data']
         bio_tokenized_data = {k.split('\\')[-1]: v for k, v in bio_tokenized_data.items()}
+        bio_tokenized_data = {k.split('/')[-1]: v for k, v in bio_tokenized_data.items()}
         description_tokenized_data = description_data['tokenized_data']
         description_tokenized_data = {k.split('\\')[-1]: v for k, v in description_tokenized_data.items()}
+        description_tokenized_data = {k.split('/')[-1]: v for k, v in description_tokenized_data.items()}
         
         if verbose:
             self.logger.info("🔄 Processing dataset entries...")
