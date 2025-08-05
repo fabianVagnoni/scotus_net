@@ -8,6 +8,7 @@ from torch.nn.utils.rnn import pad_sequence
 import os
 import pickle
 import sys
+MAX_JUSTICES=11
 
 # Add current directory to path for imports
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -174,8 +175,8 @@ class SCOTUSVotingModel(nn.Module):
     def forward(self, 
                 case_input_ids: torch.Tensor, 
                 case_attention_mask: torch.Tensor,
-                justice_input_ids: List[torch.Tensor], 
-                justice_attention_mask: List[torch.Tensor],
+                justice_input_ids: torch.Tensor, 
+                justice_attention_mask: torch.Tensor,
                 justice_counts: List[int]) -> torch.Tensor:
         """
         Forward pass of the model using tokenized inputs.
@@ -183,8 +184,8 @@ class SCOTUSVotingModel(nn.Module):
         Args:
             case_input_ids: Tensor of shape (batch_size, case_seq_len)
             case_attention_mask: Tensor of shape (batch_size, case_seq_len)
-            justice_input_ids: List of tensors, each of shape (num_justices_i, justice_seq_len)
-            justice_attention_mask: List of tensors, each of shape (num_justices_i, justice_seq_len)
+            justice_input_ids: Tensor of shape (batch_size, max_justices, justice_seq_len)
+            justice_attention_mask: Tensor of shape (batch_size, max_justices, justice_seq_len)
             justice_counts: List of integers indicating number of justices per case
             
         Returns:
@@ -195,77 +196,63 @@ class SCOTUSVotingModel(nn.Module):
         # Encode case descriptions
         case_embeddings = self.encode_case_descriptions(case_input_ids, case_attention_mask)  # (batch_size, embedding_dim)
         
-        # Encode all justice biographies
-        all_justice_input_ids = torch.cat(justice_input_ids, dim=0)  # (total_justices, justice_seq_len)
-        all_justice_attention_mask = torch.cat(justice_attention_mask, dim=0)  # (total_justices, justice_seq_len)
-        all_justice_embeddings = self.encode_justice_bios(all_justice_input_ids, all_justice_attention_mask)  # (total_justices, embedding_dim)
+        # Encode all justice biographies in parallel
+        # Reshape to process all justices at once: (batch_size * max_justices, justice_seq_len)
+        justice_input_ids_flat = justice_input_ids.view(-1, justice_input_ids.size(-1))
+        justice_attention_mask_flat = justice_attention_mask.view(-1, justice_attention_mask.size(-1))
         
-        # Process each case with its justices
-        batch_outputs = []
-        justice_start_idx = 0
+        # Get embeddings for all justices: (batch_size * max_justices, embedding_dim)
+        all_justice_embeddings = self.encode_justice_bios(justice_input_ids_flat, justice_attention_mask_flat)
         
-        for case_idx in range(batch_size):
-            num_justices = justice_counts[case_idx]
+        # Reshape back to batch format: (batch_size, max_justices, embedding_dim)
+        justice_embeddings = all_justice_embeddings.view(batch_size, self.max_justices, self.embedding_dim)
+        
+        if self.use_justice_attention:
+            # Create batch masks for real vs padded justices
+            justice_masks = torch.zeros(batch_size, self.max_justices, dtype=torch.bool, device=case_embeddings.device)
+            for i, count in enumerate(justice_counts):
+                justice_masks[i, :count] = True  # True for real justices, False for padding
             
-            # Get embeddings for this case
-            case_embedding = case_embeddings[case_idx]  # (embedding_dim,)
-            case_justice_embeddings = all_justice_embeddings[justice_start_idx:justice_start_idx + num_justices]  # (num_justices, embedding_dim)
-            justice_start_idx += num_justices
+            # Apply dropout and noise regularization to justice embeddings
+            justice_embeddings = self.justice_dropout(justice_embeddings)
+            if self.use_noise_reg and self.training:
+                justice_embeddings = self.noise_reg(justice_embeddings)
             
-            # Convert to list for easier manipulation
-            case_justice_embeddings_list = [case_justice_embeddings[i] for i in range(num_justices)]
-            
-            # Pad with zeros if fewer justices than max_justices
-            while len(case_justice_embeddings_list) < self.max_justices:
-                zero_embedding = torch.zeros(self.embedding_dim, device=case_embedding.device)
-                case_justice_embeddings_list.append(zero_embedding)
-            
-            # Truncate if more justices than max_justices
-            case_justice_embeddings_list = case_justice_embeddings_list[:self.max_justices]
-            
-            if self.use_justice_attention:
-                # Use attention mechanism
-                # Stack justice embeddings: (max_justices, embedding_dim)
-                justice_embs_tensor = torch.stack(case_justice_embeddings_list)
-                justice_embs_tensor = self.justice_dropout(justice_embs_tensor)
-                
-                if self.use_noise_reg and self.training:
-                    justice_embs_tensor = self.noise_reg(justice_embs_tensor)
-                
-                # Create mask for real vs padded justices
-                justice_mask = torch.zeros(self.max_justices, dtype=torch.bool, device=case_embedding.device)
-                justice_mask[:num_justices] = True  # True for real justices, False for padding
-                
-                # Apply cross-attention
+            # Process all cases through attention in parallel
+            batch_outputs = []
+            for i in range(batch_size):
                 court_embedding = self.justice_attention(
-                    case_emb=case_embedding,
-                    justice_embs=justice_embs_tensor,
-                    justice_mask=justice_mask
+                    case_emb=case_embeddings[i],
+                    justice_embs=justice_embeddings[i],
+                    justice_mask=justice_masks[i]
                 )
-                
                 # Combine case and court embeddings
-                combined_embedding = torch.cat([case_embedding, court_embedding], dim=0)
-            else:
-                # Original concatenation approach
-                all_embeddings = [case_embedding] + case_justice_embeddings_list
-                combined_embedding = torch.cat(all_embeddings, dim=0)
-                combined_embedding = self.justice_dropout(combined_embedding)
-                
-                if self.use_noise_reg and self.training:
-                    combined_embedding = self.noise_reg(combined_embedding)
+                combined_embedding = torch.cat([case_embeddings[i], court_embedding], dim=0)
+                output = self.fc_layers(combined_embedding)
+                batch_outputs.append(output)
             
-            # Pass through fully connected layers
-            output = self.fc_layers(combined_embedding)  # (3,)
-            batch_outputs.append(output)
-        
-        # Stack all outputs
-        return torch.stack(batch_outputs)  # (batch_size, 3)
+            return torch.stack(batch_outputs)  # (batch_size, 3)
+        else:
+            # Original concatenation approach - process in parallel
+            # Apply dropout and noise regularization
+            justice_embeddings = self.justice_dropout(justice_embeddings)
+            if self.use_noise_reg and self.training:
+                justice_embeddings = self.noise_reg(justice_embeddings)
+            
+            # Flatten justice embeddings: (batch_size, max_justices * embedding_dim)
+            justice_embeddings_flat = justice_embeddings.view(batch_size, -1)
+            
+            # Concatenate case and justice embeddings: (batch_size, embedding_dim + max_justices * embedding_dim)
+            combined_embeddings = torch.cat([case_embeddings, justice_embeddings_flat], dim=1)
+            
+            # Pass through fully connected layers in parallel
+            return self.fc_layers(combined_embeddings)  # (batch_size, 3)
     
     def predict_probabilities(self, 
                             case_input_ids: torch.Tensor, 
                             case_attention_mask: torch.Tensor,
-                            justice_input_ids: List[torch.Tensor], 
-                            justice_attention_mask: List[torch.Tensor],
+                            justice_input_ids: torch.Tensor, 
+                            justice_attention_mask: torch.Tensor,
                             justice_counts: List[int]) -> torch.Tensor:
         """
         Make predictions returning probabilities.
@@ -273,8 +260,8 @@ class SCOTUSVotingModel(nn.Module):
         Args:
             case_input_ids: Tensor of shape (batch_size, case_seq_len)
             case_attention_mask: Tensor of shape (batch_size, case_seq_len)
-            justice_input_ids: List of tensors, each of shape (num_justices_i, justice_seq_len)
-            justice_attention_mask: List of tensors, each of shape (num_justices_i, justice_seq_len)
+            justice_input_ids: Tensor of shape (batch_size, max_justices, justice_seq_len)
+            justice_attention_mask: Tensor of shape (batch_size, max_justices, justice_seq_len)
             justice_counts: List of integers indicating number of justices per case
             
         Returns:
@@ -387,10 +374,26 @@ def collate_fn(batch):
     Custom collate function for the DataLoader.
     """
     case_ids = [item['case_id'] for item in batch]
-    case_input_ids = torch.stack([item['case_input_ids'] for item in batch])
-    case_attention_mask = torch.stack([item['case_attention_mask'] for item in batch])
+    case_input_ids = pad_sequence([item['case_input_ids'] for item in batch], batch_first=True)
+    case_attention_mask = pad_sequence([item['case_attention_mask'] for item in batch], batch_first=True)
     justice_input_ids = [item['justice_input_ids'] for item in batch]
     justice_attention_mask = [item['justice_attention_mask'] for item in batch]
+    
+    # Pad case inputs to max_justices
+    #print(f"🔗 Justice input ids pre: {justice_input_ids[0].shape}")
+    pad = justice_input_ids[0].new_zeros((MAX_JUSTICES - justice_input_ids[0].shape[0],justice_input_ids[0].shape[1]))
+    #print(f"pad: {pad.shape}")
+    justice_input_ids_padded = torch.cat([justice_input_ids[0], pad], dim=0)
+    #print(f"justice_input_ids_padded: {justice_input_ids_padded.shape}")
+    justice_attention_mask_padded = torch.cat([justice_attention_mask[0], pad], dim=0)
+    #print(f"justice_attention_mask_padded: {justice_attention_mask_padded.shape}")
+    justice_input_ids[0] = justice_input_ids_padded
+    justice_attention_mask[0] = justice_attention_mask_padded
+    justice_input_ids = pad_sequence(justice_input_ids, batch_first=True)
+    #print(f"justice_input_ids: {justice_input_ids.shape}")
+    justice_attention_mask = pad_sequence(justice_attention_mask, batch_first=True)
+    #print(f"justice_attention_mask: {justice_attention_mask.shape}")
+
     justice_counts = [item['justice_count'] for item in batch]
     targets = torch.stack([item['target'] for item in batch])
     
