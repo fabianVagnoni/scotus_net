@@ -178,6 +178,58 @@ class SCOTUSVotingModel(nn.Module):
         
         return embeddings
     
+    def encode_justice_bios_batch(self, input_ids: torch.Tensor, attention_mask: torch.Tensor, justice_counts: List[int]) -> torch.Tensor:
+        """
+        Encode justice biographies efficiently using batch processing.
+        
+        Args:
+            input_ids: Tensor of shape (batch_size, max_justices, seq_len)
+            attention_mask: Tensor of shape (batch_size, max_justices, seq_len)
+            justice_counts: List of actual justice counts per batch item
+            
+        Returns:
+            Tensor of shape (batch_size, max_justices, embedding_dim)
+        """
+        batch_size, max_justices, seq_len = input_ids.shape
+        
+        # Create mask for valid justices to avoid processing padding
+        valid_mask = torch.zeros(batch_size, max_justices, dtype=torch.bool, device=input_ids.device)
+        for i, count in enumerate(justice_counts):
+            valid_mask[i, :count] = True
+        
+        # Only process valid (non-padded) justices
+        valid_indices = valid_mask.nonzero(as_tuple=False)  # (num_valid_justices, 2)
+        
+        if len(valid_indices) == 0:
+            # Return zero embeddings if no valid justices
+            return torch.zeros(batch_size, max_justices, self.embedding_dim, device=input_ids.device)
+        
+        # Extract valid justice tokens
+        valid_input_ids = input_ids[valid_indices[:, 0], valid_indices[:, 1]]  # (num_valid_justices, seq_len)
+        valid_attention_mask = attention_mask[valid_indices[:, 0], valid_indices[:, 1]]  # (num_valid_justices, seq_len)
+        
+        # Encode only valid justices
+        features = {
+            'input_ids': valid_input_ids,
+            'attention_mask': valid_attention_mask
+        }
+        
+        with torch.no_grad() if not self.training or self.frozen_bio_model else torch.enable_grad():
+            valid_embeddings = self.bio_model(features)['sentence_embedding']
+            
+            if self.use_noise_reg and self.training:
+                valid_embeddings = self.noise_reg(valid_embeddings)
+                
+            if self.bio_projection_layer:
+                valid_embeddings = self.bio_projection_layer(valid_embeddings)
+        
+        # Scatter embeddings back to batch format
+        justice_embeddings = torch.zeros(batch_size, max_justices, self.embedding_dim, 
+                                    device=input_ids.device, dtype=valid_embeddings.dtype)
+        justice_embeddings[valid_indices[:, 0], valid_indices[:, 1]] = valid_embeddings
+        
+        return justice_embeddings
+    
     def forward(self, 
                 case_input_ids: torch.Tensor, 
                 case_attention_mask: torch.Tensor,
@@ -201,18 +253,19 @@ class SCOTUSVotingModel(nn.Module):
         
         # Encode case descriptions
         case_embeddings = self.encode_case_descriptions(case_input_ids, case_attention_mask)  # (batch_size, embedding_dim)
-        
+        justice_embeddings = self.encode_justice_bios_batch(justice_input_ids, justice_attention_mask, justice_counts)
         # Encode all justice biographies in parallel
         # Reshape to process all justices at once: (batch_size * max_justices, justice_seq_len)
-        justice_input_ids_flat = justice_input_ids.view(-1, justice_input_ids.size(-1))
-        justice_attention_mask_flat = justice_attention_mask.view(-1, justice_attention_mask.size(-1))
+        #justice_input_ids_flat = justice_input_ids.view(-1, justice_input_ids.size(-1))
+        #justice_attention_mask_flat = justice_attention_mask.view(-1, justice_attention_mask.size(-1))
         
         # Get embeddings for all justices: (batch_size * max_justices, embedding_dim)
-        all_justice_embeddings = self.encode_justice_bios(justice_input_ids_flat, justice_attention_mask_flat)
-        
+        #all_justice_embeddings = self.encode_justice_bios(justice_input_ids_flat, justice_attention_mask_flat)
+
         # Reshape back to batch format: (batch_size, max_justices, embedding_dim)
-        justice_embeddings = all_justice_embeddings.view(batch_size, MAX_JUSTICES, self.embedding_dim)
+        #justice_embeddings = all_justice_embeddings.view(batch_size, MAX_JUSTICES, self.embedding_dim)
         
+
         if self.use_justice_attention:
             # Create batch masks for real vs padded justices
             justice_masks = torch.zeros(batch_size, MAX_JUSTICES, dtype=torch.bool, device=case_embeddings.device)

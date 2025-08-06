@@ -213,7 +213,9 @@ class SCOTUSModelTrainer:
             shuffle=True,
             collate_fn=collate_fn,
             num_workers=self.config.num_workers,
-            pin_memory=True
+            pin_memory=True,
+            persistent_workers=True,  # Keep workers alive between epochs
+            prefetch_factor=2  # Prefetch batches
         )
         
         val_loader = DataLoader(
@@ -222,7 +224,9 @@ class SCOTUSModelTrainer:
             shuffle=False,
             collate_fn=collate_fn,
             num_workers=self.config.num_workers,
-            pin_memory=True
+            pin_memory=True,
+            persistent_workers=True,  # Keep workers alive between epochs
+            prefetch_factor=2  # Prefetch batches
         )
         
         # Initialize model
@@ -427,7 +431,9 @@ class SCOTUSModelTrainer:
             shuffle=False,
             collate_fn=collate_fn,
             num_workers=self.config.num_workers,
-            pin_memory=True
+            pin_memory=True,
+            persistent_workers=True,  # Keep workers alive between epochs
+            prefetch_factor=2  # Prefetch batches
         )
         
         # Evaluate
