@@ -190,6 +190,10 @@ class SCOTUSVotingModel(nn.Module):
         Returns:
             Tensor of shape (batch_size, max_justices, embedding_dim)
         """
+        if isinstance(input_ids, list):
+            input_ids = torch.stack(input_ids)
+        if isinstance(attention_mask, list):
+            attention_mask = torch.stack(attention_mask)
         batch_size, max_justices, seq_len = input_ids.shape
         
         # Create mask for valid justices to avoid processing padding
