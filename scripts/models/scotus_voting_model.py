@@ -274,27 +274,25 @@ class SCOTUSVotingModel(nn.Module):
             # Create batch masks for real vs padded justices
             justice_masks = torch.zeros(batch_size, MAX_JUSTICES, dtype=torch.bool, device=case_embeddings.device)
             for i, count in enumerate(justice_counts):
-                justice_masks[i, :count] = True  # True for real justices, False for padding
+                justice_masks[i, :count] = True
             
             # Apply dropout and noise regularization to justice embeddings
             justice_embeddings = self.justice_dropout(justice_embeddings)
             if self.use_noise_reg and self.training:
                 justice_embeddings = self.noise_reg(justice_embeddings)
             
-            # Process all cases through attention in parallel
-            batch_outputs = []
-            for i in range(batch_size):
-                court_embedding = self.justice_attention(
-                    case_emb=case_embeddings[i],
-                    justice_embs=justice_embeddings[i],
-                    justice_mask=justice_masks[i]
-                )
-                # Combine case and court embeddings
-                combined_embedding = torch.cat([case_embeddings[i], court_embedding], dim=0)
-                output = self.fc_layers(combined_embedding)
-                batch_outputs.append(output)
+            # BATCHED PROCESSING - modify JusticeCrossAttention to accept batched inputs
+            court_embeddings = self.justice_attention(
+                case_emb=case_embeddings,  # (batch_size, embedding_dim)
+                justice_embs=justice_embeddings,  # (batch_size, max_justices, embedding_dim)
+                justice_mask=justice_masks  # (batch_size, max_justices)
+            )
             
-            return torch.stack(batch_outputs)  # (batch_size, 3)
+            # Combine case and court embeddings in batch
+            combined_embeddings = torch.cat([case_embeddings, court_embeddings], dim=1)  # (batch_size, embedding_dim * 2)
+            
+            # Pass through FC layers in parallel
+            return self.fc_layers(combined_embeddings)  # (batch_size, 3)
         else:
             # Original concatenation approach - process in parallel
             # Apply dropout and noise regularization

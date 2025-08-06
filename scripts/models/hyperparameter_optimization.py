@@ -647,6 +647,16 @@ def objective(trial: Trial, base_config: ModelConfig, prepared_data: Dict, exper
         append_trial_results(trial, float('inf'), None, "FAILED", experiment_name)
         return 10.0  # High penalty for failed trials
 
+def objective_with_progress(trial, config, prepared_data, experiment_name, trial_progress, study):
+    result = objective(trial, config, prepared_data, experiment_name)
+    trial_progress.update(1)
+    try:
+        metric = study.best_value
+        best_str = f"{metric:.4f}"
+    except ValueError:
+        best_str = "N/A"
+    trial_progress.set_postfix({'best_metric': best_str})
+    return result
 
 def run_hyperparameter_optimization(
     n_trials: int = None,
@@ -715,15 +725,10 @@ def run_hyperparameter_optimization(
     # Create a manual progress bar for trials if n_jobs == 1 (parallel jobs don't work well with custom progress bars)
     if n_jobs == 1:
         trial_progress = tqdm(total=n_trials, desc="Optuna Trials", leave=True)
-        
-        def objective_with_progress(trial):
-            result = objective(trial, config, prepared_data, experiment_name)
-            trial_progress.update(1)
-            trial_progress.set_postfix({'best_metric': f'{study.best_value:.4f}' if study.best_trial else 'N/A'})
-            return result
+
         
         study.optimize(
-            objective_with_progress,
+            lambda trial: objective_with_progress(trial, config, prepared_data, experiment_name, trial_progress, study),
             n_trials=n_trials,
             timeout=timeout,
             n_jobs=n_jobs,
