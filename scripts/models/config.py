@@ -50,6 +50,7 @@ class ModelConfig:
         self.weight_decay = float(os.getenv('WEIGHT_DECAY', '0.01'))
         self.use_noise_reg = os.getenv('USE_NOISE_REG', 'true').lower() == 'true'
         self.noise_reg_alpha = float(os.getenv('NOISE_REG_ALPHA', '5.0'))
+        self.max_grad_norm = float(os.getenv('MAX_GRAD_NORM', '1.0'))
         
         # Training Configuration
         self.learning_rate = float(os.getenv('LEARNING_RATE', '0.0001'))
@@ -112,6 +113,7 @@ class ModelConfig:
         self.tune_dropout_rate = os.getenv('TUNE_DROPOUT_RATE', 'true').lower() == 'true'
         self.tune_use_noise_reg = os.getenv('TUNE_USE_NOISE_REG', 'true').lower() == 'true'
         self.tune_unfreezing = os.getenv('TUNE_UNFREEZING', 'true').lower() == 'true'
+        self.tune_max_grad_norm = os.getenv('TUNE_MAX_GRAD_NORM', 'true').lower() == 'true'
         
         # Hyperparameter Search Spaces
         self.optuna_hidden_dim_options = self._parse_list_option(os.getenv('OPTUNA_HIDDEN_DIM_OPTIONS', '256,512,768,1024'), int)
@@ -125,7 +127,8 @@ class ModelConfig:
         self.optuna_noise_reg_alpha_range = self._parse_range_option(os.getenv('OPTUNA_NOISE_REG_ALPHA_RANGE', '1.0,10.0,false'))
         self.optuna_unfreeze_at_epoch_options = self._parse_list_option(os.getenv('OPTUNA_UNFREEZE_AT_EPOCH_OPTIONS', '2,3,4,5'), int)
         self.optuna_sentence_transformer_lr_range = self._parse_range_option(os.getenv('OPTUNA_SENTENCE_TRANSFORMER_LR_RANGE', '1e-6,1e-4,true'))
-    
+        self.optuna_max_grad_norm_range = self._parse_range_option(os.getenv('OPTUNA_MAX_GRAD_NORM_RANGE', '1.0,10.0,true'))
+
     def _parse_list_option(self, value: str, convert_type: type = str) -> list:
         """Parse comma-separated list option."""
         try:
@@ -202,6 +205,7 @@ class ModelConfig:
             'weight_decay': self.weight_decay,
             'use_noise_reg': self.use_noise_reg,
             'noise_reg_alpha': self.noise_reg_alpha,
+            'max_grad_norm': self.max_grad_norm,
             
             # Training Configuration
             'learning_rate': self.learning_rate,
@@ -254,7 +258,7 @@ class ModelConfig:
         print(f"   🎓 Learning rate: {self.learning_rate}")
         print(f"   🔁 Epochs: {self.num_epochs}")
         print(f"   💾 Device: {self.device}")
-
+        print(f"   🔄 Max grad norm: {self.max_grad_norm}")
 
 # Global configuration instance
 config = ModelConfig()
@@ -308,7 +312,8 @@ def get_training_config() -> Dict[str, Any]:
         'unfreeze_at_epoch': config.unfreeze_at_epoch,
         'sentence_transformer_learning_rate': config.sentence_transformer_learning_rate,
         'use_noise_reg': config.use_noise_reg,
-        'noise_reg_alpha': config.noise_reg_alpha
+        'noise_reg_alpha': config.noise_reg_alpha,
+        'max_grad_norm': config.max_grad_norm
     }
 
 

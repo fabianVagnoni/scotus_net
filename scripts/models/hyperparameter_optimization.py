@@ -24,6 +24,7 @@ import argparse
 import time
 import signal
 from tqdm import tqdm
+from torch.cuda.amp import autocast, GradScaler
 
 from scripts.models.model_trainer import SCOTUSModelTrainer
 from scripts.models.scotus_voting_model import SCOTUSVotingModel, SCOTUSDataset, collate_fn
@@ -168,22 +169,24 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
                     justice_counts = batch['justice_counts']
                     targets = batch['targets'].to(self.device)
                     
-                    # Forward pass
-                    predictions = model(case_input_ids, case_attention_mask, justice_input_ids, justice_attention_mask, justice_counts)
-                    
-                    # Compute loss
-                    loss = criterion(predictions, targets)
+                    with autocast('cuda'):
+                        # Forward pass
+                        predictions = model(case_input_ids, case_attention_mask, justice_input_ids, justice_attention_mask, justice_counts)
+                        
+                        # Compute loss
+                        loss = criterion(predictions, targets)
                     
                     # Backward pass
-                    loss.backward()
+                    self.scaler.scale(loss).backward()
                     
                     # Gradient clipping
-                    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=hyperparams['max_grad_norm'])
                     
                     # Optimizer steps
-                    main_optimizer.step()
+                    self.scaler.step(main_optimizer)
                     if sentence_transformer_optimizer:
-                        sentence_transformer_optimizer.step()
+                        self.scaler.step(sentence_transformer_optimizer)
+                    self.scaler.update()
                     
                     total_train_loss += loss.item()
                     num_train_batches += 1
@@ -261,16 +264,15 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
         
         # Model Architecture - Hidden Dimension
         if self.base_config.tune_hidden_dim:
-            self.logger.info(f"Tuning hidden dimension: {self.base_config.optuna_hidden_dim_options}")
+            #self.logger.info(f"Tuning hidden dimension: {self.base_config.optuna_hidden_dim_options}")
             hyperparams['hidden_dim'] = self.trial.suggest_categorical('hidden_dim', self.base_config.optuna_hidden_dim_options)
         else:
             hyperparams['hidden_dim'] = self.base_config.hidden_dim
         
         # Regularization - Dropout Rate
         if self.base_config.tune_dropout_rate:
-            self.logger.info(f"Tuning dropout rate: {self.base_config.optuna_dropout_rate_range}")
+            #self.logger.info(f"Tuning dropout rate: {self.base_config.optuna_dropout_rate_range}")
             dropout_min, dropout_max, dropout_step = self.base_config.optuna_dropout_rate_range
-            self.logger.info(f"Dropout min: {dropout_min}, dropout max: {dropout_max}, dropout step: {dropout_step}")
             dropout_kwargs = {'step': dropout_step} if dropout_step is not None else {}
             hyperparams['dropout_rate'] = self.trial.suggest_float('dropout_rate', dropout_min, dropout_max, **dropout_kwargs)
         else:
@@ -278,23 +280,23 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
         
         # Attention Mechanism - Number of Heads
         if self.base_config.tune_num_attention_heads:
-            self.logger.info(f"Tuning number of attention heads: {self.base_config.optuna_attention_heads_options}")
+            #self.logger.info(f"Tuning number of attention heads: {self.base_config.optuna_attention_heads_options}")
             hyperparams['num_attention_heads'] = self.trial.suggest_categorical('num_attention_heads', self.base_config.optuna_attention_heads_options)
         else:
-            self.logger.info(f"Using default number of attention heads: {self.base_config.num_attention_heads}")
+            #self.logger.info(f"Using default number of attention heads: {self.base_config.num_attention_heads}")
             hyperparams['num_attention_heads'] = self.base_config.num_attention_heads
         
         # Attention Mechanism - Use Justice Attention
         if self.base_config.tune_use_justice_attention:
-            self.logger.info(f"Tuning use justice attention: {self.base_config.optuna_justice_attention_options}")
+            #self.logger.info(f"Tuning use justice attention: {self.base_config.optuna_justice_attention_options}")
             hyperparams['use_justice_attention'] = self.trial.suggest_categorical('use_justice_attention', self.base_config.optuna_justice_attention_options)
         else:
-            self.logger.info(f"Using default use justice attention: {self.base_config.use_justice_attention}")
+            #self.logger.info(f"Using default use justice attention: {self.base_config.use_justice_attention}")
             hyperparams['use_justice_attention'] = self.base_config.use_justice_attention
         
         # Training Parameters - Learning Rate
         if self.base_config.tune_learning_rate:
-            self.logger.info(f"Tuning learning rate: {self.base_config.optuna_learning_rate_range}")
+            #self.logger.info(f"Tuning learning rate: {self.base_config.optuna_learning_rate_range}")
             lr_min, lr_max, lr_log = self.base_config.optuna_learning_rate_range
             lr_kwargs = {'log': lr_log} if lr_log else {}
             hyperparams['learning_rate'] = self.trial.suggest_float('learning_rate', lr_min, lr_max, **lr_kwargs)
@@ -303,14 +305,14 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
         
         # Training Parameters - Batch Size
         if self.base_config.tune_batch_size:
-            self.logger.info(f"Tuning batch size: {self.base_config.optuna_batch_size_options}")
+            #self.logger.info(f"Tuning batch size: {self.base_config.optuna_batch_size_options}")
             hyperparams['batch_size'] = self.trial.suggest_categorical('batch_size', self.base_config.optuna_batch_size_options)
         else:
             hyperparams['batch_size'] = self.base_config.batch_size
         
         # Regularization - Weight Decay
         if self.base_config.tune_weight_decay:
-            self.logger.info(f"Tuning weight decay: {self.base_config.optuna_weight_decay_range}")
+            #self.logger.info(f"Tuning weight decay: {self.base_config.optuna_weight_decay_range}")
             wd_min, wd_max, wd_log = self.base_config.optuna_weight_decay_range
             wd_kwargs = {'log': wd_log} if wd_log else {}
             hyperparams['weight_decay'] = self.trial.suggest_float('weight_decay', wd_min, wd_max, **wd_kwargs)
@@ -319,7 +321,7 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
 
         # Regularization - Use NEFTune
         if self.base_config.tune_use_noise_reg:
-            self.logger.info(f"Tuning use noise regularization: {self.base_config.optuna_use_noise_reg_options}")
+            #self.logger.info(f"Tuning use noise regularization: {self.base_config.optuna_use_noise_reg_options}")
             hyperparams['use_noise_reg'] = self.trial.suggest_categorical('use_noise_reg', self.base_config.optuna_use_noise_reg_options)
             # Only tune alpha if noise_reg is enabled
             if hyperparams['use_noise_reg']:
@@ -334,7 +336,7 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
         
         # Simplified unfreezing strategy (optional)
         if self.base_config.tune_unfreezing:
-            self.logger.info(f"Tuning unfreezing: {self.base_config.optuna_unfreeze_at_epoch_options}")
+            #self.logger.info(f"Tuning unfreezing: {self.base_config.optuna_unfreeze_at_epoch_options}")
             hyperparams['unfreeze_at_epoch'] = self.trial.suggest_categorical('unfreeze_at_epoch', self.base_config.optuna_unfreeze_at_epoch_options)
             hyperparams['unfreeze_bio_model'] = self.trial.suggest_categorical('unfreeze_bio_model', [True, False])
             hyperparams['unfreeze_description_model'] = self.trial.suggest_categorical('unfreeze_description_model', [True, False])
@@ -348,6 +350,15 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
             hyperparams['unfreeze_bio_model'] = self.base_config.unfreeze_bio_model
             hyperparams['unfreeze_description_model'] = self.base_config.unfreeze_description_model
             hyperparams['sentence_transformer_learning_rate'] = self.base_config.sentence_transformer_learning_rate
+        
+        # Training Parameters - Max Grad Norm
+        if self.base_config.tune_max_grad_norm:
+            #self.logger.info(f"Tuning max grad norm: {self.base_config.optuna_max_grad_norm_range}")
+            max_grad_norm_min, max_grad_norm_max, max_grad_norm_log = self.base_config.optuna_max_grad_norm_range
+            max_grad_norm_kwargs = {'log': max_grad_norm_log} if max_grad_norm_log else {}
+            hyperparams['max_grad_norm'] = self.trial.suggest_float('max_grad_norm', max_grad_norm_min, max_grad_norm_max, **max_grad_norm_kwargs)
+        else:
+            hyperparams['max_grad_norm'] = self.base_config.max_grad_norm
         
         return hyperparams
 

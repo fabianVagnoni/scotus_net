@@ -301,7 +301,7 @@ class SCOTUSModelTrainer:
                 justice_counts = batch['justice_counts']
                 targets = batch['targets'].to(self.device)
                 
-                with autocast():
+                with autocast('cuda'):
                     # Forward pass                
                     predictions = model(case_input_ids, case_attention_mask, justice_input_ids, justice_attention_mask, justice_counts)
                 
@@ -312,7 +312,7 @@ class SCOTUSModelTrainer:
                 self.scaler.scale(loss).backward()
                 
                 # Gradient clipping
-                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=self.config.max_grad_norm)
                 
                 # Optimizer steps
                 self.scaler.step(main_optimizer)
