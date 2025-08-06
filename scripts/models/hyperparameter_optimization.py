@@ -93,7 +93,15 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
                 # Train and evaluate on each fold
                 fold_metrics = []
                 
-                for fold_idx, (train_dataset, val_dataset) in enumerate(cv_splits):
+                # Progress bar for CV folds
+                cv_progress = tqdm(
+                    enumerate(cv_splits), 
+                    total=len(cv_splits),
+                    desc="CV Folds",
+                    leave=True
+                )
+                
+                for fold_idx, (train_dataset, val_dataset) in cv_progress:
                     # Check trial timeout
                     if time.time() - start_time > max_trial_time:
                         self.logger.warning(f"Trial timeout reached ({max_trial_time}s). Stopping at fold {fold_idx + 1}.")
@@ -109,6 +117,9 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
                     
                     fold_metrics.append(fold_metric)
                     self.logger.info(f"   Fold {fold_idx + 1} metric: {fold_metric:.4f}")
+                    
+                    # Update CV progress bar with current fold metric
+                    cv_progress.set_postfix({'fold_metric': f'{fold_metric:.4f}'})
                 
                 # Return average metric across folds
                 if fold_metrics:
@@ -220,7 +231,15 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
             total_train_loss = 0.0
             num_train_batches = 0
             
-            for batch in train_loader:
+            # Training progress bar
+            train_progress = tqdm(
+                train_loader, 
+                desc=f"Fold {fold_num} Epoch {epoch+1}/{num_epochs}",
+                leave=False,
+                disable=False
+            )
+            
+            for batch in train_progress:
                 main_optimizer.zero_grad()
                 if sentence_transformer_optimizer:
                     sentence_transformer_optimizer.zero_grad()
@@ -254,6 +273,9 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
                 
                 total_train_loss += loss.item()
                 num_train_batches += 1
+                
+                # Update progress bar with current loss
+                train_progress.set_postfix({'loss': f'{loss.item():.4f}'})
             
             # Validation phase
             val_loss, val_f1 = self._evaluate_model_for_optimization(model, val_loader, criterion)
@@ -631,14 +653,37 @@ def run_hyperparameter_optimization(
     logger.info(f"   Parallel jobs: {n_jobs}")
     logger.info(f"   Timeout: {timeout}s" if timeout else "   Timeout: None")
     
-    # Run optimization
-    study.optimize(
-        lambda trial: objective(trial, config, dataset_file, experiment_name),
-        n_trials=n_trials,
-        timeout=timeout,
-        n_jobs=n_jobs,
-        show_progress_bar=True
-    )
+    # Run optimization with progress tracking
+    logger.info("🔄 Starting optimization trials...")
+    
+    # Create a manual progress bar for trials if n_jobs == 1 (parallel jobs don't work well with custom progress bars)
+    if n_jobs == 1:
+        trial_progress = tqdm(total=n_trials, desc="Optuna Trials", leave=True)
+        
+        def objective_with_progress(trial):
+            result = objective(trial, config, dataset_file, experiment_name)
+            trial_progress.update(1)
+            trial_progress.set_postfix({'best_metric': f'{study.best_value:.4f}' if study.best_trial else 'N/A'})
+            return result
+        
+        study.optimize(
+            objective_with_progress,
+            n_trials=n_trials,
+            timeout=timeout,
+            n_jobs=n_jobs,
+            show_progress_bar=False  # Disable built-in progress bar since we have our own
+        )
+        
+        trial_progress.close()
+    else:
+        # For parallel jobs, use built-in progress bar
+        study.optimize(
+            lambda trial: objective(trial, config, dataset_file, experiment_name),
+            n_trials=n_trials,
+            timeout=timeout,
+            n_jobs=n_jobs,
+            show_progress_bar=True
+        )
     
     # Log results
     logger.info("🏆 Optimization completed!")
