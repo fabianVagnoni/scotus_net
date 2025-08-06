@@ -296,6 +296,7 @@ class SCOTUSModelTrainer:
                 targets = batch['targets'].to(self.device)
                 
                 # Forward pass
+                
                 predictions = model(case_input_ids, case_attention_mask, justice_input_ids, justice_attention_mask, justice_counts)
                 
                 # Compute loss

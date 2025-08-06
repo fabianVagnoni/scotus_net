@@ -46,6 +46,7 @@ class SCOTUSVotingModel(nn.Module):
         use_justice_attention: bool = True,  # Whether to use attention or simple concatenation
         use_noise_reg: bool = True,
         noise_reg_alpha: float = 5.0,
+        pretrained_bio_model: str = "",
         device: str = 'cuda'  # Device to place models and data on
     ):
         super(SCOTUSVotingModel, self).__init__()
@@ -64,6 +65,9 @@ class SCOTUSVotingModel(nn.Module):
         # Initialize sentence transformer models
         print(f"📥 Loading sentence transformer models...")
         self.bio_model = SentenceTransformer(bio_model_name, device=device)
+        if pretrained_bio_model:
+            print(f"🔗 Loading pretrained bio model from {pretrained_bio_model}")
+            self.bio_model.load_state_dict(torch.load(pretrained_bio_model))
         self.description_model = SentenceTransformer(description_model_name, device=device)
         
         # Initially freeze sentence transformers (will be unfrozen during training if configured)

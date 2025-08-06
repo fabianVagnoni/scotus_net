@@ -266,7 +266,7 @@ class ContrastiveJusticeTrainer:
             if val_loss < best_val_loss:
                 patience_counter = 0
                 best_val_loss = val_loss
-                torch.save(model.truncated_bio_model.state_dict(), str(model_output_dir / 'best_model.pth'))
+                model.truncated_bio_model.save(str(model_output_dir / 'best_model.pth'))
                 self.logger.info(f"New best model saved with validation loss {val_loss:.4f} in location {(model_output_dir / 'best_model.pth').absolute()}")
             else:
                 patience_counter += 1

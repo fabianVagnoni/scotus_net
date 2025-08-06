@@ -28,7 +28,7 @@ from tqdm import tqdm
 from scripts.models.model_trainer import SCOTUSModelTrainer
 from scripts.models.scotus_voting_model import SCOTUSVotingModel, SCOTUSDataset, collate_fn
 from torch.utils.data import DataLoader
-from scripts.utils.config import ModelConfig
+from scripts.models.config import ModelConfig
 from scripts.utils.logger import get_logger
 from scripts.utils.holdout_test_set import HoldoutTestSetManager
 from scripts.models.losses import create_scotus_loss_function
@@ -67,7 +67,7 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
             dataset = self.load_case_dataset(dataset_file)
             
             # Get tokenized file paths and load tokenized data
-            bio_tokenized_file, description_tokenized_file = self.get_tokenized_file_paths(dataset)
+            bio_tokenized_file, description_tokenized_file = self.get_tokenized_file_paths()
             bio_data, description_data = self.load_tokenized_data(bio_tokenized_file, description_tokenized_file)
             
             self.logger.info("Splitting dataset...")
@@ -261,13 +261,16 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
         
         # Model Architecture - Hidden Dimension
         if self.base_config.tune_hidden_dim:
+            self.logger.info(f"Tuning hidden dimension: {self.base_config.optuna_hidden_dim_options}")
             hyperparams['hidden_dim'] = self.trial.suggest_categorical('hidden_dim', self.base_config.optuna_hidden_dim_options)
         else:
             hyperparams['hidden_dim'] = self.base_config.hidden_dim
         
         # Regularization - Dropout Rate
         if self.base_config.tune_dropout_rate:
+            self.logger.info(f"Tuning dropout rate: {self.base_config.optuna_dropout_rate_range}")
             dropout_min, dropout_max, dropout_step = self.base_config.optuna_dropout_rate_range
+            self.logger.info(f"Dropout min: {dropout_min}, dropout max: {dropout_max}, dropout step: {dropout_step}")
             dropout_kwargs = {'step': dropout_step} if dropout_step is not None else {}
             hyperparams['dropout_rate'] = self.trial.suggest_float('dropout_rate', dropout_min, dropout_max, **dropout_kwargs)
         else:
@@ -275,18 +278,23 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
         
         # Attention Mechanism - Number of Heads
         if self.base_config.tune_num_attention_heads:
+            self.logger.info(f"Tuning number of attention heads: {self.base_config.optuna_attention_heads_options}")
             hyperparams['num_attention_heads'] = self.trial.suggest_categorical('num_attention_heads', self.base_config.optuna_attention_heads_options)
         else:
+            self.logger.info(f"Using default number of attention heads: {self.base_config.num_attention_heads}")
             hyperparams['num_attention_heads'] = self.base_config.num_attention_heads
         
         # Attention Mechanism - Use Justice Attention
         if self.base_config.tune_use_justice_attention:
+            self.logger.info(f"Tuning use justice attention: {self.base_config.optuna_justice_attention_options}")
             hyperparams['use_justice_attention'] = self.trial.suggest_categorical('use_justice_attention', self.base_config.optuna_justice_attention_options)
         else:
+            self.logger.info(f"Using default use justice attention: {self.base_config.use_justice_attention}")
             hyperparams['use_justice_attention'] = self.base_config.use_justice_attention
         
         # Training Parameters - Learning Rate
         if self.base_config.tune_learning_rate:
+            self.logger.info(f"Tuning learning rate: {self.base_config.optuna_learning_rate_range}")
             lr_min, lr_max, lr_log = self.base_config.optuna_learning_rate_range
             lr_kwargs = {'log': lr_log} if lr_log else {}
             hyperparams['learning_rate'] = self.trial.suggest_float('learning_rate', lr_min, lr_max, **lr_kwargs)
@@ -295,12 +303,14 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
         
         # Training Parameters - Batch Size
         if self.base_config.tune_batch_size:
+            self.logger.info(f"Tuning batch size: {self.base_config.optuna_batch_size_options}")
             hyperparams['batch_size'] = self.trial.suggest_categorical('batch_size', self.base_config.optuna_batch_size_options)
         else:
             hyperparams['batch_size'] = self.base_config.batch_size
         
         # Regularization - Weight Decay
         if self.base_config.tune_weight_decay:
+            self.logger.info(f"Tuning weight decay: {self.base_config.optuna_weight_decay_range}")
             wd_min, wd_max, wd_log = self.base_config.optuna_weight_decay_range
             wd_kwargs = {'log': wd_log} if wd_log else {}
             hyperparams['weight_decay'] = self.trial.suggest_float('weight_decay', wd_min, wd_max, **wd_kwargs)
@@ -309,6 +319,7 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
 
         # Regularization - Use NEFTune
         if self.base_config.tune_use_noise_reg:
+            self.logger.info(f"Tuning use noise regularization: {self.base_config.optuna_use_noise_reg_options}")
             hyperparams['use_noise_reg'] = self.trial.suggest_categorical('use_noise_reg', self.base_config.optuna_use_noise_reg_options)
             # Only tune alpha if noise_reg is enabled
             if hyperparams['use_noise_reg']:
@@ -323,6 +334,7 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
         
         # Simplified unfreezing strategy (optional)
         if self.base_config.tune_unfreezing:
+            self.logger.info(f"Tuning unfreezing: {self.base_config.optuna_unfreeze_at_epoch_options}")
             hyperparams['unfreeze_at_epoch'] = self.trial.suggest_categorical('unfreeze_at_epoch', self.base_config.optuna_unfreeze_at_epoch_options)
             hyperparams['unfreeze_bio_model'] = self.trial.suggest_categorical('unfreeze_bio_model', [True, False])
             hyperparams['unfreeze_description_model'] = self.trial.suggest_categorical('unfreeze_description_model', [True, False])
@@ -433,8 +445,8 @@ def append_trial_results(trial: Trial, combined_metric: float, hyperparams: Dict
         "trial_number": trial.number,
         "trial_status": trial_status,
         "trial_start_time": trial.datetime_start.isoformat() if trial.datetime_start else None,
-        "trial_end_time": trial.datetime_complete.isoformat() if trial.datetime_complete else None,
-        "duration_seconds": trial.duration.total_seconds() if trial.duration else None,
+        #"trial_end_time": trial.datetime_complete.isoformat() if trial.datetime_complete else None,
+        #"duration_seconds": trial.duration.total_seconds() if trial.duration else None,
         "combined_metric": combined_metric,
         "val_loss": trial.user_attrs.get("val_loss", None),
         "val_f1_macro": trial.user_attrs.get("val_f1_macro", None)
@@ -522,7 +534,7 @@ def run_hyperparameter_optimization(
     # Use config defaults if not provided
     n_trials = n_trials or config.optuna_n_trials
     study_name = study_name or config.optuna_study_name
-    dataset_file = dataset_file or config.case_dataset_file
+    dataset_file = config.dataset_file
     
     # Initialize results file
     results_file = initialize_results_file(study_name, n_trials, dataset_file, experiment_name)
