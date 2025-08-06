@@ -440,30 +440,30 @@ def collate_fn(batch):
     """
     Custom collate function for the DataLoader.
     """
-    case_ids = [item['case_id'] for item in batch]
-    case_input_ids = pad_sequence([item['case_input_ids'] for item in batch], batch_first=True)
-    case_attention_mask = pad_sequence([item['case_attention_mask'] for item in batch], batch_first=True)
-    justice_input_ids = [item['justice_input_ids'] for item in batch]
-    justice_attention_mask = [item['justice_attention_mask'] for item in batch]
+    batch_size = len(batch)
     
-    # Pad case inputs to max_justices
-    #print(f"🔗 Justice input ids pre: {justice_input_ids[0].shape}")
-    pad = justice_input_ids[0].new_zeros((MAX_JUSTICES - justice_input_ids[0].shape[0],justice_input_ids[0].shape[1]))
-    #print(f"pad: {pad.shape}")
-    justice_input_ids_padded = torch.cat([justice_input_ids[0], pad], dim=0)
-    #print(f"justice_input_ids_padded: {justice_input_ids_padded.shape}")
-    justice_attention_mask_padded = torch.cat([justice_attention_mask[0], pad], dim=0)
-    #print(f"justice_attention_mask_padded: {justice_attention_mask_padded.shape}")
-    justice_input_ids[0] = justice_input_ids_padded
-    justice_attention_mask[0] = justice_attention_mask_padded
-    justice_input_ids = pad_sequence(justice_input_ids, batch_first=True)
-    #print(f"justice_input_ids: {justice_input_ids.shape}")
-    justice_attention_mask = pad_sequence(justice_attention_mask, batch_first=True)
-    #print(f"justice_attention_mask: {justice_attention_mask.shape}")
-    #print("justice_input_ids", justice_input_ids.__class__.__name__)
-
+    # Extract all data
+    case_ids = [item['case_id'] for item in batch]
     justice_counts = [item['justice_count'] for item in batch]
     targets = torch.stack([item['target'] for item in batch])
+    
+    # Pad case inputs efficiently
+    case_input_ids = pad_sequence([item['case_input_ids'] for item in batch], batch_first=True)
+    case_attention_mask = pad_sequence([item['case_attention_mask'] for item in batch], batch_first=True)
+    
+    # Pre-allocate justice tensors for efficiency
+    max_seq_len = max(item['justice_input_ids'].size(-1) for item in batch)
+    justice_input_ids = torch.zeros(batch_size, MAX_JUSTICES, max_seq_len, dtype=torch.long)
+    justice_attention_mask = torch.zeros(batch_size, MAX_JUSTICES, max_seq_len, dtype=torch.long)
+    
+    # Fill justice tensors efficiently
+    for i, item in enumerate(batch):
+        item_justices = item['justice_input_ids'].size(0)
+        actual_seq_len = item['justice_input_ids'].size(1)
+        
+        # Copy actual justice data
+        justice_input_ids[i, :item_justices, :actual_seq_len] = item['justice_input_ids']
+        justice_attention_mask[i, :item_justices, :actual_seq_len] = item['justice_attention_mask']
     
     return {
         'case_ids': case_ids,
