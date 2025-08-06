@@ -41,8 +41,8 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
     Simplified model trainer for Optuna optimization.
     """
     
-    def __init__(self, trial: Trial, base_config: ModelConfig):
-        """Initialize trainer with trial-specific configuration."""
+    def __init__(self, trial: Trial, base_config: ModelConfig, prepared_data: Dict = None):
+        """Initialize trainer with trial-specific configuration and pre-loaded data."""
         super().__init__()
         self.trial = trial
         self.base_config = base_config
@@ -51,10 +51,12 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
         self.min_epochs = base_config.optuna_min_epochs
         # Override holdout manager to ensure we exclude holdout cases
         self.holdout_manager = HoldoutTestSetManager()
+        # Store pre-loaded and split data
+        self.prepared_data = prepared_data
         
-    def train_model_for_optimization(self, dataset_file: str = None) -> float:
+    def train_model_for_optimization(self) -> float:
         """
-        Train model with trial-specific hyperparameters using time-based cross-validation.
+        Train model with trial-specific hyperparameters using pre-loaded data.
         
         Returns:
             Average combined metric across all CV folds: (KL Divergence Loss + (1 - F1-Score Macro)) / 2
@@ -63,32 +65,20 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
         max_trial_time = self.base_config.optuna_max_trial_time
         
         try:
-            self.logger.info("Loading dataset for optimization...")
-            # Load dataset
-            dataset = self.load_case_dataset(dataset_file)
+            if not self.prepared_data:
+                raise ValueError("No prepared data available. Data should be pre-loaded.")
             
-            # Get tokenized file paths and load tokenized data
-            bio_tokenized_file, description_tokenized_file = self.get_tokenized_file_paths()
-            bio_data, description_data = self.load_tokenized_data(bio_tokenized_file, description_tokenized_file)
+            self.logger.info("Using pre-loaded data for optimization...")
             
-            self.logger.info("Suggesting hyperparameters...")
             # Suggest hyperparameters
             hyperparams = self._suggest_hyperparameters()
             self.logger.info(f"Trial hyperparameters: {hyperparams}")
             
-            # Create time-based cross-validator if enabled
-            if self.base_config.use_time_based_cv:
-                cv_validator = TimeBasedCrossValidator(
-                    n_folds=self.base_config.time_based_cv_folds,
-                    train_size=self.base_config.time_based_cv_train_size,
-                    val_size=self.base_config.time_based_cv_val_size
-                )
-                
-                self.logger.info("Creating time-based CV splits...")
-                cv_splits = cv_validator.create_time_based_cv_splits(dataset, self.holdout_manager)
-                
-                if not cv_splits:
-                    raise ValueError("No CV splits could be created")
+            # Use pre-loaded CV splits or single split
+            if 'cv_splits' in self.prepared_data:
+                cv_splits = self.prepared_data['cv_splits']
+                bio_data = self.prepared_data['bio_data']
+                description_data = self.prepared_data['description_data']
                 
                 # Train and evaluate on each fold
                 fold_metrics = []
@@ -130,18 +120,16 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
                     return 10.0  # High penalty if no folds completed
                     
             else:
-                # Fallback to original random split method
-                self.logger.info("Using random dataset split (time-based CV disabled)...")
-            train_dataset, val_dataset = self.split_dataset(
-                dataset, 
-                train_ratio=0.8, 
-                val_ratio=0.2
-            )
-            
-            return self._train_single_fold(
-                train_dataset, val_dataset, bio_data, description_data, 
-                hyperparams, 1, start_time, max_trial_time
-            )
+                # Single train/val split
+                train_dataset = self.prepared_data['train_dataset']
+                val_dataset = self.prepared_data['val_dataset']
+                bio_data = self.prepared_data['bio_data']
+                description_data = self.prepared_data['description_data']
+                
+                return self._train_single_fold(
+                    train_dataset, val_dataset, bio_data, description_data, 
+                    hyperparams, 1, start_time, max_trial_time
+                )
             
         except optuna.exceptions.TrialPruned:
             raise
@@ -559,23 +547,88 @@ def append_trial_results(trial: Trial, combined_metric: float, hyperparams: Dict
     df.to_csv(results_file, mode='a', header=False, index=False)
 
 
-def objective(trial: Trial, base_config: ModelConfig, dataset_file: str, experiment_name: str = None) -> float:
+def prepare_data_for_optimization(base_config: ModelConfig, dataset_file: str) -> Dict:
+    """
+    Prepare and split data once for all optimization trials.
+    
+    Args:
+        base_config: Base configuration
+        dataset_file: Path to dataset file
+        
+    Returns:
+        Dictionary containing prepared data splits and tokenized data
+    """
+    logger = get_logger(__name__)
+    
+    logger.info("📂 Loading and preparing data for optimization...")
+    
+    # Create a temporary trainer to use its methods
+    temp_trainer = SCOTUSModelTrainer()
+    
+    # Load dataset
+    dataset = temp_trainer.load_case_dataset(dataset_file)
+    
+    # Get tokenized file paths and load tokenized data
+    bio_tokenized_file, description_tokenized_file = temp_trainer.get_tokenized_file_paths()
+    bio_data, description_data = temp_trainer.load_tokenized_data(bio_tokenized_file, description_tokenized_file)
+    
+    # Create holdout manager
+    holdout_manager = HoldoutTestSetManager()
+    
+    prepared_data = {
+        'bio_data': bio_data,
+        'description_data': description_data
+    }
+    
+    # Create splits based on configuration
+    if base_config.use_time_based_cv:
+        logger.info("Creating time-based CV splits...")
+        cv_validator = TimeBasedCrossValidator(
+            n_folds=base_config.time_based_cv_folds,
+            train_size=base_config.time_based_cv_train_size,
+            val_size=base_config.time_based_cv_val_size
+        )
+        
+        cv_splits = cv_validator.create_time_based_cv_splits(dataset, holdout_manager)
+        
+        if not cv_splits:
+            raise ValueError("No CV splits could be created")
+        
+        prepared_data['cv_splits'] = cv_splits
+        logger.info(f"✅ Created {len(cv_splits)} CV splits")
+        
+    else:
+        logger.info("Creating single train/val split...")
+        train_dataset, val_dataset = temp_trainer.split_dataset(
+            dataset, 
+            train_ratio=0.8, 
+            val_ratio=0.2
+        )
+        
+        prepared_data['train_dataset'] = train_dataset
+        prepared_data['val_dataset'] = val_dataset
+        logger.info("✅ Created single train/val split")
+    
+    return prepared_data
+
+
+def objective(trial: Trial, base_config: ModelConfig, prepared_data: Dict, experiment_name: str = None) -> float:
     """
     Objective function for Optuna optimization.
     
     Args:
         trial: Optuna trial object
         base_config: Base configuration
-        dataset_file: Path to dataset file
+        prepared_data: Pre-loaded and split data
         experiment_name: Optional experiment name for logging
         
     Returns:
         Combined metric to minimize
     """
-    trainer = OptunaModelTrainer(trial, base_config)
+    trainer = OptunaModelTrainer(trial, base_config, prepared_data)
     
     try:
-        combined_metric = trainer.train_model_for_optimization(dataset_file)
+        combined_metric = trainer.train_model_for_optimization()
         
         # Store additional metrics in trial user attributes
         trial.set_user_attr("val_loss", trainer.best_val_loss)
@@ -631,6 +684,9 @@ def run_hyperparameter_optimization(
     results_file = initialize_results_file(study_name, n_trials, dataset_file, experiment_name)
     logger.info(f"📊 Results will be saved to: {results_file}")
     
+    # Prepare data once for all trials
+    prepared_data = prepare_data_for_optimization(config, dataset_file)
+    
     # Create study
     if storage:
         study = optuna.create_study(
@@ -661,7 +717,7 @@ def run_hyperparameter_optimization(
         trial_progress = tqdm(total=n_trials, desc="Optuna Trials", leave=True)
         
         def objective_with_progress(trial):
-            result = objective(trial, config, dataset_file, experiment_name)
+            result = objective(trial, config, prepared_data, experiment_name)
             trial_progress.update(1)
             trial_progress.set_postfix({'best_metric': f'{study.best_value:.4f}' if study.best_trial else 'N/A'})
             return result
@@ -678,7 +734,7 @@ def run_hyperparameter_optimization(
     else:
         # For parallel jobs, use built-in progress bar
         study.optimize(
-            lambda trial: objective(trial, config, dataset_file, experiment_name),
+            lambda trial: objective(trial, config, prepared_data, experiment_name),
             n_trials=n_trials,
             timeout=timeout,
             n_jobs=n_jobs,
