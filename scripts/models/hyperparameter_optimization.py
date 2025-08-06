@@ -233,7 +233,7 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
                 justice_counts = batch['justice_counts']
                 targets = batch['targets'].to(self.device)
                 
-                with autocast(device_type=self.device.type):
+                with autocast():
                     # Forward pass
                     predictions = model(case_input_ids, case_attention_mask, justice_input_ids, justice_attention_mask, justice_counts)
                     
