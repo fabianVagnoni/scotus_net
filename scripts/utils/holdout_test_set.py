@@ -293,6 +293,91 @@ class HoldoutTestSetManager:
         return holdout_dataset
 
 
+class TimeBasedCrossValidator:
+    """Manages time-based cross-validation splits for temporal data."""
+    
+    def __init__(self, n_folds: int = 3, train_size: int = 1000, val_size: int = 100):
+        """
+        Initialize the time-based cross-validator.
+        
+        Args:
+            n_folds: Number of CV folds to create
+            train_size: Number of cases in each training set
+            val_size: Number of cases in each validation set
+        """
+        self.logger = get_logger(__name__)
+        self.n_folds = n_folds
+        self.train_size = train_size
+        self.val_size = val_size
+    
+    def create_time_based_cv_splits(self, dataset: Dict, holdout_manager: HoldoutTestSetManager) -> List[Tuple[Dict, Dict]]:
+        """
+        Create time-based cross-validation splits.
+        
+        Args:
+            dataset: Full case dataset
+            holdout_manager: Holdout test set manager to exclude holdout cases
+            
+        Returns:
+            List of (train_dataset, val_dataset) tuples for each fold
+        """
+        # Exclude holdout cases
+        available_dataset = holdout_manager.filter_dataset_exclude_holdout(dataset)
+        
+        # Filter to cases with descriptions
+        cases_with_descriptions = holdout_manager.filter_cases_with_descriptions(available_dataset)
+        
+        if not cases_with_descriptions:
+            raise ValueError("No cases with descriptions found for CV splits")
+        
+        # Sort cases by year (oldest first for temporal CV)
+        case_ids_by_year = sorted(
+            cases_with_descriptions.keys(),
+            key=holdout_manager.extract_year_from_case_id
+        )
+        
+        total_cases = len(case_ids_by_year)
+        fold_size = self.train_size + self.val_size
+        
+        self.logger.info(f"Creating {self.n_folds} time-based CV folds...")
+        self.logger.info(f"   Total available cases: {total_cases}")
+        self.logger.info(f"   Cases per fold: {fold_size} (train: {self.train_size}, val: {self.val_size})")
+        
+        cv_splits = []
+        
+        for fold_idx in range(self.n_folds):
+            # Calculate start position for this fold
+            start_idx = fold_idx * fold_size
+            
+            if start_idx + fold_size > total_cases:
+                self.logger.warning(f"Not enough cases for fold {fold_idx + 1}. Skipping.")
+                break
+            
+            # Get case IDs for this fold
+            train_end_idx = start_idx + self.train_size
+            val_end_idx = train_end_idx + self.val_size
+            
+            train_case_ids = case_ids_by_year[start_idx:train_end_idx]
+            val_case_ids = case_ids_by_year[train_end_idx:val_end_idx]
+            
+            # Create datasets for this fold
+            train_dataset = {case_id: cases_with_descriptions[case_id] for case_id in train_case_ids}
+            val_dataset = {case_id: cases_with_descriptions[case_id] for case_id in val_case_ids}
+            
+            # Log fold statistics
+            train_years = [holdout_manager.extract_year_from_case_id(case_id) for case_id in train_case_ids]
+            val_years = [holdout_manager.extract_year_from_case_id(case_id) for case_id in val_case_ids]
+            
+            self.logger.info(f"   Fold {fold_idx + 1}:")
+            self.logger.info(f"     Train: {len(train_case_ids)} cases ({min(train_years)}-{max(train_years)})")
+            self.logger.info(f"     Val:   {len(val_case_ids)} cases ({min(val_years)}-{max(val_years)})")
+            
+            cv_splits.append((train_dataset, val_dataset))
+        
+        self.logger.info(f"Created {len(cv_splits)} time-based CV folds")
+        return cv_splits
+
+
 def main():
     """Main function for command-line usage."""
     parser = argparse.ArgumentParser(description="Create holdout test set for SCOTUS AI")

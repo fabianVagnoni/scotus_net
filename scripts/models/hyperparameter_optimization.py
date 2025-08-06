@@ -31,7 +31,7 @@ from scripts.models.scotus_voting_model import SCOTUSVotingModel, SCOTUSDataset,
 from torch.utils.data import DataLoader
 from scripts.models.config import ModelConfig
 from scripts.utils.logger import get_logger
-from scripts.utils.holdout_test_set import HoldoutTestSetManager
+from scripts.utils.holdout_test_set import HoldoutTestSetManager, TimeBasedCrossValidator
 from scripts.models.losses import create_scotus_loss_function
 from scripts.utils.metrics import calculate_f1_macro
 
@@ -54,10 +54,10 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
         
     def train_model_for_optimization(self, dataset_file: str = None) -> float:
         """
-        Train model with trial-specific hyperparameters and return combined optimization metric.
+        Train model with trial-specific hyperparameters using time-based cross-validation.
         
         Returns:
-            Combined metric: (KL Divergence Loss + (1 - F1-Score Macro)) / 2
+            Average combined metric across all CV folds: (KL Divergence Loss + (1 - F1-Score Macro)) / 2
         """
         start_time = time.time()
         max_trial_time = self.base_config.optuna_max_trial_time
@@ -71,185 +71,66 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
             bio_tokenized_file, description_tokenized_file = self.get_tokenized_file_paths()
             bio_data, description_data = self.load_tokenized_data(bio_tokenized_file, description_tokenized_file)
             
-            self.logger.info("Splitting dataset...")
-            # Split dataset (use smaller validation set for faster optimization)
+            self.logger.info("Suggesting hyperparameters...")
+            # Suggest hyperparameters
+            hyperparams = self._suggest_hyperparameters()
+            self.logger.info(f"Trial hyperparameters: {hyperparams}")
+            
+            # Create time-based cross-validator if enabled
+            if self.base_config.use_time_based_cv:
+                cv_validator = TimeBasedCrossValidator(
+                    n_folds=self.base_config.time_based_cv_folds,
+                    train_size=self.base_config.time_based_cv_train_size,
+                    val_size=self.base_config.time_based_cv_val_size
+                )
+                
+                self.logger.info("Creating time-based CV splits...")
+                cv_splits = cv_validator.create_time_based_cv_splits(dataset, self.holdout_manager)
+                
+                if not cv_splits:
+                    raise ValueError("No CV splits could be created")
+                
+                # Train and evaluate on each fold
+                fold_metrics = []
+                
+                for fold_idx, (train_dataset, val_dataset) in enumerate(cv_splits):
+                    # Check trial timeout
+                    if time.time() - start_time > max_trial_time:
+                        self.logger.warning(f"Trial timeout reached ({max_trial_time}s). Stopping at fold {fold_idx + 1}.")
+                        break
+                    
+                    self.logger.info(f"🔄 Training fold {fold_idx + 1}/{len(cv_splits)}")
+                    
+                    # Train model for this fold
+                    fold_metric = self._train_single_fold(
+                        train_dataset, val_dataset, bio_data, description_data, 
+                        hyperparams, fold_idx + 1, start_time, max_trial_time
+                    )
+                    
+                    fold_metrics.append(fold_metric)
+                    self.logger.info(f"   Fold {fold_idx + 1} metric: {fold_metric:.4f}")
+                
+                # Return average metric across folds
+                if fold_metrics:
+                    avg_metric = sum(fold_metrics) / len(fold_metrics)
+                    self.logger.info(f"✅ Average metric across {len(fold_metrics)} folds: {avg_metric:.4f}")
+                    return avg_metric
+                else:
+                    return 10.0  # High penalty if no folds completed
+                    
+            else:
+                # Fallback to original random split method
+                self.logger.info("Using random dataset split (time-based CV disabled)...")
             train_dataset, val_dataset = self.split_dataset(
                 dataset, 
                 train_ratio=0.8, 
                 val_ratio=0.2
             )
             
-            self.logger.info("Suggesting hyperparameters...")
-            # Suggest hyperparameters
-            hyperparams = self._suggest_hyperparameters()
-            self.logger.info(f"Trial hyperparameters: {hyperparams}")
-            
-            # Process datasets
-            train_processed = self.prepare_processed_data(train_dataset, bio_data, description_data, verbose=False)
-            val_processed = self.prepare_processed_data(val_dataset, bio_data, description_data, verbose=False)
-            
-            # Create datasets and data loaders
-            train_dataset_obj = SCOTUSDataset(train_processed)
-            val_dataset_obj = SCOTUSDataset(val_processed)
-            
-            train_loader = DataLoader(
-                train_dataset_obj,
-                batch_size=hyperparams['batch_size'],
-                shuffle=True,
-                collate_fn=collate_fn,
-                num_workers=self.config.num_workers
+            return self._train_single_fold(
+                train_dataset, val_dataset, bio_data, description_data, 
+                hyperparams, 1, start_time, max_trial_time
             )
-            
-            val_loader = DataLoader(
-                val_dataset_obj,
-                batch_size=hyperparams['batch_size'],
-                shuffle=False,
-                collate_fn=collate_fn,
-                num_workers=self.config.num_workers
-            )
-            
-            # Initialize model with trial hyperparameters
-            model = SCOTUSVotingModel(
-                bio_model_name=self.base_config.bio_model_name,
-                description_model_name=self.base_config.description_model_name,
-                embedding_dim=self.base_config.embedding_dim,
-                hidden_dim=hyperparams['hidden_dim'],
-                dropout_rate=hyperparams['dropout_rate'],
-                max_justices=self.base_config.max_justices,
-                num_attention_heads=hyperparams['num_attention_heads'],
-                use_justice_attention=hyperparams['use_justice_attention'],
-                use_noise_reg=hyperparams['use_noise_reg'],
-                noise_reg_alpha=hyperparams['noise_reg_alpha'],
-                device=self.device
-            )
-            model.to(self.device)
-            
-            # Create loss function
-            criterion = create_scotus_loss_function(self.base_config)
-            
-            # Create optimizer for non-transformer parameters
-            main_optimizer = torch.optim.Adam(
-                [p for p in model.parameters() if p.requires_grad],
-                lr=hyperparams['learning_rate'],
-                weight_decay=hyperparams['weight_decay']
-            )
-            
-            # Initialize sentence transformer optimizer (will be used if models are unfrozen)
-            sentence_transformer_optimizer = None
-            
-            self.logger.info("🚀 Starting optimization training...")
-            self.logger.info(f"   Training samples: {len(train_processed)}")
-            self.logger.info(f"   Validation samples: {len(val_processed)}")
-            
-            # Training loop
-            num_epochs = self.base_config.optuna_max_epochs
-            patience_counter = 0
-            
-            for epoch in range(num_epochs):
-                # Check trial timeout
-                if time.time() - start_time > max_trial_time:
-                    self.logger.warning(f"Trial timeout reached ({max_trial_time}s). Stopping early.")
-                    break
-                
-                # Training phase
-                model.train()
-                total_train_loss = 0.0
-                num_train_batches = 0
-                
-                for batch in train_loader:
-                    main_optimizer.zero_grad()
-                    if sentence_transformer_optimizer:
-                        sentence_transformer_optimizer.zero_grad()
-                    
-                    # Move batch to device
-                    case_input_ids = batch['case_input_ids'].to(self.device)
-                    case_attention_mask = batch['case_attention_mask'].to(self.device)
-                    justice_input_ids = [j.to(self.device) for j in batch['justice_input_ids']]
-                    justice_attention_mask = [j.to(self.device) for j in batch['justice_attention_mask']]
-                    justice_counts = batch['justice_counts']
-                    targets = batch['targets'].to(self.device)
-                    
-                    with autocast('cuda'):
-                        # Forward pass
-                        predictions = model(case_input_ids, case_attention_mask, justice_input_ids, justice_attention_mask, justice_counts)
-                        
-                        # Compute loss
-                        loss = criterion(predictions, targets)
-                    
-                    # Backward pass
-                    self.scaler.scale(loss).backward()
-                    
-                    # Gradient clipping
-                    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=hyperparams['max_grad_norm'])
-                    
-                    # Optimizer steps
-                    self.scaler.step(main_optimizer)
-                    if sentence_transformer_optimizer:
-                        self.scaler.step(sentence_transformer_optimizer)
-                    self.scaler.update()
-                    
-                    total_train_loss += loss.item()
-                    num_train_batches += 1
-                
-                # Validation phase
-                val_loss, val_f1 = self._evaluate_model_for_optimization(model, val_loader, criterion)
-                
-                avg_train_loss = total_train_loss / num_train_batches if num_train_batches > 0 else 0.0
-                
-                # Combined metric for optimization
-                combined_metric = (val_loss + (1 - val_f1)) / 2
-                
-                self.logger.info(f"Trial Epoch {epoch+1}/{num_epochs} - "
-                               f"Train Loss: {avg_train_loss:.4f}, "
-                               f"Val Loss: {val_loss:.4f}, "
-                               f"Val F1: {val_f1:.4f}, "
-                               f"Combined Metric: {combined_metric:.4f}")
-                
-                # Handle unfreezing at specified epoch
-                if epoch + 1 == hyperparams.get('unfreeze_at_epoch', float('inf')):
-                    self.logger.info("🔓 Unfreezing sentence transformers...")
-                    if hyperparams.get('unfreeze_bio_model', False):
-                        model.unfreeze_bio_model()
-                        self.logger.info("   - Bio model unfrozen")
-                    if hyperparams.get('unfreeze_description_model', False):
-                        model.unfreeze_description_model()
-                        self.logger.info("   - Description model unfrozen")
-                    
-                    # Create sentence transformer optimizer if models were unfrozen
-                    if model.get_sentence_transformer_status()['any_trainable']:
-                        st_params = []
-                        if hyperparams.get('unfreeze_bio_model', False):
-                            st_params.extend(model.bio_model.parameters())
-                        if hyperparams.get('unfreeze_description_model', False):
-                            st_params.extend(model.description_model.parameters())
-                        
-                        sentence_transformer_optimizer = torch.optim.Adam(
-                            st_params,
-                            lr=hyperparams.get('sentence_transformer_learning_rate', hyperparams['learning_rate'] * 0.1),
-                            weight_decay=hyperparams['weight_decay']
-                        )
-                        self.logger.info(f"   - Sentence transformer optimizer created")
-                
-                # Early stopping based on combined metric
-                if combined_metric < self.best_val_loss:
-                    self.best_val_loss = combined_metric
-                    patience_counter = 0
-                else:
-                    patience_counter += 1
-                    if patience_counter >= self.early_stop_patience and epoch >= self.min_epochs:
-                        self.logger.info(f"Early stopping triggered after {epoch+1} epochs")
-                        break
-                
-                # Report intermediate values to Optuna
-                self.trial.report(combined_metric, epoch)
-                
-                # Handle pruning based on the intermediate value
-                if self.trial.should_prune():
-                    self.logger.info(f"Trial pruned at epoch {epoch+1}")
-                    raise optuna.exceptions.TrialPruned()
-            
-            self.logger.info(f"✅ Trial completed with combined metric: {self.best_val_loss:.4f}")
-            return self.best_val_loss
             
         except optuna.exceptions.TrialPruned:
             raise
@@ -257,6 +138,183 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
             self.logger.error(f"❌ Trial failed with error: {str(e)}")
             # Return a high penalty value for failed trials
             return 10.0
+    
+    def _train_single_fold(self, train_dataset: Dict, val_dataset: Dict, bio_data: Dict, description_data: Dict, 
+                          hyperparams: Dict, fold_num: int, start_time: float, max_trial_time: float) -> float:
+        """
+        Train and evaluate a single fold.
+        
+        Returns:
+            Combined metric for this fold: (KL Divergence Loss + (1 - F1-Score Macro)) / 2
+        """
+        # Process datasets
+        train_processed = self.prepare_processed_data(train_dataset, bio_data, description_data, verbose=False)
+        val_processed = self.prepare_processed_data(val_dataset, bio_data, description_data, verbose=False)
+        
+        # Create datasets and data loaders
+        train_dataset_obj = SCOTUSDataset(train_processed)
+        val_dataset_obj = SCOTUSDataset(val_processed)
+        
+        train_loader = DataLoader(
+            train_dataset_obj,
+            batch_size=hyperparams['batch_size'],
+            shuffle=True,
+            collate_fn=collate_fn,
+            num_workers=self.config.num_workers
+        )
+        
+        val_loader = DataLoader(
+            val_dataset_obj,
+            batch_size=hyperparams['batch_size'],
+            shuffle=False,
+            collate_fn=collate_fn,
+            num_workers=self.config.num_workers
+        )
+        
+        # Initialize model with trial hyperparameters
+        model = SCOTUSVotingModel(
+            bio_model_name=self.base_config.bio_model_name,
+            description_model_name=self.base_config.description_model_name,
+            embedding_dim=self.base_config.embedding_dim,
+            hidden_dim=hyperparams['hidden_dim'],
+            dropout_rate=hyperparams['dropout_rate'],
+            max_justices=self.base_config.max_justices,
+            num_attention_heads=hyperparams['num_attention_heads'],
+            use_justice_attention=hyperparams['use_justice_attention'],
+            use_noise_reg=hyperparams['use_noise_reg'],
+            noise_reg_alpha=hyperparams['noise_reg_alpha'],
+            device=self.device
+        )
+        model.to(self.device)
+        
+        # Create loss function
+        criterion = create_scotus_loss_function(self.base_config)
+        
+        # Create optimizer for non-transformer parameters
+        main_optimizer = torch.optim.Adam(
+            [p for p in model.parameters() if p.requires_grad],
+            lr=hyperparams['learning_rate'],
+            weight_decay=hyperparams['weight_decay']
+        )
+        
+        # Initialize sentence transformer optimizer (will be used if models are unfrozen)
+        sentence_transformer_optimizer = None
+        
+        self.logger.info(f"🚀 Starting fold {fold_num} training...")
+        self.logger.info(f"   Training samples: {len(train_processed)}")
+        self.logger.info(f"   Validation samples: {len(val_processed)}")
+        
+        # Training loop
+        num_epochs = self.base_config.optuna_max_epochs
+        patience_counter = 0
+        best_fold_metric = float('inf')
+        
+        for epoch in range(num_epochs):
+            # Check trial timeout
+            if time.time() - start_time > max_trial_time:
+                self.logger.warning(f"Trial timeout reached ({max_trial_time}s). Stopping fold {fold_num} early.")
+                break
+            
+            # Training phase
+            model.train()
+            total_train_loss = 0.0
+            num_train_batches = 0
+            
+            for batch in train_loader:
+                main_optimizer.zero_grad()
+                if sentence_transformer_optimizer:
+                    sentence_transformer_optimizer.zero_grad()
+                
+                # Move batch to device
+                case_input_ids = batch['case_input_ids'].to(self.device)
+                case_attention_mask = batch['case_attention_mask'].to(self.device)
+                justice_input_ids = [j.to(self.device) for j in batch['justice_input_ids']]
+                justice_attention_mask = [j.to(self.device) for j in batch['justice_attention_mask']]
+                justice_counts = batch['justice_counts']
+                targets = batch['targets'].to(self.device)
+                
+                with autocast(device_type=self.device.type):
+                    # Forward pass
+                    predictions = model(case_input_ids, case_attention_mask, justice_input_ids, justice_attention_mask, justice_counts)
+                    
+                    # Compute loss
+                    loss = criterion(predictions, targets)
+                
+                # Backward pass
+                self.scaler.scale(loss).backward()
+                
+                # Gradient clipping
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=hyperparams['max_grad_norm'])
+                
+                # Optimizer steps
+                self.scaler.step(main_optimizer)
+                if sentence_transformer_optimizer:
+                    self.scaler.step(sentence_transformer_optimizer)
+                self.scaler.update()
+                
+                total_train_loss += loss.item()
+                num_train_batches += 1
+            
+            # Validation phase
+            val_loss, val_f1 = self._evaluate_model_for_optimization(model, val_loader, criterion)
+            
+            avg_train_loss = total_train_loss / num_train_batches if num_train_batches > 0 else 0.0
+            
+            # Combined metric for optimization
+            combined_metric = (val_loss + (1 - val_f1)) / 2
+            
+            self.logger.info(f"Fold {fold_num} Epoch {epoch+1}/{num_epochs} - "
+                           f"Train Loss: {avg_train_loss:.4f}, "
+                           f"Val Loss: {val_loss:.4f}, "
+                           f"Val F1: {val_f1:.4f}, "
+                           f"Combined Metric: {combined_metric:.4f}")
+            
+            # Handle unfreezing at specified epoch
+            if epoch + 1 == hyperparams.get('unfreeze_at_epoch', float('inf')):
+                self.logger.info(f"🔓 Unfreezing sentence transformers for fold {fold_num}...")
+                if hyperparams.get('unfreeze_bio_model', False):
+                    model.unfreeze_bio_model()
+                    self.logger.info("   - Bio model unfrozen")
+                if hyperparams.get('unfreeze_description_model', False):
+                    model.unfreeze_description_model()
+                    self.logger.info("   - Description model unfrozen")
+                
+                # Create sentence transformer optimizer if models were unfrozen
+                if model.get_sentence_transformer_status()['any_trainable']:
+                    st_params = []
+                    if hyperparams.get('unfreeze_bio_model', False):
+                        st_params.extend(model.bio_model.parameters())
+                    if hyperparams.get('unfreeze_description_model', False):
+                        st_params.extend(model.description_model.parameters())
+                    
+                    sentence_transformer_optimizer = torch.optim.Adam(
+                        st_params,
+                        lr=hyperparams.get('sentence_transformer_learning_rate', hyperparams['learning_rate'] * 0.1),
+                        weight_decay=hyperparams['weight_decay']
+                    )
+                    self.logger.info(f"   - Sentence transformer optimizer created")
+            
+            # Early stopping based on combined metric
+            if combined_metric < best_fold_metric:
+                best_fold_metric = combined_metric
+                patience_counter = 0
+            else:
+                patience_counter += 1
+                if patience_counter >= self.early_stop_patience and epoch >= self.min_epochs:
+                    self.logger.info(f"Early stopping triggered for fold {fold_num} after {epoch+1} epochs")
+                    break
+            
+            # Report intermediate values to Optuna (only for first fold to avoid confusion)
+            if fold_num == 1:
+                self.trial.report(combined_metric, epoch)
+                
+                # Handle pruning based on the intermediate value
+                if self.trial.should_prune():
+                    self.logger.info(f"Trial pruned at fold {fold_num}, epoch {epoch+1}")
+                    raise optuna.exceptions.TrialPruned()
+        
+        self.logger.info(f"✅ Fold {fold_num} completed with metric: {best_fold_metric:.4f}")
+        return best_fold_metric
 
     def _suggest_hyperparameters(self) -> Dict[str, Any]:
         """Suggest hyperparameters for the current trial."""

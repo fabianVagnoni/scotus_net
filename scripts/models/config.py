@@ -128,6 +128,12 @@ class ModelConfig:
         self.optuna_unfreeze_at_epoch_options = self._parse_list_option(os.getenv('OPTUNA_UNFREEZE_AT_EPOCH_OPTIONS', '2,3,4,5'), int)
         self.optuna_sentence_transformer_lr_range = self._parse_range_option(os.getenv('OPTUNA_SENTENCE_TRANSFORMER_LR_RANGE', '1e-6,1e-4,true'))
         self.optuna_max_grad_norm_range = self._parse_range_option(os.getenv('OPTUNA_MAX_GRAD_NORM_RANGE', '1.0,10.0,true'))
+        
+        # Time-Based Cross-Validation Configuration
+        self.use_time_based_cv = os.getenv('USE_TIME_BASED_CV', 'true').lower() == 'true'
+        self.time_based_cv_folds = int(os.getenv('TIME_BASED_CV_FOLDS', '3'))
+        self.time_based_cv_train_size = int(os.getenv('TIME_BASED_CV_TRAIN_SIZE', '1000'))
+        self.time_based_cv_val_size = int(os.getenv('TIME_BASED_CV_VAL_SIZE', '100'))
 
     def _parse_list_option(self, value: str, convert_type: type = str) -> list:
         """Parse comma-separated list option."""
