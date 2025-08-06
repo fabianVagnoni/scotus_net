@@ -444,7 +444,8 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
         all_targets = []
         
         with torch.no_grad():
-            for batch in data_loader:
+            progress_bar = tqdm(data_loader, desc="Evaluating model", leave=False)
+            for batch in progress_bar:
                 # Move batch to device
                 case_input_ids = batch['case_input_ids'].to(self.device)
                 case_attention_mask = batch['case_attention_mask'].to(self.device)
@@ -466,8 +467,11 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
                 pred_classes = torch.argmax(predictions, dim=1)
                 target_classes = torch.argmax(targets, dim=1)
                 
+                progress_bar.set_postfix({'loss': f'{loss.item():.4f}'})
+                
                 all_predictions.extend(pred_classes.cpu().numpy())
                 all_targets.extend(target_classes.cpu().numpy())
+
         
         val_loss = total_loss / num_batches if num_batches > 0 else float('inf')
         val_f1 = calculate_f1_macro(all_targets, all_predictions)
