@@ -6,11 +6,35 @@ This simplified version performs hyperparameter tuning for basic model architect
 without complex unfreezing strategies.
 """
 
+import warnings
 import os
-import sys
-import json
-import tempfile
-import shutil
+# Suppress specific warnings for cleaner output during hyperparameter optimization
+def suppress_warnings():
+    """Suppress common warnings that don't affect functionality during optimization."""
+    
+    # 1. Suppress FutureWarnings about torch.cuda.amp.GradScaler and autocast
+    warnings.filterwarnings("ignore", message=".*torch.cuda.amp.GradScaler.*deprecated.*")
+    warnings.filterwarnings("ignore", message=".*torch.cuda.amp.autocast.*deprecated.*")
+    
+    # 2. Suppress UserWarnings about gradient requirements
+    warnings.filterwarnings("ignore", message="None of the inputs have requires_grad=True.*")
+    
+    # 3. Suppress RoBERTa encoder attention mask deprecation warnings
+    warnings.filterwarnings("ignore", message=".*encoder_attention_mask.*deprecated.*")
+    
+    # 4. Suppress dimension mismatch warnings (if they're expected in your case)
+    warnings.filterwarnings("ignore", message=".*model embedding dimension.*doesn't match expected.*")
+    
+    # 5. Alternative: Set environment variable to reduce HuggingFace warnings
+    os.environ["TRANSFORMERS_VERBOSITY"] = "error"
+    
+    # 6. Suppress all FutureWarnings (more aggressive approach)
+    # warnings.filterwarnings("ignore", category=FutureWarning)
+    
+    # 7. Suppress all UserWarnings (more aggressive approach)
+    # warnings.filterwarnings("ignore", category=UserWarning)
+suppress_warnings()
+
 import gc
 from pathlib import Path
 from typing import Dict, Any, Optional
@@ -25,7 +49,13 @@ import argparse
 import time
 import signal
 from tqdm import tqdm
-from torch.cuda.amp import autocast, GradScaler
+
+# (deprecated):
+# from torch.cuda.amp import autocast, GradScaler
+# self.scaler = GradScaler()
+# with autocast():
+# (recommended):
+from torch.amp import autocast, GradScaler
 
 from scripts.models.model_trainer import SCOTUSModelTrainer
 from scripts.models.scotus_voting_model import SCOTUSVotingModel, SCOTUSDataset, collate_fn

@@ -19,7 +19,13 @@ from typing import Dict, List, Tuple, Any
 import sys
 from torch.nn.utils.rnn import pad_sequence
 import torch.nn.functional as F
-from torch.cuda.amp import autocast, GradScaler
+
+# (deprecated):
+# from torch.cuda.amp import autocast, GradScaler
+# self.scaler = GradScaler()
+# with autocast():
+# (recommended):
+from torch.amp import autocast, GradScaler
 
 # Add current directory to path for imports
 current_dir = os.path.dirname(os.path.abspath(__file__))
