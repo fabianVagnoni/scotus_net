@@ -11,6 +11,7 @@ import sys
 import json
 import tempfile
 import shutil
+import gc
 from pathlib import Path
 from typing import Dict, Any, Optional
 import optuna
@@ -53,6 +54,33 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
         self.holdout_manager = HoldoutTestSetManager()
         # Store pre-loaded and split data
         self.prepared_data = prepared_data
+    
+    def _clear_memory_cache(self):
+        """Clear GPU cache and run garbage collection."""
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        gc.collect()
+    
+    def _enable_gradient_checkpointing(self, model):
+        """Enable gradient checkpointing for sentence transformers to save memory."""
+        try:
+            # Enable gradient checkpointing for bio model if it has the method
+            if hasattr(model.bio_model, 'gradient_checkpointing_enable'):
+                model.bio_model.gradient_checkpointing_enable()
+            elif hasattr(model.bio_model, '_modules') and hasattr(model.bio_model._modules.get('0'), 'gradient_checkpointing_enable'):
+                # For SentenceTransformer models, try to access the underlying transformer
+                model.bio_model._modules['0'].gradient_checkpointing_enable()
+            
+            # Enable gradient checkpointing for description model if it has the method
+            if hasattr(model.description_model, 'gradient_checkpointing_enable'):
+                model.description_model.gradient_checkpointing_enable()
+            elif hasattr(model.description_model, '_modules') and hasattr(model.description_model._modules.get('0'), 'gradient_checkpointing_enable'):
+                # For SentenceTransformer models, try to access the underlying transformer
+                model.description_model._modules['0'].gradient_checkpointing_enable()
+                
+        except Exception as e:
+            # Gradient checkpointing might not be available for all models, so just log and continue
+            self.logger.debug(f"Could not enable gradient checkpointing: {e}")
         
     def train_model_for_optimization(self) -> float:
         """
@@ -108,6 +136,9 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
                     fold_metrics.append(fold_metric)
                     self.logger.info(f"   Fold {fold_idx + 1} metric: {fold_metric:.4f}")
                     
+                    # Clear memory after each fold
+                    self._clear_memory_cache()
+                    
                     # Update CV progress bar with current fold metric
                     cv_progress.set_postfix({'fold_metric': f'{fold_metric:.4f}'})
                 
@@ -137,6 +168,9 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
             self.logger.error(f"❌ Trial failed with error: {str(e)}")
             # Return a high penalty value for failed trials
             return 10.0
+        finally:
+            # Always clear memory at the end of each trial
+            self._clear_memory_cache()
     
     def _train_single_fold(self, train_dataset: Dict, val_dataset: Dict, bio_data: Dict, description_data: Dict, 
                           hyperparams: Dict, fold_num: int, start_time: float, max_trial_time: float) -> float:
@@ -185,6 +219,9 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
             device=self.device
         )
         model.to(self.device)
+        
+        # Enable gradient checkpointing for memory efficiency
+        self._enable_gradient_checkpointing(model)
         
         # Create loss function
         criterion = create_scotus_loss_function(self.base_config)
@@ -264,9 +301,16 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
                 
                 # Update progress bar with current loss
                 train_progress.set_postfix({'loss': f'{loss.item():.4f}'})
+                
+                # Clear cache periodically during training to prevent memory buildup
+                if num_train_batches % 10 == 0:
+                    self._clear_memory_cache()
             
             # Validation phase
             val_loss, val_f1 = self._evaluate_model_for_optimization(model, val_loader, criterion)
+            
+            # Clear memory after validation
+            self._clear_memory_cache()
             
             avg_train_loss = total_train_loss / num_train_batches if num_train_batches > 0 else 0.0
             
@@ -323,6 +367,20 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
                 if self.trial.should_prune():
                     self.logger.info(f"Trial pruned at fold {fold_num}, epoch {epoch+1}")
                     raise optuna.exceptions.TrialPruned()
+        
+        # Clean up model and free memory
+        del model
+        del criterion
+        del main_optimizer
+        if sentence_transformer_optimizer:
+            del sentence_transformer_optimizer
+        del train_loader
+        del val_loader
+        del train_dataset_obj
+        del val_dataset_obj
+        
+        # Clear memory cache
+        self._clear_memory_cache()
         
         self.logger.info(f"✅ Fold {fold_num} completed with metric: {best_fold_metric:.4f}")
         return best_fold_metric
@@ -473,6 +531,10 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
                 
                 all_predictions.extend(pred_classes.cpu().numpy())
                 all_targets.extend(target_classes.cpu().numpy())
+                
+                # Clear cache periodically during evaluation
+                if num_batches % 10 == 0:
+                    self._clear_memory_cache()
 
         
         val_loss = total_loss / num_batches if num_batches > 0 else float('inf')
@@ -652,6 +714,11 @@ def objective(trial: Trial, base_config: ModelConfig, prepared_data: Dict, exper
         trainer.logger.error(f"Trial {trial.number} failed: {str(e)}")
         append_trial_results(trial, float('inf'), None, "FAILED", experiment_name)
         return 10.0  # High penalty for failed trials
+    finally:
+        # Clean up trainer and clear memory
+        if 'trainer' in locals():
+            trainer._clear_memory_cache()
+            del trainer
 
 def objective_with_progress(trial, config, prepared_data, experiment_name, trial_progress, study):
     result = objective(trial, config, prepared_data, experiment_name)
