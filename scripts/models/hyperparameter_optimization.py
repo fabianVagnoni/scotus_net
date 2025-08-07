@@ -288,6 +288,7 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
             use_justice_attention=hyperparams['use_justice_attention'],
             use_noise_reg=hyperparams['use_noise_reg'],
             noise_reg_alpha=hyperparams['noise_reg_alpha'],
+            pretrained_bio_model=hyperparams['pretrained_bio_model'],
             device=self.device
         )
         model.to(self.device)
@@ -559,6 +560,11 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
         else:
             hyperparams['max_grad_norm'] = self.base_config.max_grad_norm
         
+        if self.base_config.tune_pretrained_bio_model:
+            hyperparams['pretrained_bio_model'] = self.trial.suggest_categorical('pretrained_bio_model', self.base_config.optuna_pretrained_bio_model_options)
+        else:
+            hyperparams['pretrained_bio_model'] = self.base_config.pretrained_bio_model
+        
         return hyperparams
 
     def _evaluate_model_for_optimization(self, model: SCOTUSVotingModel, data_loader: DataLoader, criterion) -> tuple:
@@ -635,7 +641,7 @@ def initialize_results_file(study_name: str, n_trials: int, dataset_file: str, e
         "hidden_dim", "dropout_rate", "num_attention_heads", "use_justice_attention",
         "learning_rate", "batch_size", "weight_decay", "use_noise_reg", "noise_reg_alpha",
         "unfreeze_at_epoch", "unfreeze_bio_model", "unfreeze_description_model", "sentence_transformer_learning_rate",
-        "dataset_file", "experiment_name"
+        "pretrained_bio_model", "dataset_file", "experiment_name"
     ]
     
     df = pd.DataFrame(columns=headers)
@@ -714,6 +720,14 @@ def prepare_data_for_optimization(base_config: ModelConfig, dataset_file: str) -
     
     # Create holdout manager
     holdout_manager = HoldoutTestSetManager()
+    
+    # Log which years will be held out for testing
+    holdout_case_ids = holdout_manager.get_holdout_case_ids()
+    if holdout_case_ids:
+        holdout_years = [holdout_manager.extract_year_from_case_id(case_id) for case_id in holdout_case_ids]
+        min_year = min(holdout_years)
+        max_year = max(holdout_years)
+        logger.info(f"🔒 Holdout test set: {len(holdout_case_ids)} cases from {min_year}-{max_year} will be LEFT OUT for testing")
     
     prepared_data = {
         'bio_data': bio_data,
@@ -941,7 +955,10 @@ def save_best_config(study: optuna.Study, base_config: ModelConfig, output_file:
         f"UNFREEZE_AT_EPOCH={best_params.get('unfreeze_at_epoch', base_config.unfreeze_at_epoch)}",
         f"UNFREEZE_BIO_MODEL={best_params.get('unfreeze_bio_model', base_config.unfreeze_bio_model)}",
         f"UNFREEZE_DESCRIPTION_MODEL={best_params.get('unfreeze_description_model', base_config.unfreeze_description_model)}",
-        f"SENTENCE_TRANSFORMER_LEARNING_RATE={best_params.get('sentence_transformer_learning_rate', base_config.sentence_transformer_learning_rate)}"
+        f"SENTENCE_TRANSFORMER_LEARNING_RATE={best_params.get('sentence_transformer_learning_rate', base_config.sentence_transformer_learning_rate)}",
+        "",
+        "# Pretrained Model",
+        f"PRETRAINED_BIO_MODEL={best_params.get('pretrained_bio_model', base_config.pretrained_bio_model) or ''}"
     ]
     
     with open(output_file, 'w') as f:

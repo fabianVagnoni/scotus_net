@@ -91,6 +91,8 @@ class ModelConfig:
         
         # Pretrained Model Path
         self.pretrained_bio_model = os.getenv('PRETRAINED_BIO_MODEL', '')
+        print(f"PRETRAINED BIO MODEL: {self.pretrained_bio_model}")
+        print(f"PRETRAINED BIO MODEL TYPE: {os.getenv('PRETRAINED_BIO_MODEL')}")
         
         # Legacy support for unfreeze_transformers (maps to unfreeze_at_epoch)
         self.unfreeze_transformers = self.unfreeze_at_epoch > 0
@@ -114,6 +116,7 @@ class ModelConfig:
         self.tune_use_noise_reg = os.getenv('TUNE_USE_NOISE_REG', 'true').lower() == 'true'
         self.tune_unfreezing = os.getenv('TUNE_UNFREEZING', 'true').lower() == 'true'
         self.tune_max_grad_norm = os.getenv('TUNE_MAX_GRAD_NORM', 'true').lower() == 'true'
+        self.tune_pretrained_bio_model = os.getenv('TUNE_PRETRAINED_BIO_MODEL', 'true').lower() == 'true'
         
         # Hyperparameter Search Spaces
         self.optuna_hidden_dim_options = self._parse_list_option(os.getenv('OPTUNA_HIDDEN_DIM_OPTIONS', '256,512,768,1024'), int)
@@ -128,6 +131,7 @@ class ModelConfig:
         self.optuna_unfreeze_at_epoch_options = self._parse_list_option(os.getenv('OPTUNA_UNFREEZE_AT_EPOCH_OPTIONS', '2,3,4,5'), int)
         self.optuna_sentence_transformer_lr_range = self._parse_range_option(os.getenv('OPTUNA_SENTENCE_TRANSFORMER_LR_RANGE', '1e-6,1e-4,true'))
         self.optuna_max_grad_norm_range = self._parse_range_option(os.getenv('OPTUNA_MAX_GRAD_NORM_RANGE', '1.0,10.0,true'))
+        self.optuna_pretrained_bio_model_options = self._parse_pretrained_model_options(os.getenv('OPTUNA_PRETRAINED_BIO_MODEL_OPTIONS', '"",models_output/contrastive_justice/best.pth'))
         
         # Time-Based Cross-Validation Configuration
         self.use_time_based_cv = os.getenv('USE_TIME_BASED_CV', 'true').lower() == 'true'
@@ -168,6 +172,27 @@ class ModelConfig:
                 return (0.0, 1.0, None)
         except (ValueError, TypeError):
             return (0.0, 1.0, None)
+    
+    def _parse_pretrained_model_options(self, value: str) -> list:
+        """Parse pretrained model options, handling empty strings and quoted values."""
+        try:
+            print(f"VALUE: {value}")
+            parts = [x.strip() for x in value.split(',')]
+            print(f"PARTS: {parts}")
+            result = []
+            for part in parts:
+                # Remove quotes if present
+                if part.startswith('"') and part.endswith('"'):
+                    part = part[1:-1]
+                # Convert empty string to None for no pretrained model
+                if part == "" or part == '""':
+                    result.append(None)
+                else:
+                    result.append(part)
+            print(f"RESULT: {result}")
+            return result
+        except (ValueError, TypeError):
+            return [None]
     
     def get(self, key: str, default: Any = None) -> Any:
         """
@@ -245,7 +270,7 @@ class ModelConfig:
             'unfreeze_at_epoch': self.unfreeze_at_epoch,
             'sentence_transformer_learning_rate': self.sentence_transformer_learning_rate,
             
-            # Pretrained Model Path
+            # Pretrained Model Pat
             'pretrained_bio_model': self.pretrained_bio_model,
         }
     

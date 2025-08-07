@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.utils.rnn import pad_sequence
 import pickle
-from transformers import AutoModel
+from sentence_transformers import SentenceTransformer
 import copy
 from typing import Dict, List, Any
 import os
@@ -11,7 +11,7 @@ import os
 class ContrastiveJustice(nn.Module):
     def __init__(self, trunc_bio_tokenized_file: str, full_bio_tokenized_file: str, model_name: str, dropout_rate: float = 0.1):
         super(ContrastiveJustice, self).__init__()
-        self.truncated_bio_model = AutoModel.from_pretrained(model_name)
+        self.truncated_bio_model = SentenceTransformer(model_name)
         self.full_bio_model = copy.deepcopy(self.truncated_bio_model)
         for param in self.truncated_bio_model.parameters():
             param.requires_grad = True

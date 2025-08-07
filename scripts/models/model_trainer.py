@@ -250,6 +250,7 @@ class SCOTUSModelTrainer:
             use_justice_attention=self.config.use_justice_attention,
             use_noise_reg=self.config.use_noise_reg,
             noise_reg_alpha=self.config.noise_reg_alpha,
+            pretrained_bio_model=self.config.pretrained_bio_model,
             device=self.device
         )
         model.to(self.device)

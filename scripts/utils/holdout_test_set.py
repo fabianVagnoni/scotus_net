@@ -138,7 +138,7 @@ class HoldoutTestSetManager:
             max_year = max(holdout_years)
             
             self.logger.info(f"Selected {len(holdout_case_ids)} cases ({percentage*100:.1f}%) for holdout test set")
-            self.logger.info(f"Holdout cases span from {min_year} to {max_year}")
+            self.logger.info(f"Holdout cases span from {min_year} to {max_year} - these years will be LEFT OUT for testing")
             
             # Count cases by year
             year_counts = {}

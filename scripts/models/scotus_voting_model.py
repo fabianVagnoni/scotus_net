@@ -65,9 +65,10 @@ class SCOTUSVotingModel(nn.Module):
         # Initialize sentence transformer models
         print(f"📥 Loading sentence transformer models...")
         self.bio_model = SentenceTransformer(bio_model_name, device=device)
+        print(f"PRETRAINED BIO MODEL: {pretrained_bio_model}")
         if pretrained_bio_model:
             print(f"🔗 Loading pretrained bio model from {pretrained_bio_model}")
-            self.bio_model.load_state_dict(torch.load(pretrained_bio_model))
+            self.bio_model = AutoModel.from_pretrained(str(pretrained_bio_model))
         self.description_model = SentenceTransformer(description_model_name, device=device)
         
         # Initially freeze sentence transformers (will be unfrozen during training if configured)

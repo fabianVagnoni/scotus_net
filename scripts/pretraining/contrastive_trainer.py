@@ -7,6 +7,7 @@ from typing import Dict, List, Tuple, Any
 import sys
 import torch.nn.functional as F
 from transformers import AutoModel
+from sentence_transformers import SentenceTransformer
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 if current_dir not in sys.path:
@@ -267,7 +268,8 @@ class ContrastiveJusticeTrainer:
             if val_loss < best_val_loss:
                 patience_counter = 0
                 best_val_loss = val_loss
-                model.truncated_bio_model.save_pretrained(str(model_output_dir / 'best_model.pth'))
+                #model.truncated_bio_model.save_pretrained(str(model_output_dir / 'best_model.pth'))
+                model.truncated_bio_model.save(str(model_output_dir / 'best_model'))
                 self.logger.info(f"New best model saved with validation loss {val_loss:.4f} in location {(model_output_dir / 'best_model.pth').absolute()}")
             else:
                 patience_counter += 1
@@ -278,7 +280,8 @@ class ContrastiveJusticeTrainer:
         # Load best model if available
         best_model_path = model_output_dir / 'best_model.pth'
         if best_model_path.exists():
-            model.truncated_bio_model = AutoModel.from_pretrained(str(best_model_path))
+            #model.truncated_bio_model = AutoModel.from_pretrained(str(best_model_path))
+            model.truncated_bio_model = SentenceTransformer(str(best_model_path), device=self.device)
             self.logger.info(f"Loaded best model with validation loss {best_val_loss:.4f}")
         
         self.logger.info("Training completed successfully!")
