@@ -271,14 +271,15 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
             avg_train_loss = total_train_loss / num_train_batches if num_train_batches > 0 else 0.0
             
             # Combined metric for optimization
-            combined_metric = (val_loss + (1 - val_f1)) / 2
+            if epoch % 2 == 0:
+                combined_metric = (val_loss + (1 - val_f1)) / 2
             
-            self.logger.info(f"Fold {fold_num} Epoch {epoch+1}/{num_epochs} - "
-                           f"Train Loss: {avg_train_loss:.4f}, "
-                           f"Val Loss: {val_loss:.4f}, "
-                           f"Val F1: {val_f1:.4f}, "
-                           f"Combined Metric: {combined_metric:.4f}")
-            
+                self.logger.info(f"Fold {fold_num} Epoch {epoch+1}/{num_epochs} - "
+                            f"Train Loss: {avg_train_loss:.4f}, "
+                            f"Val Loss: {val_loss:.4f}, "
+                            f"Val F1: {val_f1:.4f}, "
+                            f"Combined Metric: {combined_metric:.4f}")
+                
             # Handle unfreezing at specified epoch
             if epoch + 1 == hyperparams.get('unfreeze_at_epoch', float('inf')):
                 self.logger.info(f"🔓 Unfreezing sentence transformers for fold {fold_num}...")
@@ -305,17 +306,17 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
                     self.logger.info(f"   - Sentence transformer optimizer created")
             
             # Early stopping based on combined metric
-            if combined_metric < best_fold_metric:
+            if epoch % 2 == 0 and combined_metric < best_fold_metric:
                 best_fold_metric = combined_metric
                 patience_counter = 0
-            else:
+            elif epoch % 2 == 0:
                 patience_counter += 1
                 if patience_counter >= self.early_stop_patience and epoch >= self.min_epochs:
                     self.logger.info(f"Early stopping triggered for fold {fold_num} after {epoch+1} epochs")
                     break
             
             # Report intermediate values to Optuna (only for first fold to avoid confusion)
-            if fold_num == 1:
+            if fold_num == 1 and epoch % 2 == 0:
                 self.trial.report(combined_metric, epoch)
                 
                 # Handle pruning based on the intermediate value
@@ -455,10 +456,11 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
                 targets = batch['targets'].to(self.device)
                 
                 # Forward pass
-                predictions = model(case_input_ids, case_attention_mask, justice_input_ids, justice_attention_mask, justice_counts)
+                with autocast():
+                    predictions = model(case_input_ids, case_attention_mask, justice_input_ids, justice_attention_mask, justice_counts)
                 
-                # Compute loss
-                loss = criterion(predictions, targets)
+                    # Compute loss
+                    loss = criterion(predictions, targets)
                 total_loss += loss.item()
                 num_batches += 1
                 
