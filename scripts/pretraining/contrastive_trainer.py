@@ -35,6 +35,7 @@ class ContrastiveJusticeTrainer:
         self.config = config
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.device_string = "cuda" if torch.cuda.is_available() else "cpu"
+        self.scaler = GradScaler()
 
     def load_pretraining_dataset(self, pretraining_dataset_file: str) -> Dict:
         """Load the pretraining dataset."""
