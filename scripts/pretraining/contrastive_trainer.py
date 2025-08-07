@@ -7,7 +7,6 @@ from typing import Dict, List, Tuple, Any
 import sys
 import torch.nn.functional as F
 from transformers import AutoModel
-from torch.amp import autocast, GradScaler
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 if current_dir not in sys.path:
@@ -34,8 +33,6 @@ class ContrastiveJusticeTrainer:
         self.logger = get_logger(__name__)
         self.config = config
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        self.device_string = "cuda" if torch.cuda.is_available() else "cpu"
-        self.scaler = GradScaler()
 
     def load_pretraining_dataset(self, pretraining_dataset_file: str) -> Dict:
         """Load the pretraining dataset."""
@@ -216,14 +213,11 @@ class ContrastiveJusticeTrainer:
                     batch_full_bio_data = batch['full_bio_data']
                     
                     # Use batch processing for efficiency
-                    with autocast(device_type=self.device_string):
-                        e_t, e_f = model.forward(batch_trunc_bio_data, batch_full_bio_data)
-                        batch_loss = loss_fn(e_t, e_f)
+                    e_t, e_f = model.forward(batch_trunc_bio_data, batch_full_bio_data)
+                    batch_loss = loss_fn(e_t, e_f)
                     train_loss += batch_loss.item()
                     num_batches += 1
-                    self.scaler.scale(batch_loss).backward()
-                    self.scaler.step(optimizer)
-                    self.scaler.update()
+                    batch_loss.backward()
                     optimizer.step()
                     
                     # Update batch progress bar with current loss
