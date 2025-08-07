@@ -67,12 +67,46 @@ from scripts.models.losses import create_scotus_loss_function
 from scripts.utils.metrics import calculate_f1_macro
 
 
+def setup_file_logging(experiment_name: str = None):
+    """
+    Simple file logging setup that appends to a text file.
+    
+    Args:
+        experiment_name: Name of the experiment for the log file
+        
+    Returns:
+        Path to the log file
+    """
+    if not experiment_name:
+        experiment_name = "default"
+    
+    log_dir = Path("logs/hyperparameter_tunning_logs")
+    log_dir.mkdir(parents=True, exist_ok=True)
+    
+    log_file = log_dir / f"hyperparameter_tunning_{experiment_name}.txt"
+    
+    return str(log_file)
+
+
+def log_to_file(message: str, log_file: str):
+    """
+    Simple function to append a message to the log file.
+    
+    Args:
+        message: Message to log
+        log_file: Path to the log file
+    """
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    with open(log_file, 'a', encoding='utf-8') as f:
+        f.write(f"[{timestamp}] {message}\n")
+
+
 class OptunaModelTrainer(SCOTUSModelTrainer):
     """
     Simplified model trainer for Optuna optimization.
     """
     
-    def __init__(self, trial: Trial, base_config: ModelConfig, prepared_data: Dict = None):
+    def __init__(self, trial: Trial, base_config: ModelConfig, prepared_data: Dict = None, log_file: str = None):
         """Initialize trainer with trial-specific configuration and pre-loaded data."""
         super().__init__()
         self.trial = trial
@@ -84,6 +118,14 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
         self.holdout_manager = HoldoutTestSetManager()
         # Store pre-loaded and split data
         self.prepared_data = prepared_data
+        # Store log file path for file logging
+        self.log_file = log_file
+    
+    def _log_info(self, message: str):
+        """Log message to both console and file."""
+        self.logger.info(message)
+        if self.log_file:
+            log_to_file(message, self.log_file)
     
     def _clear_memory_cache(self):
         """Clear GPU cache and run garbage collection."""
@@ -126,11 +168,11 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
             if not self.prepared_data:
                 raise ValueError("No prepared data available. Data should be pre-loaded.")
             
-            self.logger.info("Using pre-loaded data for optimization...")
+            self._log_info("Using pre-loaded data for optimization...")
             
             # Suggest hyperparameters
             hyperparams = self._suggest_hyperparameters()
-            self.logger.info(f"Trial hyperparameters: {hyperparams}")
+            self._log_info(f"Trial hyperparameters: {hyperparams}")
             
             # Use pre-loaded CV splits or single split
             if 'cv_splits' in self.prepared_data:
@@ -155,7 +197,7 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
                         self.logger.warning(f"Trial timeout reached ({max_trial_time}s). Stopping at fold {fold_idx + 1}.")
                         break
                     
-                    self.logger.info(f"🔄 Training fold {fold_idx + 1}/{len(cv_splits)}")
+                    self._log_info(f"🔄 Training fold {fold_idx + 1}/{len(cv_splits)}")
                     
                     # Train model for this fold
                     fold_metric = self._train_single_fold(
@@ -164,7 +206,7 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
                     )
                     
                     fold_metrics.append(fold_metric)
-                    self.logger.info(f"   Fold {fold_idx + 1} metric: {fold_metric:.4f}")
+                    self._log_info(f"   Fold {fold_idx + 1} metric: {fold_metric:.4f}")
                     
                     # Clear memory after each fold
                     self._clear_memory_cache()
@@ -175,7 +217,7 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
                 # Return average metric across folds
                 if fold_metrics:
                     avg_metric = sum(fold_metrics) / len(fold_metrics)
-                    self.logger.info(f"✅ Average metric across {len(fold_metrics)} folds: {avg_metric:.4f}")
+                    self._log_info(f"✅ Average metric across {len(fold_metrics)} folds: {avg_metric:.4f}")
                     return avg_metric
                 else:
                     return 10.0  # High penalty if no folds completed
@@ -266,9 +308,9 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
         # Initialize sentence transformer optimizer (will be used if models are unfrozen)
         sentence_transformer_optimizer = None
         
-        self.logger.info(f"🚀 Starting fold {fold_num} training...")
-        self.logger.info(f"   Training samples: {len(train_processed)}")
-        self.logger.info(f"   Validation samples: {len(val_processed)}")
+        self._log_info(f"🚀 Starting fold {fold_num} training...")
+        self._log_info(f"   Training samples: {len(train_processed)}")
+        self._log_info(f"   Validation samples: {len(val_processed)}")
         
         # Training loop
         num_epochs = self.base_config.optuna_max_epochs
@@ -348,7 +390,7 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
             if epoch % 2 == 0:
                 combined_metric = (val_loss + (1 - val_f1)) / 2
             
-                self.logger.info(f"Fold {fold_num} Epoch {epoch+1}/{num_epochs} - "
+                self._log_info(f"Fold {fold_num} Epoch {epoch+1}/{num_epochs} - "
                             f"Train Loss: {avg_train_loss:.4f}, "
                             f"Val Loss: {val_loss:.4f}, "
                             f"Val F1: {val_f1:.4f}, "
@@ -356,13 +398,13 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
                 
             # Handle unfreezing at specified epoch
             if epoch + 1 == hyperparams.get('unfreeze_at_epoch', float('inf')):
-                self.logger.info(f"🔓 Unfreezing sentence transformers for fold {fold_num}...")
+                self._log_info(f"🔓 Unfreezing sentence transformers for fold {fold_num}...")
                 if hyperparams.get('unfreeze_bio_model', False):
                     model.unfreeze_bio_model()
-                    self.logger.info("   - Bio model unfrozen")
+                    self._log_info("   - Bio model unfrozen")
                 if hyperparams.get('unfreeze_description_model', False):
                     model.unfreeze_description_model()
-                    self.logger.info("   - Description model unfrozen")
+                    self._log_info("   - Description model unfrozen")
                 
                 # Create sentence transformer optimizer if models were unfrozen
                 if model.get_sentence_transformer_status()['any_trainable']:
@@ -377,7 +419,7 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
                         lr=hyperparams.get('sentence_transformer_learning_rate', hyperparams['learning_rate'] * 0.1),
                         weight_decay=hyperparams['weight_decay']
                     )
-                    self.logger.info(f"   - Sentence transformer optimizer created")
+                    self._log_info(f"   - Sentence transformer optimizer created")
             
             # Early stopping based on combined metric
             if epoch % 2 == 0 and combined_metric < best_fold_metric:
@@ -386,7 +428,7 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
             elif epoch % 2 == 0:
                 patience_counter += 1
                 if patience_counter >= self.early_stop_patience and epoch >= self.min_epochs:
-                    self.logger.info(f"Early stopping triggered for fold {fold_num} after {epoch+1} epochs")
+                    self._log_info(f"Early stopping triggered for fold {fold_num} after {epoch+1} epochs")
                     break
             
             # Report intermediate values to Optuna (only for first fold to avoid confusion)
@@ -412,7 +454,7 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
         # Clear memory cache
         self._clear_memory_cache()
         
-        self.logger.info(f"✅ Fold {fold_num} completed with metric: {best_fold_metric:.4f}")
+        self._log_info(f"✅ Fold {fold_num} completed with metric: {best_fold_metric:.4f}")
         return best_fold_metric
 
     def _suggest_hyperparameters(self) -> Dict[str, Any]:
@@ -710,7 +752,7 @@ def prepare_data_for_optimization(base_config: ModelConfig, dataset_file: str) -
     return prepared_data
 
 
-def objective(trial: Trial, base_config: ModelConfig, prepared_data: Dict, experiment_name: str = None) -> float:
+def objective(trial: Trial, base_config: ModelConfig, prepared_data: Dict, experiment_name: str = None, log_file: str = None) -> float:
     """
     Objective function for Optuna optimization.
     
@@ -719,11 +761,12 @@ def objective(trial: Trial, base_config: ModelConfig, prepared_data: Dict, exper
         base_config: Base configuration
         prepared_data: Pre-loaded and split data
         experiment_name: Optional experiment name for logging
+        log_file: Optional log file path for file logging
         
     Returns:
         Combined metric to minimize
     """
-    trainer = OptunaModelTrainer(trial, base_config, prepared_data)
+    trainer = OptunaModelTrainer(trial, base_config, prepared_data, log_file)
     
     try:
         combined_metric = trainer.train_model_for_optimization()
@@ -750,8 +793,8 @@ def objective(trial: Trial, base_config: ModelConfig, prepared_data: Dict, exper
             trainer._clear_memory_cache()
             del trainer
 
-def objective_with_progress(trial, config, prepared_data, experiment_name, trial_progress, study):
-    result = objective(trial, config, prepared_data, experiment_name)
+def objective_with_progress(trial, config, prepared_data, experiment_name, trial_progress, study, log_file=None):
+    result = objective(trial, config, prepared_data, experiment_name, log_file)
     trial_progress.update(1)
     try:
         metric = study.best_value
@@ -797,6 +840,11 @@ def run_hyperparameter_optimization(
     results_file = initialize_results_file(study_name, n_trials, dataset_file, experiment_name)
     logger.info(f"📊 Results will be saved to: {results_file}")
     
+    # Set up file logging
+    log_file = setup_file_logging(experiment_name)
+    logger.info(f"📝 Logs will be saved to: {log_file}")
+    log_to_file(f"Starting hyperparameter optimization - Study: {study_name}, Experiment: {experiment_name}", log_file)
+    
     # Prepare data once for all trials
     prepared_data = prepare_data_for_optimization(config, dataset_file)
     
@@ -822,6 +870,9 @@ def run_hyperparameter_optimization(
     logger.info(f"   Parallel jobs: {n_jobs}")
     logger.info(f"   Timeout: {timeout}s" if timeout else "   Timeout: None")
     
+    # Also log to file
+    log_to_file(f"Study configuration: {n_trials} trials, {n_jobs} jobs, dataset: {dataset_file}", log_file)
+    
     # Run optimization with progress tracking
     logger.info("🔄 Starting optimization trials...")
     
@@ -831,7 +882,7 @@ def run_hyperparameter_optimization(
 
         
         study.optimize(
-            lambda trial: objective_with_progress(trial, config, prepared_data, experiment_name, trial_progress, study),
+            lambda trial: objective_with_progress(trial, config, prepared_data, experiment_name, trial_progress, study, log_file),
             n_trials=n_trials,
             timeout=timeout,
             n_jobs=n_jobs,
@@ -842,7 +893,7 @@ def run_hyperparameter_optimization(
     else:
         # For parallel jobs, use built-in progress bar
         study.optimize(
-            lambda trial: objective(trial, config, prepared_data, experiment_name),
+            lambda trial: objective(trial, config, prepared_data, experiment_name, log_file),
             n_trials=n_trials,
             timeout=timeout,
             n_jobs=n_jobs,
@@ -854,6 +905,10 @@ def run_hyperparameter_optimization(
     logger.info(f"   Best trial: {study.best_trial.number}")
     logger.info(f"   Best combined metric: {study.best_value:.4f}")
     logger.info(f"   Best parameters: {study.best_params}")
+    
+    # Also log final results to file
+    log_to_file(f"Optimization completed! Best trial: {study.best_trial.number}, Best metric: {study.best_value:.4f}", log_file)
+    log_to_file(f"Best parameters: {study.best_params}", log_file)
     
     return study
 
