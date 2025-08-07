@@ -6,6 +6,8 @@ import os
 from typing import Dict, List, Tuple, Any
 import sys
 import torch.nn.functional as F
+from transformers import AutoModel
+from torch.amp import autocast, GradScaler
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 if current_dir not in sys.path:
@@ -32,6 +34,7 @@ class ContrastiveJusticeTrainer:
         self.logger = get_logger(__name__)
         self.config = config
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.device_string = "cuda" if torch.cuda.is_available() else "cpu"
 
     def load_pretraining_dataset(self, pretraining_dataset_file: str) -> Dict:
         """Load the pretraining dataset."""
@@ -212,11 +215,14 @@ class ContrastiveJusticeTrainer:
                     batch_full_bio_data = batch['full_bio_data']
                     
                     # Use batch processing for efficiency
-                    e_t, e_f = model.forward(batch_trunc_bio_data, batch_full_bio_data)
-                    batch_loss = loss_fn(e_t, e_f)
+                    with autocast(device_type=self.device_string):
+                        e_t, e_f = model.forward(batch_trunc_bio_data, batch_full_bio_data)
+                        batch_loss = loss_fn(e_t, e_f)
                     train_loss += batch_loss.item()
                     num_batches += 1
-                    batch_loss.backward()
+                    self.scaler.scale(batch_loss).backward()
+                    self.scaler.step(optimizer)
+                    self.scaler.update()
                     optimizer.step()
                     
                     # Update batch progress bar with current loss
@@ -266,7 +272,7 @@ class ContrastiveJusticeTrainer:
             if val_loss < best_val_loss:
                 patience_counter = 0
                 best_val_loss = val_loss
-                model.truncated_bio_model.save(str(model_output_dir / 'best_model.pth'))
+                model.truncated_bio_model.save_pretrained(str(model_output_dir / 'best_model.pth'))
                 self.logger.info(f"New best model saved with validation loss {val_loss:.4f} in location {(model_output_dir / 'best_model.pth').absolute()}")
             else:
                 patience_counter += 1
@@ -277,7 +283,7 @@ class ContrastiveJusticeTrainer:
         # Load best model if available
         best_model_path = model_output_dir / 'best_model.pth'
         if best_model_path.exists():
-            model.truncated_bio_model.load_state_dict(torch.load(str(best_model_path)))
+            model.truncated_bio_model = AutoModel.from_pretrained(str(best_model_path))
             self.logger.info(f"Loaded best model with validation loss {best_val_loss:.4f}")
         
         self.logger.info("Training completed successfully!")

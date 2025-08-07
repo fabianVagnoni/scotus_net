@@ -59,6 +59,7 @@ class SCOTUSModelTrainer:
         self.config = ModelConfig()
         self.scaler = GradScaler()
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.device_string = "cuda" if torch.cuda.is_available() else "cpu"
 
     def load_case_dataset(self, dataset_file: str = None) -> Dict:
         """Load the case dataset."""
@@ -307,7 +308,7 @@ class SCOTUSModelTrainer:
                 justice_counts = batch['justice_counts']
                 targets = batch['targets'].to(self.device)
                 
-                with autocast(device_type=self.device):
+                with autocast(device_type=self.device_string):
                     # Forward pass                
                     predictions = model(case_input_ids, case_attention_mask, justice_input_ids, justice_attention_mask, justice_counts)
                 
