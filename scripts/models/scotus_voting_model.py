@@ -1,6 +1,8 @@
 import torch
 import torch.nn as nn
 from sentence_transformers import SentenceTransformer
+from pathlib import Path
+import os
 from typing import List, Optional, Dict, Any, Tuple
 import torch.nn.functional as F
 from torch.nn.utils.rnn import pad_sequence
@@ -17,6 +19,42 @@ try:
     from models.justice_cross_attention import JusticeCrossAttention
 except ImportError:
     from .justice_cross_attention import JusticeCrossAttention
+
+
+# Fallbacks for common Docker mounts
+def first_existing_candidate(original: Path) -> Path:
+    if original.exists():
+        return original
+    parts = list(original.parts)
+    tail = None
+    if 'models_output' in parts:
+        idx = parts.index('models_output')
+        tail = Path(*parts[idx+1:]) if idx + 1 < len(parts) else Path()
+    elif 'models' in parts:
+        idx = parts.index('models')
+        tail = Path(*parts[idx+1:]) if idx + 1 < len(parts) else Path()
+    else:
+        # Default to last 3 components as a heuristic
+        tail = Path(*parts[-3:]) if len(parts) >= 3 else Path(*parts)
+    candidates = [
+        Path('/app/models') / tail,
+        Path('/app/models_output') / tail,
+        Path('/app') / tail,
+    ]
+    for cand in candidates:
+        if cand.exists():
+            return cand
+    # Try glob search to handle accidental whitespace or minor name differences
+    try:
+        if len(tail.parts) >= 1:
+            base_name = tail.parts[0].strip()
+            for base_dir in [Path('/app/models'), Path('/app/models_output')]:
+                for match in base_dir.glob(f"{base_name}*/best_model"):
+                    if match.exists():
+                        return match
+    except Exception:
+        pass
+    return original
 
 
 class SCOTUSVotingModel(nn.Module):
@@ -67,8 +105,25 @@ class SCOTUSVotingModel(nn.Module):
         self.bio_model = SentenceTransformer(bio_model_name, device=device_arg)
         print(f"PRETRAINED BIO MODEL: {pretrained_bio_model}")
         if pretrained_bio_model:
-            print(f"🔗 Loading pretrained bio model from {pretrained_bio_model}")
-            self.bio_model = SentenceTransformer(str(pretrained_bio_model), device=device_arg)
+            # Resolve path: expand ~ and make relative paths absolute to repo root
+            raw_path = str(pretrained_bio_model)
+            expanded = os.path.expandvars(os.path.expanduser(raw_path))
+            path_obj = Path(expanded)
+            if not path_obj.is_absolute():
+                # Resolve relative to container workdir
+                path_obj = (Path('/app') / path_obj).resolve()
+
+            resolved_path = first_existing_candidate(path_obj)
+            if not resolved_path.exists():
+                # Simple remaps for common Docker host->container path diffs
+                remapped = str(resolved_path)
+                remapped = remapped.replace('/app/scotus_ai/', '/app/')
+                remapped = remapped.replace('/models_output/', '/models/')
+                alt_path = Path(remapped)
+                if alt_path.exists():
+                    resolved_path = alt_path
+            print(f"🔗 Loading pretrained bio model from {resolved_path}")
+            self.bio_model = SentenceTransformer(str(resolved_path), device=device_arg)
         self.description_model = SentenceTransformer(description_model_name, device=device_arg)
         
         # Initially freeze sentence transformers (will be unfrozen during training if configured)
