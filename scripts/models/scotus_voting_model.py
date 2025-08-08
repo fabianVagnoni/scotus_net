@@ -1,6 +1,5 @@
 import torch
 import torch.nn as nn
-from transformers import AutoTokenizer, AutoModel
 from sentence_transformers import SentenceTransformer
 from typing import List, Optional, Dict, Any, Tuple
 import torch.nn.functional as F
@@ -64,12 +63,13 @@ class SCOTUSVotingModel(nn.Module):
         
         # Initialize sentence transformer models
         print(f"📥 Loading sentence transformer models...")
-        self.bio_model = SentenceTransformer(bio_model_name, device=device)
+        device_arg = device if isinstance(device, str) else str(device)
+        self.bio_model = SentenceTransformer(bio_model_name, device=device_arg)
         print(f"PRETRAINED BIO MODEL: {pretrained_bio_model}")
         if pretrained_bio_model:
             print(f"🔗 Loading pretrained bio model from {pretrained_bio_model}")
-            self.bio_model = AutoModel.from_pretrained(str(pretrained_bio_model))
-        self.description_model = SentenceTransformer(description_model_name, device=device)
+            self.bio_model = SentenceTransformer(str(pretrained_bio_model), device=device_arg)
+        self.description_model = SentenceTransformer(description_model_name, device=device_arg)
         
         # Initially freeze sentence transformers (will be unfrozen during training if configured)
         self.freeze_sentence_transformers()
