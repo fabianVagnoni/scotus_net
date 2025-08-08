@@ -478,21 +478,25 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
         else:
             hyperparams['dropout_rate'] = self.base_config.dropout_rate
         
-        # Attention Mechanism - Number of Heads
-        if self.base_config.tune_num_attention_heads:
-            #self.logger.info(f"Tuning number of attention heads: {self.base_config.optuna_attention_heads_options}")
-            hyperparams['num_attention_heads'] = self.trial.suggest_categorical('num_attention_heads', self.base_config.optuna_attention_heads_options)
-        else:
-            #self.logger.info(f"Using default number of attention heads: {self.base_config.num_attention_heads}")
-            hyperparams['num_attention_heads'] = self.base_config.num_attention_heads
-        
-        # Attention Mechanism - Use Justice Attention
+        # Attention Mechanism - Use Justice Attention (tune first)
         if self.base_config.tune_use_justice_attention:
-            #self.logger.info(f"Tuning use justice attention: {self.base_config.optuna_justice_attention_options}")
-            hyperparams['use_justice_attention'] = self.trial.suggest_categorical('use_justice_attention', self.base_config.optuna_justice_attention_options)
+            hyperparams['use_justice_attention'] = self.trial.suggest_categorical(
+                'use_justice_attention', self.base_config.optuna_justice_attention_options
+            )
         else:
-            #self.logger.info(f"Using default use justice attention: {self.base_config.use_justice_attention}")
             hyperparams['use_justice_attention'] = self.base_config.use_justice_attention
+
+        # Attention Mechanism - Number of Heads depends on use_justice_attention
+        if hyperparams['use_justice_attention']:
+            if self.base_config.tune_num_attention_heads:
+                hyperparams['num_attention_heads'] = self.trial.suggest_categorical(
+                    'num_attention_heads', self.base_config.optuna_attention_heads_options
+                )
+            else:
+                hyperparams['num_attention_heads'] = self.base_config.num_attention_heads
+        else:
+            # When attention is disabled, don't suggest this param to Optuna; use default
+            hyperparams['num_attention_heads'] = self.base_config.num_attention_heads
         
         # Training Parameters - Learning Rate
         if self.base_config.tune_learning_rate:
