@@ -1,384 +1,123 @@
-# SCOTUS AI Tokenization
+# SCOTUS AI Tokenization Pipeline
 
-The tokenization module handles text encoding and embedding generation for justice biographies and case descriptions. It uses sentence transformer models to create high-quality embeddings for the machine learning pipeline.
+This module is responsible for the critical task of converting raw textual data—justice biographies and case descriptions—into a numerical format suitable for deep learning models. It employs a multi-stage pipeline that tokenizes text using `SentenceTransformer` models and serializes the output for efficient use during model training and pretraining.
 
-## 🎯 Overview
+## 🎯 Core Objective
 
-The tokenization system converts raw text files into numerical embeddings that can be used by the SCOTUS voting prediction model:
+The primary goal of this pipeline is to **pre-tokenize** all necessary text files referenced in the main `case_dataset.json`. Instead of tokenizing text on-the-fly during training, which would create a significant computational bottleneck, this process generates tokenized representations ahead of time. The output is saved in compressed `pickle` files, allowing for rapid loading of training batches.
 
-```
-Text Files → Sentence Transformers → Embeddings → ML Model
-     ↓               ↓                   ↓          ↓
-[Raw Text]    [Pre-trained Models]  [Vectors]  [Predictions]
-```
+This approach accelerates the training cycle by offloading the tokenization overhead to a one-time preprocessing step.
 
-## 🤖 Model Architecture
+## 🏗️ Architecture & Workflow
 
-### Text Encoders
+The tokenization process is orchestrated by a main script that intelligently manages several specialized worker scripts. This design ensures modularity and allows for targeted re-tokenization if necessary.
 
-1. **Biography Encoder**: `sentence-transformers/all-MiniLM-L6-v2`
-   - General-purpose sentence transformer
-   - 384-dimensional embeddings
-   - Optimized for biographical text and general content
+![Tokenization Workflow](https://storage.googleapis.com/agent-tools-prod.appspot.com/tool-results/v1/files/42071d02-23f2-4547-8898-d102123d9b4b)
 
-2. **Case Description Encoder**: `Stern5497/sbert-legal-xlm-roberta-base`
-   - Legal domain-specialized model
-   - 384-dimensional embeddings  
-   - Fine-tuned on legal text and court documents
+**1. Orchestrator (`main_encoder.py`)**
+This is the central entry point for the pipeline. It does not perform tokenization itself but instead manages the entire workflow:
+-   **Analyzes `case_dataset.json`**: It first determines the complete set of unique biography and case description files required for training.
+-   **Checks Existing State**: It intelligently detects which files have already been tokenized by checking the contents of existing output files.
+-   **Creates a Plan**: Based on the analysis, it builds a plan to tokenize only the missing files, making resumption from interruption or partial completion highly efficient.
+-   **Delegates to Workers**: It invokes the appropriate worker scripts (`encode_bios.py`, `encode_descriptions.py`) with a list of files to process.
 
-### Embedding Process
+**2. Worker Scripts**
+-   **`encode_bios.py`**: Handles the tokenization of all justice biographies.
+-   **`encode_descriptions.py`**: Handles the tokenization of all legal case descriptions.
+-   **`encode_pretraining.py`**: A specialized script that prepares the data specifically for the [Contrastive Justice Pretraining](../pretraining/README.md). It tokenizes both the "truncated" and "full" biographies and extracts temporal metadata (appointment year) for each justice, saving them into dedicated files.
 
-```python
-Text → Tokenization → Model Encoding → Embeddings
-  ↓         ↓              ↓             ↓
-"John..."  [101,1188,...]  RoBERTa     [0.1,0.3,...]
-```
+**3. Tokenizer**
+All worker scripts utilize the `AutoTokenizer` from the Hugging Face `transformers` library. The specific pre-trained model used for tokenization is defined in the configuration.
 
-## 🏗️ Module Components
+## ⚙️ Configuration (`config.py`, `config.env`)
 
-### `encode_bios.py`
-Justice biography encoding:
-- Loads justice biography text files
-- Encodes using biography-specific transformer model
-- Saves embeddings with metadata mapping
-- Handles batch processing for efficiency
-
-### `encode_descriptions.py`
-Case description encoding:
-- Processes case description files
-- Uses legal-specialized transformer model
-- Creates embeddings for case content
-- Supports dataset-driven encoding
-
-### `main_encoder.py`
-Complete tokenization pipeline:
-- Orchestrates biography and description encoding
-- Manages dependencies and file validation
-- Supports incremental and batch processing
-- Provides comprehensive progress tracking
-
-### `config.py`
-Configuration management:
-- Model selection and parameters
-- Processing configuration
-- Output path management
-- Device and resource settings
-
-## 🚀 Usage
-
-### Complete Tokenization Pipeline
+All aspects of the tokenization pipeline are controlled via the `scripts/tokenization/config.env` file. This allows for easy modification of models, paths, and batch sizes without changing the code.
 
 ```bash
-# Run full tokenization pipeline
-python scripts/tokenization/main_encoder.py
+# Model selection for different text types
+BIO_MODEL_NAME=sentence-transformers/all-roberta-large-v1
+DESCRIPTION_MODEL_NAME=sentence-transformers/all-roberta-large-v1
 
-# Tokenize only biographies
-python scripts/tokenization/main_encoder.py --bios-only
+# Batching and device configuration
+BIO_BATCH_SIZE=16
+DESCRIPTION_BATCH_SIZE=8
+DEVICE=auto # 'cuda', 'cpu', or 'auto'
 
-# Tokenize only case descriptions
-python scripts/tokenization/main_encoder.py --descriptions-only
-
-# Force re-tokenization of existing files
-python scripts/tokenization/main_encoder.py --force-retokenization
-```
-
-### Individual Encoding
-
-```bash
-# Encode justice biographies
-python scripts/tokenization/encode_bios.py \
-    --input data/processed/bios \
-    --output data/processed/encoded_bios.pkl
-
-# Encode case descriptions
-python scripts/tokenization/encode_descriptions.py \
-    --input data/processed/case_descriptions \
-    --output data/processed/encoded_descriptions.pkl
-```
-
-### Python API Usage
-
-```python
-from scripts.tokenization.encode_bios import encode_biography_files
-from scripts.tokenization.encode_descriptions import encode_description_files
-
-# Encode biographies
-encode_biography_files(
-    bios_dir="data/processed/bios",
-    output_file="data/processed/encoded_bios.pkl",
-    model_name="sentence-transformers/all-MiniLM-L6-v2"
-)
-
-# Encode case descriptions
-encode_description_files(
-    descriptions_dir="data/processed/case_descriptions", 
-    output_file="data/processed/encoded_descriptions.pkl",
-    model_name="Stern5497/sbert-legal-xlm-roberta-base"
-)
-```
-
-## ⚙️ Configuration
-
-### Environment Configuration (`config.env`)
-
-```bash
-# Model Configuration
-BIO_MODEL_NAME=sentence-transformers/all-MiniLM-L6-v2
-DESCRIPTION_MODEL_NAME=Stern5497/sbert-legal-xlm-roberta-base
-EMBEDDING_DIM=384
-MAX_SEQUENCE_LENGTH=512
-
-# Processing Configuration
-BIO_BATCH_SIZE=32
-DESCRIPTION_BATCH_SIZE=16
-DEVICE=auto
-NUM_WORKERS=0
-
-# Input/Output Paths
+# Input and Output file paths
 BIO_INPUT_DIR=data/processed/bios
 DESCRIPTION_INPUT_DIR=data/processed/case_descriptions
 BIO_OUTPUT_FILE=data/processed/encoded_bios.pkl
 DESCRIPTION_OUTPUT_FILE=data/processed/encoded_descriptions.pkl
 
-# Processing Options
-SHOW_PROGRESS=true
-CLEAR_CACHE_ON_OOM=true
-USE_MODEL_CACHE=true
-```
-
-### Advanced Configuration
-
-```python
-from scripts.tokenization.config import EncodingConfig
-
-# Load custom configuration
-config = EncodingConfig("custom_config.env")
-
-# Access configuration values
-print(f"Bio model: {config.bio_model_name}")
-print(f"Embedding dimension: {config.embedding_dim}")
-print(f"Device: {config.device}")
+# Paths for the contrastive pretraining task data
+PRETRAINING_TRUNC_BIO_FILE=data/processed/encoded_pre_trunc_bios.pkl
+PRETRAINING_FULL_BIO_FILE=data/processed/encoded_pre_full_bios.pkl
+PRETRAINING_DATASET_FILE=data/processed/pretraining_dataset.json
 ```
 
 ## 📊 Output Format
 
-### Encoded Data Structure
+The pipeline generates several `.pkl` files, which are Python pickle files containing serialized dictionaries. This format is highly efficient for loading large amounts of data.
 
-The tokenization pipeline outputs pickle files containing:
+-   `encoded_bios.pkl` & `encoded_descriptions.pkl`: Used for the main vote prediction task.
+-   `encoded_pre_trunc_bios.pkl` & `encoded_pre_full_bios.pkl`: Used for the contrastive pretraining task.
+
+Each `.pkl` file has the following internal structure:
 
 ```python
-# encoded_bios.pkl structure
 {
-    'embeddings': {
-        'path/to/bio1.txt': numpy.array([0.1, 0.3, ...]),  # 384-dim
-        'path/to/bio2.txt': numpy.array([0.2, 0.1, ...]),
-        # ... more embeddings
+    'tokenized_data': {
+        'path/to/file1.txt': {
+            'input_ids': tensor([...]),
+            'attention_mask': tensor([...])
+        },
+        'path/to/file2.txt': { ... }
     },
-    'model_name': 'sentence-transformers/all-MiniLM-L6-v2',
-    'embedding_dim': 384,
-    'total_files': 116,
-    'creation_date': '2024-01-15T10:30:00'
+    'metadata': {
+        'model_name': 'sentence-transformers/all-roberta-large-v1',
+        'max_sequence_length': 512,
+        'num_tokenized': 8116,
+        'tokenization_method': 'transformers_autotokenizer'
+    }
 }
 ```
 
-### Loading Encoded Data
+The `pretraining_dataset.json` file has a simpler structure, mapping each justice's file name to their appointment year and nominating president for temporal splitting during training.
 
-```python
-import pickle
-
-# Load biography embeddings
-with open('data/processed/encoded_bios.pkl', 'rb') as f:
-    bio_data = pickle.load(f)
-
-bio_embeddings = bio_data['embeddings']
-model_name = bio_data['model_name']
-
-# Load case description embeddings  
-with open('data/processed/encoded_descriptions.pkl', 'rb') as f:
-    desc_data = pickle.load(f)
-
-desc_embeddings = desc_data['embeddings']
+```json
+{
+    "John_Jay.txt": [ "1789", "George Washington" ],
+    "John_Roberts.txt": [ "2005", "George W. Bush" ]
+}
 ```
 
-## 🔧 Pipeline Features
+## 🚀 How to Run
 
-### Smart Processing
+The pipeline is designed to be simple to execute from the command line.
 
-- **Incremental Encoding**: Only processes new or modified files
-- **Resume Capability**: Continues from where processing left off
-- **Validation**: Checks file availability before processing
-- **Conflict Resolution**: Handles file path mismatches
-
-### Batch Processing
-
-```python
-# Efficient batch processing
-for batch in batch_iterator(text_files, batch_size=32):
-    embeddings = model.encode(batch)
-    # Process batch results
-```
-
-### Memory Management
-
-- **Automatic Cache Clearing**: Handles GPU memory overflow
-- **Batch Size Optimization**: Adjusts batch size based on available memory
-- **Progress Tracking**: Real-time progress with memory usage monitoring
-
-### Error Handling
-
-- **File Validation**: Ensures all referenced files exist
-- **Model Loading**: Graceful handling of model download failures
-- **Encoding Errors**: Continues processing despite individual file failures
-
-## 📈 Performance Optimization
-
-### GPU Acceleration
-
+**1. Main Encoder (Recommended)**
+This is the preferred method, as it intelligently handles all steps.
 ```bash
-# Enable GPU processing
-DEVICE=cuda python scripts/tokenization/main_encoder.py
+# Run the complete, smart tokenization pipeline
+python scripts/tokenization/main_encoder.py
 
-# Automatic device selection
-DEVICE=auto python scripts/tokenization/main_encoder.py
+# Check status without tokenizing
+python scripts/tokenization/main_encoder.py --check
+
+# Tokenize only missing biography files
+python scripts/tokenization/main_encoder.py --bios-only
+
+# Force re-tokenization of all required files
+python scripts/tokenization/main_encoder.py --force
 ```
 
-### Batch Size Tuning
-
-```python
-# Optimize batch size for your hardware
-BIO_BATCH_SIZE=64      # Larger batch for biographies
-DESCRIPTION_BATCH_SIZE=16  # Smaller batch for longer case descriptions
-```
-
-### Model Caching
-
-```python
-# Enable model caching to avoid re-downloading
-USE_MODEL_CACHE=true
-
-# Cache location (default: ~/.cache/huggingface)
-export TRANSFORMERS_CACHE=/path/to/cache
-```
-
-## 🧪 Testing and Validation
-
-### Tokenization Status Check
-
+**2. Pretraining Data Encoder**
+This script must be run separately to prepare the data for the contrastive learning task.
 ```bash
-# Check tokenization status without processing
-python scripts/tokenization/main_encoder.py --check-status
+python scripts/tokenization/encode_pretraining.py
 ```
 
-### Validation Tests
+## 📚 References
 
-```python
-from scripts.tokenization.main_encoder import validate_final_tokenizations
-
-# Validate tokenization completeness
-validation_results = validate_final_tokenizations(
-    dataset_file="data/processed/case_dataset.json",
-    bio_tokenized_file="data/processed/encoded_bios.pkl",
-    description_tokenized_file="data/processed/encoded_descriptions.pkl"
-)
-
-print(f"Bio coverage: {validation_results['bio_coverage']}")
-print(f"Description coverage: {validation_results['description_coverage']}")
-```
-
-### Performance Benchmarks
-
-| Component | Files | Avg Time | GPU Memory |
-|-----------|-------|----------|------------|
-| Biography Encoding | 116 files | ~2 minutes | ~1GB |
-| Case Description Encoding | ~8,000 files | ~15 minutes | ~2GB |
-| Complete Pipeline | All files | ~20 minutes | ~2GB |
-
-## 📁 Output Structure
-
-### Generated Files
-
-```
-data/processed/
-├── encoded_bios.pkl           # Biography embeddings
-├── encoded_descriptions.pkl   # Case description embeddings
-└── tokenization_log.json     # Processing metadata
-```
-
-### Embedding Statistics
-
-```python
-# Get embedding statistics
-from scripts.tokenization.encode_bios import load_tokenized_bios
-
-embeddings, metadata = load_tokenized_bios("data/processed/encoded_bios.pkl")
-
-print(f"Total embeddings: {len(embeddings)}")
-print(f"Embedding dimension: {metadata['embedding_dim']}")
-print(f"Model used: {metadata['model_name']}")
-```
-
-## 🚨 Important Considerations
-
-### Model Requirements
-
-- **Internet Connection**: Required for initial model download
-- **Storage Space**: ~2GB for model caching
-- **Memory**: 8GB+ RAM recommended for batch processing
-- **GPU**: Optional but recommended for faster processing
-
-### Data Preprocessing
-
-- **Text Cleaning**: Automatic handling of encoding issues
-- **Length Limits**: Respects model maximum sequence lengths
-- **Format Validation**: Ensures proper text file formatting
-
-### Compatibility
-
-- **Model Versions**: Specific transformer model versions for reproducibility
-- **Python Requirements**: Compatible with PyTorch and transformers library
-- **Platform Support**: Cross-platform compatibility (Windows, macOS, Linux)
-
-## 🛠️ Troubleshooting
-
-### Common Issues
-
-| Issue | Cause | Solution |
-|-------|-------|----------|
-| CUDA out of memory | Batch size too large | Reduce batch size in config |
-| Model download fails | Network/proxy issues | Check internet connection |
-| File not found | Missing input files | Run data pipeline first |
-| Encoding errors | Text format issues | Check file encoding (UTF-8) |
-
-### Debug Mode
-
-```bash
-# Enable detailed logging
-python scripts/tokenization/main_encoder.py --verbose
-
-# Test model loading
-python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2')"
-```
-
-### Memory Optimization
-
-```python
-# Clear cache manually
-import torch
-torch.cuda.empty_cache()
-
-# Reduce batch size
-BIO_BATCH_SIZE=16
-DESCRIPTION_BATCH_SIZE=8
-```
-
-## 📞 Support
-
-For tokenization issues:
-- Verify input files exist and are readable
-- Check model download and caching
-- Monitor GPU memory usage during processing
-- Review configuration parameters in `config.env`
-
----
-
-**Ready to encode your text data?** Start with `python scripts/tokenization/main_encoder.py` 🔤 
+-   **Hugging Face Transformers**: Wolf, T., et al. (2020). *Transformers: State-of-the-Art Natural Language Processing*. [Proceedings of the 2020 Conference on Empirical Methods in Natural Language Processing: System Demonstrations](https://www.aclweb.org/anthology/2020.emnlp-demos.6/).
+-   **Sentence-Transformers**: Reimers, N., & Gurevych, I. (2019). *Sentence-BERT: Sentence Embeddings using Siamese BERT-Networks*. [arXiv:1908.10084](https://arxiv.org/abs/1908.10084). 

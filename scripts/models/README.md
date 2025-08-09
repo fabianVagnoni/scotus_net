@@ -1,485 +1,111 @@
-# SCOTUS AI Models
+# SCOTUS AI: Predictive Modeling of Judicial Votes
 
-The models module contains the machine learning components for predicting Supreme Court case outcomes. It includes neural network architectures, training pipelines, hyperparameter optimization, and evaluation tools.
+This directory contains the core machine learning components of the SCOTUS AI project. It implements a sophisticated neural network architecture designed to predict the voting outcomes of Supreme Court cases by deeply analyzing the interplay between the case's legal substance and the justices' backgrounds.
 
-## 🧠 Model Architecture
+The system is designed with a focus on temporal validation, advanced training techniques, and robust hyperparameter optimization to ensure the model is both predictive and methodologically sound.
 
-### SCOTUS Voting Model
+## 🎯 Core Objective
 
-The core model (`scotus_voting_model.py`) is a neural network that predicts voting probability distributions for Supreme Court cases:
+The central goal of this model is to predict the distribution of votes for a given Supreme Court case (e.g., percentage in favor, against, absent). 
 
-```
-Justice Biographies + Case Description → Voting Probabilities
-        ↓                  ↓                      ↓
-   [Bio Encoder]      [Case Encoder]         [Output Layer]
-        ↓                  ↓                      ↓
-   [Embeddings]       [Embeddings]           [Probabilities]
-        ↓                  ↓                      ↓
-        └──────→ [Cross-Attention] ←──────────────┘
-                        ↓
-                [Prediction Head]
-                        ↓
-              [in_favor, against, absent, other]
-```
+The underlying hypothesis is that the interaction between a justice's life experience (encoded in their biography) and the specifics of a case (encoded in its description) contains powerful predictive signals about their likely vote.
 
-### Key Components
+## 🏗️ Model Architecture (`scotus_voting_model.py`)
 
-1. **Text Encoders**:
-   - **Biography Encoder**: `sentence-transformers/all-MiniLM-L6-v2`
-   - **Case Encoder**: `Stern5497/sbert-legal-xlm-roberta-base` (legal-specialized)
+The model employs a dual-encoder architecture that processes case and justice information separately before fusing them through a cross-attention mechanism. This design allows the model to learn rich, contextualized representations of how a particular court might approach a specific case.
 
-2. **Cross-Attention Mechanism** (`justice_cross_attention.py`):
-   - Multi-head attention between justice biographies and case descriptions
-   - Captures justice-case interactions and dependencies
-   - Configurable attention heads and dimensions
+![SCOTUS AI Model Architecture](https://storage.googleapis.com/agent-tools-prod.appspot.com/tool-results/v1/files/b0e51785-05e8-4687-84ed-da6f22822002)
 
-3. **Prediction Head**:
-   - Multi-layer neural network
-   - Dropout and regularization
-   - Outputs 4-dimensional probability distribution
+**1. Dual SentenceTransformer Encoders**
+Two separate, pre-trained `SentenceTransformer` models are used as encoders. They are fine-tuned during training to adapt them to the specific nuances of legal and biographical text.
+-   **Biography Encoder**: Processes the textual biographies of all justices presiding over a case. It can be initialized with weights from our [Contrastive Justice Pretraining](../pretraining/README.md) for improved performance.
+-   **Case Description Encoder**: Processes the textual summary of the case.
 
-## 🏗️ Model Components
+**2. NEFTune Regularization**
+During training, **Noisy Embedding Fine-Tuning (NEFTune)** is applied to the outputs of the justice encoder. This technique adds a small amount of uniform noise to the embeddings, which has been shown to improve model performance and robustness by creating a more challenging optimization landscape.
 
-### `scotus_voting_model.py`
-Main model class with end-to-end prediction capability:
-- Pre-tokenized data loading
-- Text encoding with sentence transformers
-- Cross-attention computation
-- Voting prediction output
+**3. Justice Cross-Attention (`justice_cross_attention.py`)**
+This is a key innovative component of the architecture. Instead of simply concatenating embeddings, a **multi-head cross-attention** mechanism is used.
+-   The **case embedding** acts as the *query*.
+-   The set of **justice embeddings** for that case act as the *keys* and *values*.
+This allows the model to learn a "court representation" that is specifically tailored to the case at hand, effectively asking, "Which aspects of these justices' backgrounds are most relevant to the legal questions in this specific case?"
 
-### `justice_cross_attention.py`
-Attention mechanism implementation:
-- Multi-head cross-attention
-- Justice-case interaction modeling
-- Configurable attention parameters
+**4. Prediction Head**
+The final, contextualized representation is passed through a Multi-Layer Perceptron (MLP) with `LayerNorm`, `ReLU` activations, and `Dropout` to produce the final output.
 
-### `model_trainer.py`
-Training pipeline with:
-- Dataset loading and splitting
-- Training loop with validation
-- Early stopping and learning rate scheduling
-- Model evaluation and saving
+**5. Output Layer**
+A `Softmax` activation function converts the final logits into a 4-dimensional probability distribution representing the predicted vote percentages for:
+1.  Majority In Favor
+2.  Majority Against
+3.  Majority Absent/Recused
+4.  Other (e.g., tie)
 
-### `hyperparameter_optimization.py`
-Automated hyperparameter tuning:
-- Optuna-based optimization
-- Comprehensive parameter search
-- Multi-objective optimization
-- Best configuration saving
+## 💡 One-Shot Learning and Hypothetical Courts
 
-## 🚀 Usage
+A significant innovation of this project is the model's ability to function as a **one-shot learner** for new and unseen justices. This capability stems directly from the architectural decision to use a dedicated justice encoder.
 
-### Training a Model
+**Zero-Shot Prediction for New Justices:**
+Because the model learns a generalized mapping from a justice's biography to a meaningful embedding space, it does not need to be retrained when a new justice is appointed to the Court. As long as a biography containing their pre-confirmation career is available, the model can generate an embedding for them and immediately include them in predictions for new cases. This is crucial for the model's real-world applicability, as it can adapt to changes in the Court's composition without a costly retraining cycle.
 
+**Simulating Hypothetical Courts:**
+This architectural choice unlocks powerful analytical possibilities:
+-   **Hypothetical Appointments**: The model can be used to explore "what-if" scenarios. By providing the biography of any individual (e.g., a judge from a lower court, a legal scholar, or even a historical figure), one can simulate how their presence on the Court might influence the outcomes of past or future cases.
+-   **Analyzing Imaginary Cases**: Similarly, the model can predict outcomes for hypothetical legal cases that have never been argued, providing insights into how a specific court might react to novel legal questions.
+
+This transforms the model from a simple historical predictor into a flexible tool for forward-looking legal and political analysis.
+
+## 📈 Training & Evaluation (`model_trainer.py`)
+
+The training process is designed to be robust and incorporates several advanced techniques to ensure the model generalizes well to unseen data.
+
+**1. Loss Function (`losses.py`)**
+The primary loss function is **Kullback-Leibler (KL) Divergence Loss**. This is a deliberate choice over a more common cross-entropy loss because it measures the "distance" between two probability distributions. It is ideal for this task, as it penalizes the model not just for being wrong, but for being "confidently wrong."
+
+**2. Fine-Tuning Strategy**
+The `SentenceTransformer` encoders are initially frozen. They can be selectively unfrozen at a specified epoch (`UNFREEZE_AT_EPOCH`) and fine-tuned with a separate, smaller learning rate (`SENTENCE_TRANSFORMER_LEARNING_RATE`). This two-stage training process stabilizes learning and allows the model to first learn the task structure before adapting the deep language representations.
+
+**3. Temporal Validation**
+Crucially, the dataset is split based on time. The model is trained on older cases and validated/tested on more recent ones. This simulates a real-world prediction scenario and provides a much more rigorous evaluation than a random shuffle split, which can lead to data leakage from the future.
+
+## 🔮 Hyperparameter Optimization (`hyperparameter_optimization.py`)
+
+A comprehensive hyperparameter tuning pipeline using **Optuna** is a cornerstone of this project. It allows for systematic exploration of the vast hyperparameter space to find the optimal model configuration.
+
+**1. Multi-Objective Optimization**
+The optimization metric is a carefully designed composite score that balances two key objectives:
+\[ \text{Metric} = \frac{\text{KL Divergence Loss} + (1 - \text{F1-Score Macro})}{2} \]
+This ensures the search process finds a model that is both a good probabilistic forecaster (low KL divergence) and a strong classifier (high F1-score).
+
+**2. Time-Based Cross-Validation**
+For robust hyperparameter evaluation, the tuner employs **Time-Based Cross-Validation**. Instead of a single validation set, it creates multiple training/validation folds, each progressing forward in time. This ensures that hyperparameters are selected based on their ability to consistently generalize to future, unseen data.
+
+**3. Selective & Parallel Tuning**
+The `config.env` file provides granular control over which parameters are tuned (`TUNE_*` flags). This allows for focused experiments (e.g., "tune only the architecture" or "tune only the learning rate"). The optimization can also be parallelized across multiple jobs (`--n-jobs`).
+
+## 🚀 How to Run
+
+**1. Configuration (`config.py`, `config.env`)**
+All parameters are controlled by `scripts/models/config.env`. This is the single source of truth for model architecture, training parameters, and optimization settings.
+
+**2. Standard Training (`run_training.py`)**
+To train a model using the parameters defined in `config.env`:
 ```bash
-# Basic training with default configuration
-python scripts/models/model_trainer.py
-
-# Training with custom dataset
-python scripts/models/model_trainer.py --dataset data/processed/case_dataset.json
+# Set a unique name for logging purposes
+python scripts/models/run_training.py --experiment-name "roberta_large_run_1"
 ```
 
-### Hyperparameter Optimization
-
-The system includes advanced hyperparameter optimization using Optuna with a **combined optimization objective**:
-
-**Optimization Metric**: `(KL Divergence Loss + (1 - F1-Score Macro)) / 2`
-
-This balanced approach optimizes both:
-- **Probabilistic Accuracy** (KL Divergence Loss): How well the model predicts probability distributions
-- **Classification Performance** (F1-Score Macro): Balanced performance across all 4 classes:
-  - Majority In Favor
-  - Majority Against  
-  - Majority Absent
-  - Other
-
+**3. Hyperparameter Optimization**
+To launch an Optuna study:
 ```bash
-# Run hyperparameter optimization
-python scripts/models/hyperparameter_optimization.py --n-trials 50
-
-# Run with custom study name and storage
-python scripts/models/hyperparameter_optimization.py \
-    --n-trials 100 \
-    --study-name "scotus_optimization_v2" \
-    --storage "sqlite:///optimization.db"
+# Run a 100-trial study with a specific name
+python scripts/models/hyperparameter_optimization.py --experiment-name "full_tuning_v3" --n-trials 100
 ```
 
-### Selective Parameter Tuning
-
-You can control which hyperparameters to tune by modifying the `TUNE_*` variables in `config.env`:
-
-```bash
-# Example 1: Only tune learning rate and dropout (architecture fixed)
-TUNE_LEARNING_RATE=true
-TUNE_DROPOUT_RATE=true
-TUNE_HIDDEN_DIM=false
-TUNE_NUM_ATTENTION_HEADS=false
-TUNE_USE_JUSTICE_ATTENTION=false
-TUNE_BATCH_SIZE=false
-TUNE_WEIGHT_DECAY=false
-
-# Example 2: Only tune architecture (training params fixed)
-TUNE_HIDDEN_DIM=true
-TUNE_NUM_ATTENTION_HEADS=true
-TUNE_USE_JUSTICE_ATTENTION=true
-TUNE_LEARNING_RATE=false
-TUNE_DROPOUT_RATE=false
-TUNE_BATCH_SIZE=false
-TUNE_WEIGHT_DECAY=false
-
-# Example 3: Tune everything (default)
-TUNE_HIDDEN_DIM=true
-TUNE_DROPOUT_RATE=true
-TUNE_NUM_ATTENTION_HEADS=true
-TUNE_USE_JUSTICE_ATTENTION=true
-TUNE_LEARNING_RATE=true
-TUNE_BATCH_SIZE=true
-TUNE_WEIGHT_DECAY=true
-```
-
-Benefits of selective tuning:
-- **Faster optimization**: Fewer parameters = faster trials
-- **Focused experiments**: Test specific hypotheses about model components
-- **Resource efficiency**: Optimize only the most impactful parameters
-- **Ablation studies**: Understand the contribution of different hyperparameters
-
-The optimization will automatically log which parameters are being tuned vs fixed:
-
-```
-🎛️  Hyperparameter tuning configuration:
-   ✅ Tuned: Hidden Dimension
-   🔒 Fixed: Dropout Rate  
-   ✅ Tuned: Attention Heads
-   🔒 Fixed: Justice Attention
-   ✅ Tuned: Learning Rate
-   🔒 Fixed: Batch Size
-   🔒 Fixed: Weight Decay
-   📈 Total parameters to tune: 3/7
-```
-
-### Model Prediction
-
-```python
-from scripts.models.scotus_voting_model import SCOTUSVotingModel
-
-# Load trained model
-model = SCOTUSVotingModel.load_model(
-    "models_output/best_model.pth",
-    bio_tokenized_file="data/processed/encoded_bios.pkl",
-    description_tokenized_file="data/processed/encoded_descriptions.pkl",
-    bio_model_name="sentence-transformers/all-MiniLM-L6-v2",
-    description_model_name="Stern5497/sbert-legal-xlm-roberta-base"
-)
-
-# Make prediction
-prediction = model.predict_from_files(
-    case_description_path="data/processed/case_descriptions/case_123.txt",
-    justice_bio_paths=[
-        "data/processed/bios/John_Roberts.txt",
-        "data/processed/bios/Clarence_Thomas.txt"
-    ]
-)
-
-print(f"Voting probabilities: {prediction}")
-# Output: [0.65, 0.25, 0.10, 0.00]  # [in_favor, against, absent, other]
-```
-
-## ⚙️ Configuration
-
-### Model Configuration (`config.py`)
-
-```python
-# Model Architecture
-BIO_MODEL_NAME = 'sentence-transformers/all-MiniLM-L6-v2'
-DESCRIPTION_MODEL_NAME = 'Stern5497/sbert-legal-xlm-roberta-base'
-EMBEDDING_DIM = 384
-HIDDEN_DIM = 512
-MAX_JUSTICES = 15
-
-# Attention Mechanism
-USE_JUSTICE_ATTENTION = True
-NUM_ATTENTION_HEADS = 4
-
-# Training Parameters
-LEARNING_RATE = 0.0001
-NUM_EPOCHS = 10
-BATCH_SIZE = 4
-DROPOUT_RATE = 0.1
-WEIGHT_DECAY = 0.01
-```
-
-### Environment Configuration (`config.env`)
-
-```bash
-# Model Configuration
-BIO_MODEL_NAME=sentence-transformers/all-MiniLM-L6-v2
-DESCRIPTION_MODEL_NAME=Stern5497/sbert-legal-xlm-roberta-base
-EMBEDDING_DIM=384
-HIDDEN_DIM=512
-
-# Training Configuration
-LEARNING_RATE=0.0001
-BATCH_SIZE=4
-NUM_EPOCHS=10
-DEVICE=auto
-
-# Data Paths
-DATASET_FILE=data/processed/case_dataset.json
-BIO_TOKENIZED_FILE=data/processed/encoded_bios.pkl
-DESCRIPTION_TOKENIZED_FILE=data/processed/encoded_descriptions.pkl
-```
-
-## 📊 Model Performance
-
-### Loss Functions
-
-The model supports multiple loss functions:
-
-1. **KL Divergence** (default):
-   - Measures difference between predicted and actual probability distributions
-   - Best for probability distribution outputs
-   - Handles uncertainty in voting patterns
-
-2. **Mean Squared Error**:
-   - Regression-style loss for continuous prediction
-   - Good for numerical voting percentages
-
-3. **Cross Entropy**:
-   - Classification loss for discrete outcomes
-   - Suitable for majority vote prediction
-
-### Evaluation Metrics
-
-- **KL Divergence Loss**: Primary training and validation metric
-- **MSE**: Alternative regression metric
-- **Accuracy**: Classification accuracy for majority predictions
-- **F1 Score**: Balanced precision/recall for voting outcomes
-
-### Performance Benchmarks
-
-```python
-# Example evaluation results
-{
-    'kl_divergence': 0.342,
-    'mse': 0.089,
-    'accuracy': 0.724,
-    'f1_score': 0.691
-}
-```
-
-## 🔧 Advanced Features
-
-### Cross-Attention Mechanism
-
-The justice cross-attention mechanism captures interactions between:
-- Justice biographical information
-- Case-specific legal content
-- Historical voting patterns
-- Justice ideological positions
-
-```python
-# Attention computation
-attention_scores = model.justice_attention(
-    case_embedding,      # Case description encoding
-    justice_embeddings,  # Multiple justice biography encodings
-    justice_mask        # Mask for variable number of justices
-)
-```
-
-### Batch Prediction
-
-```python
-# Predict on multiple cases
-dataset_entries = [
-    (justice_bio_paths, case_description_path, target_votes),
-    # ... more cases
-]
-
-predictions = model.predict_batch_from_dataset(
-    dataset_entries,
-    return_probabilities=True
-)
-```
-
-### Model Introspection
-
-```python
-# Get model statistics
-stats = model.get_tokenized_stats()
-print(f"Encoded biographies: {stats['bio_count']}")
-print(f"Encoded descriptions: {stats['description_count']}")
-
-# Get available data paths
-paths = model.get_available_paths()
-print(f"Available bios: {len(paths['bio_paths'])}")
-print(f"Available descriptions: {len(paths['description_paths'])}")
-```
-
-## 🎯 Hyperparameter Optimization
-
-### Optimization Parameters
-
-The hyperparameter optimization searches over:
-
-- **Learning Rate**: 1e-5 to 1e-2
-- **Hidden Dimensions**: 256 to 1024
-- **Attention Heads**: 2 to 8
-- **Dropout Rate**: 0.0 to 0.5
-- **Batch Size**: 2 to 16
-- **Weight Decay**: 1e-5 to 1e-1
-
-### Optimization Strategy
-
-```python
-# Multi-objective optimization
-def objective(trial):
-    # Suggest hyperparameters
-    lr = trial.suggest_float('learning_rate', 1e-5, 1e-2, log=True)
-    hidden_dim = trial.suggest_int('hidden_dim', 256, 1024, step=128)
-    
-    # Train model with suggested parameters
-    model = train_model_with_params(lr, hidden_dim, ...)
-    
-    # Return validation loss
-    return validation_loss
-```
-
-### Best Configuration Export
-
-```python
-# Save best hyperparameters
-best_params = study.best_params
-save_best_config(study, "best_config.env")
-```
-
-## 🧪 Testing and Evaluation
-
-### Holdout Test Set
-
-```python
-from scripts.utils.holdout_test_set import HoldoutTestSetManager
-
-# Create holdout test set (15% of most recent cases)
-manager = HoldoutTestSetManager()
-holdout_cases = manager.create_holdout_test_set(percentage=0.15)
-
-# Evaluate on holdout set
-trainer = SCOTUSModelTrainer()
-results = trainer.evaluate_on_holdout_test_set("models_output/best_model.pth")
-```
-
-### Cross-Validation
-
-```python
-# Split dataset for training/validation
-train_data, val_data = trainer.split_dataset(
-    dataset, 
-    train_ratio=0.85, 
-    val_ratio=0.15
-)
-```
-
-### Model Evaluation
-
-```python
-# Comprehensive evaluation
-evaluation_results = trainer.evaluate_model(
-    model, 
-    test_dataloader, 
-    criterion
-)
-
-print(f"Test Loss: {evaluation_results['loss']:.4f}")
-print(f"Test Accuracy: {evaluation_results['accuracy']:.4f}")
-```
-
-## 📁 Model Outputs
-
-### Saved Models
-
-```
-models_output/
-├── best_model.pth              # Best model checkpoint
-├── model_config.json           # Model configuration
-├── training_history.json       # Training metrics history
-├── hyperparameter_study.db     # Optuna optimization results
-└── evaluation_results.json     # Test set evaluation
-```
-
-### Model Checkpoints
-
-```python
-# Model checkpoint structure
-{
-    'model_state_dict': model.state_dict(),
-    'config': model_config,
-    'epoch': epoch,
-    'train_loss': train_loss,
-    'val_loss': val_loss,
-    'hyperparameters': hyperparams
-}
-```
-
-## 🚨 Important Considerations
-
-### Data Leakage Prevention
-
-- **Pre-decision Content**: Only uses information available before the court decision
-- **Temporal Validation**: Validates chronological data splits
-- **Content Filtering**: AI-filtered case descriptions exclude outcomes
-
-### Model Interpretability
-
-- **Attention Weights**: Visualize justice-case attention patterns
-- **Feature Importance**: Analyze which biographical factors matter most
-- **Prediction Confidence**: Output probability distributions for uncertainty
-
-### Computational Requirements
-
-- **GPU Recommended**: CUDA-compatible GPU for efficient training
-- **Memory**: 16GB+ RAM for full dataset processing
-- **Storage**: 5GB+ for model checkpoints and embeddings
-
-## 🛠️ Troubleshooting
-
-### Common Issues
-
-| Issue | Cause | Solution |
-|-------|-------|----------|
-| CUDA out of memory | Batch size too large | Reduce `BATCH_SIZE` in config |
-| Model not converging | Learning rate too high | Lower `LEARNING_RATE` |
-| Poor validation performance | Overfitting | Increase `DROPOUT_RATE` |
-| Slow training | CPU-only training | Enable GPU with `DEVICE=cuda` |
-
-### Debug Mode
-
-```bash
-# Enable verbose training logs
-python scripts/models/model_trainer.py --verbose
-
-# Test model loading
-python -c "from scripts.models.scotus_voting_model import SCOTUSVotingModel; print('Model loads successfully')"
-```
-
-### Memory Optimization
-
-```python
-# Clear CUDA cache on out-of-memory
-import torch
-torch.cuda.empty_cache()
-
-# Use gradient checkpointing for large models
-model.gradient_checkpointing_enable()
-```
-
-## 📞 Support
-
-For model-related issues:
-- Check CUDA compatibility and GPU availability
-- Review tokenization requirements (run tokenization pipeline first)
-- Validate configuration parameters in `config.env`
-- Monitor training logs for convergence issues
-
----
-
-**Ready to train your SCOTUS prediction model?** Start with `python scripts/models/model_trainer.py` 🤖 
+## 📚 References
+
+-   **Sentence-Transformers**: Reimers, N., & Gurevych, I. (2019). *Sentence-BERT: Sentence Embeddings using Siamese BERT-Networks*. [arXiv:1908.10084](https://arxiv.org/abs/1908.10084).
+-   **Attention Mechanism**: Vaswani, A., et al. (2017). *Attention Is All You Need*. [arXiv:1706.03762](https://arxiv.org/abs/1706.03762).
+-   **NEFTune**: Jain, N., et al. (2023). *NEFTune: Noisy Embeddings Improve Instruction Finetuning*. [arXiv:2310.05914](https://arxiv.org/abs/2310.05914).
+-   **Optuna**: Akiba, T., Sano, S., Yanase, T., Ohta, T., & Koyama, M. (2019). *Optuna: A Next-generation Hyperparameter Optimization Framework*. [arXiv:1907.10902](https://arxiv.org/abs/1907.10902).
+-   **AdamW Optimizer**: Loshchilov, I., & Hutter, F. (2017). *Decoupled Weight Decay Regularization*. [arXiv:1711.05101](https://arxiv.org/abs/1711.05101).
+-   **Hugging Face Transformers**: Wolf, T., et al. (2020). *Transformers: State-of-the-Art Natural Language Processing*. [Proceedings of the 2020 Conference on Empirical Methods in Natural Language Processing: System Demonstrations](https://www.aclweb.org/anthology/2020.emnlp-demos.6/). 
