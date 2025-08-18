@@ -18,3 +18,5 @@ __pycache__/
 *.py[cod]
 *$py.class
 results/*
+scripts/pretraining/results/*
+test_justice_encoder.ipynb
