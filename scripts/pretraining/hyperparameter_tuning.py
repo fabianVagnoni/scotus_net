@@ -201,33 +201,68 @@ class HyperparameterTuner:
         self._prepare_data()
     
     def _prepare_data(self):
-        """Load and split the pretraining dataset."""
+        """Load dataset and build time-ordered CV folds (and a final test holdout)."""
         with open(self.base_config.pretraining_dataset_file, 'r', encoding='utf-8') as f:
             pretraining_dataset = json.load(f)
-        
-        # Create a list of (justice_name, year) tuples and sort by year
+
+        # Build (justice_id, year) list; default missing years to 0 to keep them earliest
         justice_year_pairs = []
-        for justice_name, data in pretraining_dataset.items():
-            year = int(data[0]) if data[0] is not None else 1
-            justice_year_pairs.append((justice_name, year))
-        
-        # Sort by year (ascending) and extract just the justice names
-        #self.logger.info(f"Justice year pairs:")
-        #self.logger.info(justice_year_pairs)
-        ordered_justices = [justice for justice, year in sorted(justice_year_pairs, key=lambda x: x[1])]
-        
-        # Split the data
-        self.test_justices = ordered_justices[-self.base_config.test_set_size:]
-        self.val_justices = ordered_justices[-self.base_config.test_set_size - self.base_config.val_set_size:-self.base_config.test_set_size]
-        self.train_justices = ordered_justices[:-self.base_config.test_set_size - self.base_config.val_set_size]
-        
-        # Print val justices names
-        self.logger.info(f"Val justices names:")
-        self.logger.info(self.val_justices)
-        # Print test justices
-        self.logger.info(f"Test justices names:")
-        self.logger.info(self.test_justices)
-        self.logger.info(f"Data split - Train: {len(self.train_justices)}, Val: {len(self.val_justices)}, Test: {len(self.test_justices)}")
+        self.justice_year_map = {}
+        for justice_id, data in pretraining_dataset.items():
+            try:
+                year = int(data[0]) if data[0] is not None else 0
+            except Exception:
+                year = 0
+            justice_year_pairs.append((justice_id, year))
+            self.justice_year_map[justice_id] = year
+
+        # Ascending by year gives natural time order compatible with encode_pretraining.py
+        self.ordered_justices = [j for j, _ in sorted(justice_year_pairs, key=lambda x: x[1])]
+
+        # Reserve the most recent justices as test holdout
+        test_size = int(self.base_config.test_set_size)
+        self.test_justices = self.ordered_justices[-test_size:] if test_size > 0 else []
+
+        # Time-based CV folds are carved from the remaining prefix before the test window
+        usable_end = len(self.ordered_justices) - len(self.test_justices)
+        train_size = int(getattr(self.base_config, 'time_based_cv_train_size', 0))
+        val_size = int(getattr(self.base_config, 'time_based_cv_val_size', 0))
+        n_folds = int(getattr(self.base_config, 'time_based_cv_folds', 1))
+
+        self.cv_splits = []
+        if getattr(self.base_config, 'use_time_based_cv', True) and train_size > 0 and val_size > 0:
+            for fold_idx in range(n_folds):
+                val_end = usable_end - fold_idx * val_size
+                val_start = max(0, val_end - val_size)
+                train_end = val_start
+                train_start = max(0, train_end - train_size)
+
+                if train_start >= train_end or val_start >= val_end:
+                    break
+
+                train_ids = self.ordered_justices[train_start:train_end]
+                val_ids = self.ordered_justices[val_start:val_end]
+                if len(train_ids) == 0 or len(val_ids) == 0:
+                    break
+                self.cv_splits.append((train_ids, val_ids))
+
+        # Fallback to single split if CVTT disabled or insufficient data
+        if not self.cv_splits:
+            val_size_default = int(self.base_config.val_set_size)
+            val_ids = self.ordered_justices[usable_end - val_size_default:usable_end]
+            train_ids = self.ordered_justices[:usable_end - val_size_default]
+            self.cv_splits = [(train_ids, val_ids)]
+
+        self.logger.info(f"Built {len(self.cv_splits)} time-based folds; Test holdout: {len(self.test_justices)} justices")
+        # Log explicit time ranges for each fold (printed once at setup)
+        for idx, (train_ids, val_ids) in enumerate(self.cv_splits, start=1):
+            train_years = [self.justice_year_map[j] for j in train_ids] if train_ids else []
+            val_years = [self.justice_year_map[j] for j in val_ids] if val_ids else []
+            if train_years and val_years:
+                self.logger.info(
+                    f"Fold {idx}: Train years [{min(train_years)}-{max(train_years)}] (n={len(train_ids)}), "
+                    f"Val years [{min(val_years)}-{max(val_years)}] (n={len(val_ids)})"
+                )
     
     def calculate_mrr(self, model: ContrastiveJustice, val_loader: DataLoader) -> float:
         """
@@ -330,110 +365,97 @@ class HyperparameterTuner:
                         f"temperature={temperature:.3f}, alpha={alpha:.3f}")
         
         try:
-            # Create model with sampled hyperparameters
-            model = ContrastiveJustice(
-                trunc_bio_tokenized_file=self.base_config.trunc_bio_tokenized_file,
-                full_bio_tokenized_file=self.base_config.full_bio_tokenized_file,
-                model_name=self.base_config.model_name,
-                dropout_rate=dropout_rate
-            )
-            model.to(self.device)
-            
-            # Create datasets and data loaders
-            train_dataset = ContrastiveJusticeDataset(
-                self.train_justices, 
-                self.base_config.trunc_bio_tokenized_file, 
-                self.base_config.full_bio_tokenized_file
-            )
-            val_dataset = ContrastiveJusticeDataset(
-                self.val_justices, 
-                self.base_config.trunc_bio_tokenized_file, 
-                self.base_config.full_bio_tokenized_file
-            )
-            
-            train_loader = DataLoader(
-                train_dataset,
-                batch_size=int(batch_size),
-                shuffle=True,
-                collate_fn=collate_fn,
-                num_workers=0  # Set to 0 to avoid device issues with multiprocessing
-            )
-            val_loader = DataLoader(
-                val_dataset,
-                batch_size=int(batch_size),
-                shuffle=False,
-                collate_fn=collate_fn,
-                num_workers=0  # Set to 0 to avoid device issues with multiprocessing
-            )
-            
-            # Training setup
-            optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
-            loss_fn = ContrastiveLoss(temperature=temperature, alpha=alpha)
-            loss_fn.to(self.device)
-            
-            # Use configurable number of epochs for hyperparameter tuning
+            fold_scores = []
             num_epochs = min(self.base_config.optuna_max_epochs, self.base_config.num_epochs)
-            
-            # Training loop with progress bar
-            for epoch in range(num_epochs):
-                model.train()
-                epoch_loss = 0.0
-                num_batches = 0
-                
-                # Progress bar for batches within each epoch
-                batch_pbar = get_progress_bar(
-                    train_loader, 
-                    desc=f"Trial {trial.number} - Epoch {epoch+1}/{num_epochs}",
-                    total=len(train_loader)
+
+            # Iterate CV folds
+            for fold_idx, (train_ids, val_ids) in enumerate(self.cv_splits, start=1):
+                # Fresh model per fold
+                model = ContrastiveJustice(
+                    trunc_bio_tokenized_file=self.base_config.trunc_bio_tokenized_file,
+                    full_bio_tokenized_file=self.base_config.full_bio_tokenized_file,
+                    model_name=self.base_config.model_name,
+                    dropout_rate=dropout_rate
                 )
-                
-                for batch in batch_pbar:
-                    try:
-                        optimizer.zero_grad()
-                        batch_trunc_bio_data = batch['trunc_bio_data']
-                        batch_full_bio_data = batch['full_bio_data']
-                        
-                        e_t, e_f = model.forward(batch_trunc_bio_data, batch_full_bio_data)
-                        batch_loss = loss_fn(e_t, e_f)
-                        
-                        batch_loss.backward()
-                        optimizer.step()
-                        
-                        epoch_loss += batch_loss.item()
-                        num_batches += 1
-                        
-                        # Update progress bar with current loss
-                        batch_pbar.set_description(
-                            f"Trial {trial.number} - Epoch {epoch+1}/{num_epochs} - Loss: {batch_loss.item():.4f}"
-                        )
-                        
-                    except Exception as e:
-                        self.logger.warning(f"Error in training batch: {e}")
-                        continue
-                
-                if num_batches == 0:
-                    # Log failed trial
-                    append_trial_results(trial, 0.0, trial_status="FAILED", experiment_name=self.experiment_name)
-                    return 0.0  # Return poor score if no successful batches
-                
-                # Report intermediate values for pruning
-                if epoch < num_epochs - 1:  # Don't report on the last epoch
-                    intermediate_mrr = self.calculate_mrr(model, val_loader)
-                    trial.report(intermediate_mrr, epoch)
-                    
-                    # Handle pruning
-                    if trial.should_prune():
-                        # Log pruned trial
-                        append_trial_results(trial, intermediate_mrr, trial_status="PRUNED", experiment_name=self.experiment_name)
-                        raise optuna.exceptions.TrialPruned()
-            
-            # Calculate final MRR
-            final_mrr = self.calculate_mrr(model, val_loader)
-            self.logger.info(f"Trial {trial.number} final MRR: {final_mrr:.4f}")
-            
-            # Log successful trial
+                model.to(self.device)
+
+                # Data for this fold
+                train_dataset = ContrastiveJusticeDataset(
+                    train_ids,
+                    self.base_config.trunc_bio_tokenized_file,
+                    self.base_config.full_bio_tokenized_file
+                )
+                val_dataset = ContrastiveJusticeDataset(
+                    val_ids,
+                    self.base_config.trunc_bio_tokenized_file,
+                    self.base_config.full_bio_tokenized_file
+                )
+
+                train_loader = DataLoader(
+                    train_dataset,
+                    batch_size=int(batch_size),
+                    shuffle=True,
+                    collate_fn=collate_fn,
+                    num_workers=0
+                )
+                val_loader = DataLoader(
+                    val_dataset,
+                    batch_size=int(batch_size),
+                    shuffle=False,
+                    collate_fn=collate_fn,
+                    num_workers=0
+                )
+
+                optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
+                loss_fn = ContrastiveLoss(temperature=temperature, alpha=alpha)
+                loss_fn.to(self.device)
+
+                # Train for this fold
+                for epoch in range(num_epochs):
+                    model.train()
+                    batch_pbar = get_progress_bar(
+                        train_loader,
+                        desc=f"Trial {trial.number} - Fold {fold_idx} - Epoch {epoch+1}/{num_epochs}",
+                        total=len(train_loader)
+                    )
+                    num_batches = 0
+                    for batch in batch_pbar:
+                        try:
+                            optimizer.zero_grad()
+                            e_t, e_f = model.forward(batch['trunc_bio_data'], batch['full_bio_data'])
+                            batch_loss = loss_fn(e_t, e_f)
+                            batch_loss.backward()
+                            optimizer.step()
+                            num_batches += 1
+                            batch_pbar.set_description(
+                                f"Trial {trial.number} - Fold {fold_idx} - Epoch {epoch+1}/{num_epochs} - Loss: {batch_loss.item():.4f}"
+                            )
+                        except Exception as e:
+                            self.logger.warning(f"Error in training batch: {e}")
+                            continue
+
+                    if num_batches == 0:
+                        append_trial_results(trial, 0.0, trial_status="FAILED", experiment_name=self.experiment_name)
+                        return 0.0
+
+                    # Optional pruning based on interim MRR of first fold to keep simple
+                    if fold_idx == 1 and epoch < num_epochs - 1:
+                        intermediate_mrr = self.calculate_mrr(model, val_loader)
+                        trial.report(intermediate_mrr, epoch)
+                        if trial.should_prune():
+                            append_trial_results(trial, intermediate_mrr, trial_status="PRUNED", experiment_name=self.experiment_name)
+                            raise optuna.exceptions.TrialPruned()
+
+                # Final fold score
+                fold_mrr = self.calculate_mrr(model, val_loader)
+                fold_scores.append(fold_mrr)
+                self.logger.info(f"Trial {trial.number} - Fold {fold_idx} MRR: {fold_mrr:.4f}")
+
+            # Average across folds
+            final_mrr = float(sum(fold_scores) / len(fold_scores)) if fold_scores else 0.0
+            self.logger.info(f"Trial {trial.number} - Average CV MRR: {final_mrr:.4f}")
+
             append_trial_results(trial, final_mrr, trial_status="COMPLETED", experiment_name=self.experiment_name)
-            
             return final_mrr
             
         except optuna.exceptions.TrialPruned:

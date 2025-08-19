@@ -87,7 +87,12 @@ class ContrastiveJusticeConfig:
                         'OPTUNA_WEIGHT_DECAY_RANGE': 'optuna_weight_decay_range',
                         'OPTUNA_DROPOUT_RATE_RANGE': 'optuna_dropout_rate_range',
                         'OPTUNA_TEMPERATURE_RANGE': 'optuna_temperature_range',
-                        'OPTUNA_ALPHA_RANGE': 'optuna_alpha_range'
+                        'OPTUNA_ALPHA_RANGE': 'optuna_alpha_range',
+                        # Time-based cross-validation
+                        'USE_TIME_BASED_CV': 'use_time_based_cv',
+                        'TIME_BASED_CV_FOLDS': 'time_based_cv_folds',
+                        'TIME_BASED_CV_TRAIN_SIZE': 'time_based_cv_train_size',
+                        'TIME_BASED_CV_VAL_SIZE': 'time_based_cv_val_size'
                     }
                     
                     # Get the corresponding attribute name
@@ -108,7 +113,8 @@ class ContrastiveJusticeConfig:
             'MAX_PATIENCE', 'TEST_SET_SIZE', 'VAL_SET_SIZE',
             'OPTUNA_N_TRIALS', 'OPTUNA_MAX_TRIAL_TIME', 'OPTUNA_MAX_EPOCHS',
             'OPTUNA_MIN_EPOCHS', 'OPTUNA_EARLY_STOP_PATIENCE',
-            'OPTUNA_PRUNER_STARTUP_TRIALS', 'OPTUNA_PRUNER_WARMUP_STEPS'
+            'OPTUNA_PRUNER_STARTUP_TRIALS', 'OPTUNA_PRUNER_WARMUP_STEPS',
+            'TIME_BASED_CV_FOLDS', 'TIME_BASED_CV_TRAIN_SIZE', 'TIME_BASED_CV_VAL_SIZE'
         }
         float_keys = {
             'DROPOUT_RATE', 'LEARNING_RATE', 'WEIGHT_DECAY', 'TEMPERATURE', 
@@ -116,7 +122,8 @@ class ContrastiveJusticeConfig:
         }
         bool_keys = {
             'TUNE_BATCH_SIZE', 'TUNE_LEARNING_RATE', 'TUNE_WEIGHT_DECAY',
-            'TUNE_DROPOUT_RATE', 'TUNE_TEMPERATURE', 'TUNE_ALPHA'
+            'TUNE_DROPOUT_RATE', 'TUNE_TEMPERATURE', 'TUNE_ALPHA',
+            'USE_TIME_BASED_CV'
         }
         
         if key in int_keys:
@@ -253,6 +260,12 @@ class ContrastiveJusticeConfig:
         self.optuna_dropout_rate_range = (0.0, 0.5, 0.1)
         self.optuna_temperature_range = (0.01, 1.0, True)
         self.optuna_alpha_range = (0.0, 1.0, 0.1)
+        
+        # Time-based cross-validation defaults
+        self.use_time_based_cv = True
+        self.time_based_cv_folds = 2
+        self.time_based_cv_train_size = 60
+        self.time_based_cv_val_size = 20
     
     def print_config(self):
         """Print current configuration."""

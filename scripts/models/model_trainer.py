@@ -8,6 +8,7 @@ This trainer handles:
 4. Simplified training loop
 """
 
+import random
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
@@ -48,6 +49,15 @@ except ImportError:
     from ..utils.progress import get_progress_bar
     from .config import ModelConfig
 
+# Log year ranges for train/val/test
+def _range_str(case_ids, holdout_manager):
+    if not case_ids:
+        return "N/A"
+    years = [holdout_manager.extract_year_from_case_id(cid) for cid in case_ids]
+    years = [y for y in years if y > 0]
+    if not years:
+        return "N/A"
+    return f"{min(years)}-{max(years)}"
 
 class SCOTUSModelTrainer:
     """
@@ -77,7 +87,6 @@ class SCOTUSModelTrainer:
     def split_dataset(self, dataset: Dict, train_ratio: float = 0.85, 
                      val_ratio: float = 0.15, random_state: int = 42) -> Tuple[Dict, Dict]:
         """Split dataset into train and validation sets."""
-        import random
         random.seed(random_state)
         
         case_ids = list(dataset.keys())
@@ -200,9 +209,56 @@ class SCOTUSModelTrainer:
     def train_model(self, dataset_file: str = None):
         """Train the SCOTUS voting model."""
         
-        # Load and split dataset
+        # Load dataset
         dataset = self.load_case_dataset(dataset_file)
-        train_dataset, val_dataset = self.split_dataset(dataset)
+
+        # Determine holdout (test) set and earliest test year
+        holdout_source_file = dataset_file if dataset_file is not None else self.config.dataset_file
+        holdout_manager = HoldoutTestSetManager(dataset_file=holdout_source_file)
+        test_holdout_dataset = holdout_manager.get_holdout_dataset(dataset)
+        test_case_ids = list(test_holdout_dataset.keys()) if test_holdout_dataset else []
+        test_years = [holdout_manager.extract_year_from_case_id(cid) for cid in test_case_ids]
+        test_years = [y for y in test_years if y > 0]
+        earliest_test_year = min(test_years) if test_years else float('inf')
+
+        # Exclude holdout test set and restrict train/val to years strictly before earliest test year
+        available_dataset = holdout_manager.filter_dataset_exclude_holdout(dataset)
+        pre_test_dataset = {
+            case_id: case_data
+            for case_id, case_data in available_dataset.items()
+            if holdout_manager.extract_year_from_case_id(case_id) < earliest_test_year
+        } if earliest_test_year != float('inf') else available_dataset
+
+        # Sort remaining cases by year (oldest first)
+        sorted_case_ids = sorted(
+            pre_test_dataset.keys(),
+            key=holdout_manager.extract_year_from_case_id
+        )
+
+        # Allocate train/val within remaining data using TRAIN_RATIO and VAL_RATIO
+        total_tv_ratio = self.config.train_ratio + self.config.val_ratio
+        if total_tv_ratio <= 0:
+            total_tv_ratio = 1.0
+        train_share = self.config.train_ratio / total_tv_ratio
+        num_available = len(sorted_case_ids)
+        num_train = int(num_available * train_share)
+
+        train_case_ids = sorted_case_ids[:num_train]
+        val_case_ids = sorted_case_ids[num_train:]
+
+        train_dataset = {case_id: pre_test_dataset[case_id] for case_id in train_case_ids}
+        val_dataset = {case_id: pre_test_dataset[case_id] for case_id in val_case_ids}
+
+        self.logger.info(f"📊 Time-based split (excluding holdout): {len(train_dataset)} train (oldest), {len(val_dataset)} val (newer)")
+
+        train_range = _range_str(train_case_ids, holdout_manager)
+        val_range = _range_str(val_case_ids, holdout_manager)
+        test_range = _range_str(test_case_ids, holdout_manager)
+
+        self.logger.info(f"🗓️ Train years: {train_range}")
+        self.logger.info(f"🗓️ Val years:   {val_range}")
+        if test_case_ids:
+            self.logger.info(f"🔒 Test (holdout) years: {test_range} ({len(test_case_ids)} cases)")
         
         # Get tokenized file paths and load tokenized data
         bio_tokenized_file, description_tokenized_file = self.get_tokenized_file_paths()
@@ -410,11 +466,13 @@ class SCOTUSModelTrainer:
 
     def evaluate_on_holdout_test_set(self, model_path: str = None) -> Dict:
         """Evaluate model on holdout test set."""
-        # Load holdout test set
-        holdout_manager = HoldoutTestSetManager()
-        test_cases = holdout_manager.load_holdout_test_set()
-        
-        if not test_cases:
+        # Load holdout test dataset (same set used by optimization)
+        dataset_source_file = self.config.dataset_file
+        holdout_manager = HoldoutTestSetManager(dataset_file=dataset_source_file)
+        full_dataset = self.load_case_dataset(dataset_source_file)
+        test_dataset = holdout_manager.get_holdout_dataset(full_dataset)
+
+        if not test_dataset:
             self.logger.warning("No holdout test cases found")
             return {'error': 'No test cases found'}
         
@@ -432,7 +490,7 @@ class SCOTUSModelTrainer:
         
         # Load tokenized data and process test cases
         bio_data, description_data = self.load_tokenized_data(bio_tokenized_file, description_tokenized_file)
-        test_processed = self.prepare_processed_data(test_cases, bio_data, description_data, verbose=False)
+        test_processed = self.prepare_processed_data(test_dataset, bio_data, description_data, verbose=False)
         
         # Create test dataset and loader
         test_dataset = SCOTUSDataset(test_processed)

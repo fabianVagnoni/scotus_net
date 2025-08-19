@@ -114,6 +114,9 @@ def main():
         trainer.device = torch.device(device)
         
         # Train model
+        # Ensure dataset path is consistently used across training and holdout evaluation
+        if args.dataset_file:
+            trainer.config.dataset_file = args.dataset_file
         trainer.train_model(dataset_file=args.dataset_file)
         
         logger.info("✅ Training completed successfully!")
