@@ -20,6 +20,7 @@ import numpy as np
 from typing import Dict, List, Tuple
 from datetime import datetime
 import argparse
+import gc
 
 # Add current directory to path for imports
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -450,6 +451,23 @@ class HyperparameterTuner:
                 fold_mrr = self.calculate_mrr(model, val_loader)
                 fold_scores.append(fold_mrr)
                 self.logger.info(f"Trial {trial.number} - Fold {fold_idx} MRR: {fold_mrr:.4f}")
+
+                # Cleanup to free memory between folds
+                try:
+                    if hasattr(model, 'to'):
+                        model.to('cpu')
+                    del optimizer
+                    del loss_fn
+                    del train_loader
+                    del val_loader
+                    del train_dataset
+                    del val_dataset
+                    del model
+                    gc.collect()
+                    if torch.cuda.is_available():
+                        torch.cuda.empty_cache()
+                except Exception as cleanup_err:
+                    self.logger.debug(f"Cleanup warning (fold {fold_idx}): {cleanup_err}")
 
             # Average across folds
             final_mrr = float(sum(fold_scores) / len(fold_scores)) if fold_scores else 0.0
