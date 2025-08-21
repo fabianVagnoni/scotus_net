@@ -441,6 +441,9 @@ class HyperparameterTuner:
                             batch_loss = loss_fn(e_t, e_f)
                             batch_loss.backward()
                             optimizer.step()
+                            # Proactively reduce fragmentation
+                            if torch.cuda.is_available():
+                                torch.cuda.empty_cache()
                             num_batches += 1
                             batch_pbar.set_description(
                                 f"Trial {trial.number} - Fold {fold_idx} - Epoch {epoch+1}/{num_epochs} - Loss: {batch_loss.item():.4f}"

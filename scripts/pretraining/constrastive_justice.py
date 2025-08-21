@@ -138,10 +138,12 @@ class ContrastiveJustice(nn.Module):
             'input_ids': trunc_input_ids,
             'attention_mask': trunc_attention_masks
         })
-        full_bio_outputs = self.full_bio_model({
-            'input_ids': full_input_ids,
-            'attention_mask': full_attention_masks
-        })
+        # Full (teacher) path does not require gradients – save memory
+        with torch.no_grad():
+            full_bio_outputs = self.full_bio_model({
+                'input_ids': full_input_ids,
+                'attention_mask': full_attention_masks
+            })
 
         # Extract pooled sentence embeddings
         out_t = trunc_bio_outputs['sentence_embedding']

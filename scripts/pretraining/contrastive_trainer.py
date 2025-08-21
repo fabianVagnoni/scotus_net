@@ -81,8 +81,9 @@ class ContrastiveJusticeTrainer:
                     # Normalize embeddings for cosine similarity
                     e_t = F.normalize(e_t, dim=-1)
                     e_f = F.normalize(e_f, dim=-1)
-                    all_trunc_embeddings.append(e_t)
-                    all_full_embeddings.append(e_f)
+                    # Move to CPU to free GPU memory during evaluation
+                    all_trunc_embeddings.append(e_t.cpu())
+                    all_full_embeddings.append(e_f.cpu())
                     # Track which examples these are (for correct matching)
                     batch_size = e_t.size(0)
                     start_idx = batch_idx * val_loader.batch_size
@@ -223,10 +224,14 @@ class ContrastiveJusticeTrainer:
                     num_batches += 1
                     batch_loss.backward()
                     optimizer.step()
+                    # Free per-batch tensors to reduce peak memory
+                    del e_t, e_f, batch_loss
+                    if torch.cuda.is_available():
+                        torch.cuda.empty_cache()
                     
                     # Update batch progress bar with current loss
                     batch_pbar.set_description(
-                        f"Epoch {epoch+1}/{num_epochs} - Loss: {batch_loss.item():.4f}"
+                        f"Epoch {epoch+1}/{num_epochs} - Loss: {train_loss/num_batches:.4f}"
                     )
                     
                 except Exception as e:
