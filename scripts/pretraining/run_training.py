@@ -7,6 +7,7 @@ import os
 import sys
 import torch
 from pathlib import Path
+import argparse
 
 # Add the current directory to Python path for imports
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -18,9 +19,12 @@ from contrastive_trainer import ContrastiveJusticeTrainer
 
 def main():
     """Run contrastive justice pretraining."""
-    
+    parser = argparse.ArgumentParser(description="Run contrastive justice pretraining")
+    parser.add_argument("--eval-test", action="store_true", help="Evaluate best model on held-out test set at the end")
+    args = parser.parse_args()
+
     print("🚀 Starting Contrastive Justice Pretraining")
-    
+
     # Create configuration
     config = ContrastiveJusticeConfig()
     
@@ -47,7 +51,7 @@ def main():
     
     # Run training
     try:
-        trained_model = trainer.train_model(config.justices_file)
+        trained_model = trainer.train_model(config.justices_file, eval_test=args.eval_test)
         print("🎉 Training completed successfully!")
         
         # Model is already saved by the trainer

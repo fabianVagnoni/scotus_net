@@ -101,7 +101,7 @@ class ContrastiveJusticeTrainer:
         
         return total_loss / num_batches, mrr
 
-    def train_model(self, justices_file: str = None):
+    def train_model(self, justices_file: str = None, eval_test: bool = False):
         """Train the contrastive justice model."""
         
         # Load pretraining dataset
@@ -282,6 +282,15 @@ class ContrastiveJusticeTrainer:
             model.truncated_bio_model = SentenceTransformer(str(best_model_dir), device=str(self.device))
             self.logger.info(f"Loaded best model with validation loss {best_val_loss:.4f}")
         
+        # Optionally evaluate best model on the held-out test set
+        if eval_test:
+            try:
+                test_loss, test_mrr = self.evaluate_model(model, test_loader, loss_fn)
+                self.logger.info(f"Test Loss: {test_loss:.4f}")
+                self.logger.info(f"Test MRR: {test_mrr:.4f}")
+            except Exception as e:
+                self.logger.error(f"Error during test evaluation: {e}")
+
         self.logger.info("Training completed successfully!")
         return model
         

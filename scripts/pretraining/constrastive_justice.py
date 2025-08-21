@@ -85,8 +85,10 @@ class ContrastiveJustice(nn.Module):
         
         # Move tensors to device (in case pad_sequence created new tensors)
         trunc_input_ids = trunc_input_ids.to(self.device)
+        trunc_input_ids = self.dropout(trunc_input_ids)
         trunc_attention_masks = trunc_attention_masks.to(self.device)
         full_input_ids = full_input_ids.to(self.device)
+        full_input_ids = self.dropout(full_input_ids)
         full_attention_masks = full_attention_masks.to(self.device)
         
         # Get sentence embeddings from models using SentenceTransformer API
@@ -103,8 +105,8 @@ class ContrastiveJustice(nn.Module):
         out_t = trunc_bio_outputs['sentence_embedding']
         out_f = full_bio_outputs['sentence_embedding']
         # Optional regularization
-        out_t = self.dropout(out_t)
-        out_f = self.dropout(out_f)
+        #out_t = self.dropout(out_t)
+        #out_f = self.dropout(out_f)
         
         return out_t, out_f
 
