@@ -48,6 +48,8 @@ class ContrastiveJusticeConfig:
                     key_mapping = {
                         'MODEL_NAME': 'model_name',
                         'DROPOUT_RATE': 'dropout_rate',
+                        'USE_NOISE_REG': 'use_noise_reg',
+                        'NOISE_REG_ALPHA': 'noise_reg_alpha',
                         'BATCH_SIZE': 'batch_size',
                         'LEARNING_RATE': 'learning_rate',
                         'NUM_EPOCHS': 'num_epochs',
@@ -81,6 +83,7 @@ class ContrastiveJusticeConfig:
                         'TUNE_DROPOUT_RATE': 'tune_dropout_rate',
                         'TUNE_TEMPERATURE': 'tune_temperature',
                         'TUNE_ALPHA': 'tune_alpha',
+                        'TUNE_NOISE_REG_ALPHA': 'tune_noise_reg_alpha',
                         # Search spaces
                         'OPTUNA_BATCH_SIZE_OPTIONS': 'optuna_batch_size_options',
                         'OPTUNA_LEARNING_RATE_RANGE': 'optuna_learning_rate_range',
@@ -88,6 +91,7 @@ class ContrastiveJusticeConfig:
                         'OPTUNA_DROPOUT_RATE_RANGE': 'optuna_dropout_rate_range',
                         'OPTUNA_TEMPERATURE_RANGE': 'optuna_temperature_range',
                         'OPTUNA_ALPHA_RANGE': 'optuna_alpha_range',
+                        'OPTUNA_NOISE_REG_ALPHA_RANGE': 'optuna_noise_reg_alpha_range',
                         # Time-based cross-validation
                         'USE_TIME_BASED_CV': 'use_time_based_cv',
                         'TIME_BASED_CV_FOLDS': 'time_based_cv_folds',
@@ -118,12 +122,12 @@ class ContrastiveJusticeConfig:
         }
         float_keys = {
             'DROPOUT_RATE', 'LEARNING_RATE', 'WEIGHT_DECAY', 'TEMPERATURE', 
-            'ALPHA', 'LR_SCHEDULER_FACTOR', 'VAL_SPLIT'
+            'ALPHA', 'LR_SCHEDULER_FACTOR', 'VAL_SPLIT', 'NOISE_REG_ALPHA'
         }
         bool_keys = {
             'TUNE_BATCH_SIZE', 'TUNE_LEARNING_RATE', 'TUNE_WEIGHT_DECAY',
             'TUNE_DROPOUT_RATE', 'TUNE_TEMPERATURE', 'TUNE_ALPHA',
-            'USE_TIME_BASED_CV'
+            'USE_TIME_BASED_CV', 'USE_NOISE_REG', 'TUNE_NOISE_REG_ALPHA'
         }
         
         if key in int_keys:
@@ -152,6 +156,8 @@ class ContrastiveJusticeConfig:
             # Model configuration
             'MODEL_NAME': 'sentence-transformers/all-MiniLM-L6-v2',
             'DROPOUT_RATE': 0.1,
+            'USE_NOISE_REG': True,
+            'NOISE_REG_ALPHA': 5.0,
             
             # Training configuration
             'BATCH_SIZE': 8,
@@ -252,6 +258,7 @@ class ContrastiveJusticeConfig:
         self.tune_dropout_rate = True
         self.tune_temperature = True
         self.tune_alpha = True
+        self.tune_noise_reg_alpha = True
         
         # Search space defaults
         self.optuna_batch_size_options = [4, 8, 16, 32]
@@ -260,6 +267,7 @@ class ContrastiveJusticeConfig:
         self.optuna_dropout_rate_range = (0.0, 0.5, 0.1)
         self.optuna_temperature_range = (0.01, 1.0, True)
         self.optuna_alpha_range = (0.0, 1.0, 0.1)
+        self.optuna_noise_reg_alpha_range = (0.1, 10.0, True)
         
         # Time-based cross-validation defaults
         self.use_time_based_cv = True

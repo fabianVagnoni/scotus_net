@@ -360,10 +360,22 @@ class HyperparameterTuner:
         else:
             #print("alpha options from config: ", self.base_config.alpha)
             alpha = self.base_config.alpha
+
+        # NEFTune: we always use noise reg; only tune its scale if enabled in config
+        use_noise_reg = getattr(self.base_config, 'use_noise_reg', True)
+        if getattr(self.base_config, 'tune_noise_reg_alpha', False):
+            nr_min, nr_max, nr_log = self.base_config.optuna_noise_reg_alpha_range
+            nr_kwargs = {'log': bool(nr_log)} if nr_log else {}
+            noise_reg_alpha = trial.suggest_float('noise_reg_alpha', float(nr_min), float(nr_max), **nr_kwargs)
+        else:
+            noise_reg_alpha = getattr(self.base_config, 'noise_reg_alpha', 5.0)
         
-        self.logger.info(f"Trial {trial.number}: batch_size={batch_size}, weight_decay={weight_decay:.2e}, "
-                        f"dropout_rate={dropout_rate:.3f}, learning_rate={learning_rate:.2e}, "
-                        f"temperature={temperature:.3f}, alpha={alpha:.3f}")
+        self.logger.info(
+            f"Trial {trial.number}: batch_size={batch_size}, weight_decay={weight_decay:.2e}, "
+            f"dropout_rate={dropout_rate:.3f}, learning_rate={learning_rate:.2e}, "
+            f"temperature={temperature:.3f}, alpha={alpha:.3f}, "
+            f"noise_reg_alpha={noise_reg_alpha:.3f}"
+        )
         
         try:
             fold_scores = []
@@ -376,7 +388,9 @@ class HyperparameterTuner:
                     trunc_bio_tokenized_file=self.base_config.trunc_bio_tokenized_file,
                     full_bio_tokenized_file=self.base_config.full_bio_tokenized_file,
                     model_name=self.base_config.model_name,
-                    dropout_rate=dropout_rate
+                    dropout_rate=dropout_rate,
+                    use_noise_reg=use_noise_reg,
+                    noise_reg_alpha=noise_reg_alpha
                 )
                 model.to(self.device)
 

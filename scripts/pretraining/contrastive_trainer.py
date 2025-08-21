@@ -122,13 +122,17 @@ class ContrastiveJusticeTrainer:
         # Model configuration
         model_name = self.config.model_name
         dropout_rate = self.config.dropout_rate
+        use_noise_reg = getattr(self.config, 'use_noise_reg', True)
+        noise_reg_alpha = getattr(self.config, 'noise_reg_alpha', 5.0)
 
         # Initialize model
         model = ContrastiveJustice(
             trunc_bio_tokenized_file=self.config.trunc_bio_tokenized_file,
             full_bio_tokenized_file=self.config.full_bio_tokenized_file,
             model_name=model_name,
-            dropout_rate=dropout_rate
+            dropout_rate=dropout_rate,
+            use_noise_reg=use_noise_reg,
+            noise_reg_alpha=noise_reg_alpha
         )
         model.to(self.device)
 

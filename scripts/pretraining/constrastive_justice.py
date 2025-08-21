@@ -9,7 +9,15 @@ from typing import Dict, List, Any
 import os
 
 class ContrastiveJustice(nn.Module):
-    def __init__(self, trunc_bio_tokenized_file: str, full_bio_tokenized_file: str, model_name: str, dropout_rate: float = 0.1):
+    def __init__(
+        self,
+        trunc_bio_tokenized_file: str,
+        full_bio_tokenized_file: str,
+        model_name: str,
+        dropout_rate: float = 0.1,
+        use_noise_reg: bool = True,
+        noise_reg_alpha: float = 5.0,
+    ):
         super(ContrastiveJustice, self).__init__()
         self.truncated_bio_model = SentenceTransformer(model_name)
         self.full_bio_model = copy.deepcopy(self.truncated_bio_model)
@@ -18,6 +26,8 @@ class ContrastiveJustice(nn.Module):
         for param in self.full_bio_model.parameters():
             param.requires_grad = False
         self.dropout = nn.Dropout(dropout_rate)
+        self.use_noise_reg = use_noise_reg
+        self.noise_reg_alpha = float(noise_reg_alpha)
 
         # Obtain padding id from tokenizer when available, fallback to 0
         self.padding_value = 0
@@ -31,6 +41,10 @@ class ContrastiveJustice(nn.Module):
             # Keep default padding_value = 0 if anything goes wrong
             pass
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
+
+        # Register lightweight embedding hooks to inject NEFTune-style noise at token embedding level (train-only)
+        self._register_embedding_noise(self.truncated_bio_model)
+        self._register_embedding_noise(self.full_bio_model)
         
     def to(self, device):
         """Override to method to ensure all submodules are moved to device."""
@@ -39,6 +53,36 @@ class ContrastiveJustice(nn.Module):
         self.truncated_bio_model = self.truncated_bio_model.to(device)
         self.full_bio_model = self.full_bio_model.to(device)
         return self
+
+    def _register_embedding_noise(self, sbert_model: SentenceTransformer) -> None:
+        """Attach a forward hook on the underlying HF embedding layer to add noise during training.
+        This keeps changes minimal and avoids touching internal forward graphs.
+        """
+        try:
+            # First module is the Transformer wrapper with .auto_model
+            transformer_module = sbert_model._first_module()
+            hf_model = getattr(transformer_module, 'auto_model', None)
+            if hf_model is None:
+                return
+            embeddings_layer = getattr(hf_model, 'embeddings', None)
+            if embeddings_layer is None:
+                return
+
+            def _noise_hook(module, inputs, output):
+                # Apply only when training and enabled
+                if not (self.use_noise_reg and self.training):
+                    return output
+                d = output.size(-1)
+                if d == 0:
+                    return output
+                scale = self.noise_reg_alpha / (d ** 0.5)
+                noise = torch.empty_like(output).uniform_(-1, 1) * scale
+                return output + noise
+
+            embeddings_layer.register_forward_hook(_noise_hook)
+        except Exception:
+            # If anything changes in internals, fail silently without breaking training
+            pass
         
     def forward(self, trunc_bio_data: List[str], full_bio_data: List[str]):
         """
@@ -85,10 +129,8 @@ class ContrastiveJustice(nn.Module):
         
         # Move tensors to device (in case pad_sequence created new tensors)
         trunc_input_ids = trunc_input_ids.to(self.device)
-        trunc_input_ids = self.dropout(trunc_input_ids)
         trunc_attention_masks = trunc_attention_masks.to(self.device)
         full_input_ids = full_input_ids.to(self.device)
-        full_input_ids = self.dropout(full_input_ids)
         full_attention_masks = full_attention_masks.to(self.device)
         
         # Get sentence embeddings from models using SentenceTransformer API
@@ -104,11 +146,26 @@ class ContrastiveJustice(nn.Module):
         # Extract pooled sentence embeddings
         out_t = trunc_bio_outputs['sentence_embedding']
         out_f = full_bio_outputs['sentence_embedding']
-        # Optional regularization
-        #out_t = self.dropout(out_t)
-        #out_f = self.dropout(out_f)
+
+        # Apply NEFTune-style noise regularization only during training
+        if self.use_noise_reg and self.training:
+            out_t = self.noise_reg(out_t)
+            out_f = self.noise_reg(out_f)
+
+        # Apply dropout to embeddings (nn.Dropout is a no-op during eval)
+        out_t = self.dropout(out_t)
+        out_f = self.dropout(out_f)
         
         return out_t, out_f
+
+    def noise_reg(self, embedding: torch.Tensor) -> torch.Tensor:
+        """Apply simple NEFTune-like noise regularization (train-time only)."""
+        alpha = self.noise_reg_alpha
+        d = embedding.size(-1)
+        U = torch.empty_like(embedding).uniform_(-1, 1)
+        scale = alpha / (d ** 0.5)
+        noise = U * scale
+        return embedding + noise
 
 
 
