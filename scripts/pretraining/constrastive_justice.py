@@ -17,6 +17,7 @@ class ContrastiveJustice(nn.Module):
         dropout_rate: float = 0.1,
         use_noise_reg: bool = True,
         noise_reg_alpha: float = 5.0,
+        embedding_dropout_rate: float = 0.0,
     ):
         super(ContrastiveJustice, self).__init__()
         self.truncated_bio_model = SentenceTransformer(model_name)
@@ -28,6 +29,7 @@ class ContrastiveJustice(nn.Module):
         self.dropout = nn.Dropout(dropout_rate)
         self.use_noise_reg = use_noise_reg
         self.noise_reg_alpha = float(noise_reg_alpha)
+        self.embedding_dropout_rate = float(embedding_dropout_rate)
 
         # Obtain padding id from tokenizer when available, fallback to 0
         self.padding_value = 0
@@ -70,14 +72,21 @@ class ContrastiveJustice(nn.Module):
 
             def _noise_hook(module, inputs, output):
                 # Apply only when training and enabled
-                if not (self.use_noise_reg and self.training):
-                    return output
-                d = output.size(-1)
-                if d == 0:
-                    return output
-                scale = self.noise_reg_alpha / (d ** 0.5)
-                noise = torch.empty_like(output).uniform_(-1, 1) * scale
-                return output + noise
+                if self.training:
+                    d = output.size(-1)
+                    if d == 0:
+                        return output
+                    # NEFTune-style noise (if enabled)
+                    if self.use_noise_reg:
+                        scale = self.noise_reg_alpha / (d ** 0.5)
+                        noise = torch.empty_like(output).uniform_(-1, 1) * scale
+                        output = output + noise
+                    # Embedding-dimension dropout (drop entire embedding dims across batch and seq)
+                    if self.embedding_dropout_rate > 0.0:
+                        keep_prob = 1.0 - self.embedding_dropout_rate
+                        mask = output.new_empty(1, 1, d).bernoulli_(keep_prob).div_(keep_prob)
+                        output = output * mask
+                return output
 
             embeddings_layer.register_forward_hook(_noise_hook)
         except Exception:

@@ -48,6 +48,7 @@ class ContrastiveJusticeConfig:
                     key_mapping = {
                         'MODEL_NAME': 'model_name',
                         'DROPOUT_RATE': 'dropout_rate',
+                        'EMBEDDING_DROPOUT_RATE': 'embedding_dropout_rate',
                         'USE_NOISE_REG': 'use_noise_reg',
                         'NOISE_REG_ALPHA': 'noise_reg_alpha',
                         'BATCH_SIZE': 'batch_size',
@@ -81,6 +82,7 @@ class ContrastiveJusticeConfig:
                         'TUNE_LEARNING_RATE': 'tune_learning_rate',
                         'TUNE_WEIGHT_DECAY': 'tune_weight_decay',
                         'TUNE_DROPOUT_RATE': 'tune_dropout_rate',
+                        'TUNE_EMBEDDING_DROPOUT_RATE': 'tune_embedding_dropout_rate',
                         'TUNE_TEMPERATURE': 'tune_temperature',
                         'TUNE_ALPHA': 'tune_alpha',
                         'TUNE_NOISE_REG_ALPHA': 'tune_noise_reg_alpha',
@@ -89,6 +91,7 @@ class ContrastiveJusticeConfig:
                         'OPTUNA_LEARNING_RATE_RANGE': 'optuna_learning_rate_range',
                         'OPTUNA_WEIGHT_DECAY_RANGE': 'optuna_weight_decay_range',
                         'OPTUNA_DROPOUT_RATE_RANGE': 'optuna_dropout_rate_range',
+                        'OPTUNA_EMBEDDING_DROPOUT_RATE_RANGE': 'optuna_embedding_dropout_rate_range',
                         'OPTUNA_TEMPERATURE_RANGE': 'optuna_temperature_range',
                         'OPTUNA_ALPHA_RANGE': 'optuna_alpha_range',
                         'OPTUNA_NOISE_REG_ALPHA_RANGE': 'optuna_noise_reg_alpha_range',
@@ -121,12 +124,12 @@ class ContrastiveJusticeConfig:
             'TIME_BASED_CV_FOLDS', 'TIME_BASED_CV_TRAIN_SIZE', 'TIME_BASED_CV_VAL_SIZE'
         }
         float_keys = {
-            'DROPOUT_RATE', 'LEARNING_RATE', 'WEIGHT_DECAY', 'TEMPERATURE', 
+            'DROPOUT_RATE', 'EMBEDDING_DROPOUT_RATE', 'LEARNING_RATE', 'WEIGHT_DECAY', 'TEMPERATURE', 
             'ALPHA', 'LR_SCHEDULER_FACTOR', 'VAL_SPLIT', 'NOISE_REG_ALPHA'
         }
         bool_keys = {
             'TUNE_BATCH_SIZE', 'TUNE_LEARNING_RATE', 'TUNE_WEIGHT_DECAY',
-            'TUNE_DROPOUT_RATE', 'TUNE_TEMPERATURE', 'TUNE_ALPHA',
+            'TUNE_DROPOUT_RATE', 'TUNE_EMBEDDING_DROPOUT_RATE', 'TUNE_TEMPERATURE', 'TUNE_ALPHA',
             'USE_TIME_BASED_CV', 'USE_NOISE_REG', 'TUNE_NOISE_REG_ALPHA'
         }
         
@@ -213,6 +216,9 @@ class ContrastiveJusticeConfig:
         # Model configuration
         self.model_name = self._get_default_value('MODEL_NAME')
         self.dropout_rate = self._get_default_value('DROPOUT_RATE')
+        self.embedding_dropout_rate = self._get_default_value('EMBEDDING_DROPOUT_RATE')
+        self.use_noise_reg = self._get_default_value('USE_NOISE_REG')
+        self.noise_reg_alpha = self._get_default_value('NOISE_REG_ALPHA')
         
         # Training configuration
         self.batch_size = self._get_default_value('BATCH_SIZE')
@@ -256,6 +262,7 @@ class ContrastiveJusticeConfig:
         self.tune_learning_rate = True
         self.tune_weight_decay = True
         self.tune_dropout_rate = True
+        self.tune_embedding_dropout_rate = True
         self.tune_temperature = True
         self.tune_alpha = True
         self.tune_noise_reg_alpha = True
@@ -265,6 +272,7 @@ class ContrastiveJusticeConfig:
         self.optuna_learning_rate_range = (1e-6, 1e-4, True)
         self.optuna_weight_decay_range = (1e-5, 1e-2, True)
         self.optuna_dropout_rate_range = (0.0, 0.5, 0.1)
+        self.optuna_embedding_dropout_rate_range = (0.0, 0.5, 0.1)
         self.optuna_temperature_range = (0.01, 1.0, True)
         self.optuna_alpha_range = (0.0, 1.0, 0.1)
         self.optuna_noise_reg_alpha_range = (0.1, 10.0, True)

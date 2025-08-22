@@ -334,6 +334,14 @@ class HyperparameterTuner:
             #print("dropout_rate options from config: ", self.base_config.dropout_rate)
             dropout_rate = self.base_config.dropout_rate
 
+        # Embedding-dimension dropout tuning
+        if getattr(self.base_config, 'tune_embedding_dropout_rate', False):
+            ed_min, ed_max, ed_step = getattr(self.base_config, 'optuna_embedding_dropout_rate_range', (0.0, 0.5, 0.1))
+            ed_kwargs = {'step': float(ed_step)} if ed_step is not None else {}
+            embedding_dropout_rate = trial.suggest_float('embedding_dropout_rate', float(ed_min), float(ed_max), **ed_kwargs)
+        else:
+            embedding_dropout_rate = getattr(self.base_config, 'embedding_dropout_rate', 0.0)
+
         if self.base_config.tune_learning_rate:
             #print("learning_rate options: ", self.base_config.optuna_learning_rate_range)
             lr_min, lr_max, lr_log = self.base_config.optuna_learning_rate_range
@@ -374,7 +382,7 @@ class HyperparameterTuner:
             f"Trial {trial.number}: batch_size={batch_size}, weight_decay={weight_decay:.2e}, "
             f"dropout_rate={dropout_rate:.3f}, learning_rate={learning_rate:.2e}, "
             f"temperature={temperature:.3f}, alpha={alpha:.3f}, "
-            f"noise_reg_alpha={noise_reg_alpha:.3f}"
+            f"noise_reg_alpha={noise_reg_alpha:.3f}, embedding_dropout_rate={embedding_dropout_rate:.3f}"
         )
         
         try:
@@ -389,6 +397,7 @@ class HyperparameterTuner:
                     full_bio_tokenized_file=self.base_config.full_bio_tokenized_file,
                     model_name=self.base_config.model_name,
                     dropout_rate=dropout_rate,
+                    embedding_dropout_rate=embedding_dropout_rate,
                     use_noise_reg=use_noise_reg,
                     noise_reg_alpha=noise_reg_alpha
                 )
