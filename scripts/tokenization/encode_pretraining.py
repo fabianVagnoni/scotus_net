@@ -95,13 +95,32 @@ def encode_pretraining_dataset(pretraining_full_bio_file: str = None, pretrainin
     logger.info(f"📚 Found {len(trunc_justices)} truncated biography files")
     logger.info(f"📚 Found {len(full_justices)} full biography files")
     
-    # Match justice files between directories
-    common_justices = set(trunc_justices) & set(full_justices)
-    if len(common_justices) == 0:
-        logger.error("❌ No common justice files found between directories")
-        raise ValueError("No common justice files found between directories")
-    
-    logger.info(f"✅ Found {len(common_justices)} common justice files to process")
+    # Build mapping from truncated filename -> corresponding full filename
+    # Compatible with both unaugmented (exact match) and augmented (suffix like _v0) cases
+    def canonicalize_base_name(filename: str) -> str:
+        name = filename[:-4] if filename.lower().endswith('.txt') else filename
+        # strip simple version suffixes like _v0, _v1 or -v2 at the end
+        return re.sub(r'[_-]v\d+$', '', name)
+
+    full_names_set = set(full_justices)
+    trunc_to_full: dict[str, str] = {}
+
+    for trunc in trunc_justices:
+        # Try exact match first
+        if trunc in full_names_set:
+            trunc_to_full[trunc] = trunc
+            continue
+        # Fallback: map versioned/truncated variants (e.g., Abe_Fortas_v1.txt -> Abe_Fortas.txt)
+        base = canonicalize_base_name(trunc)
+        candidate_full = f"{base}.txt"
+        if candidate_full in full_names_set:
+            trunc_to_full[trunc] = candidate_full
+
+    if len(trunc_to_full) == 0:
+        logger.error("❌ No matching truncated→full biography pairs found between directories")
+        raise ValueError("No matching truncated→full biography pairs found between directories")
+
+    logger.info(f"✅ Found {len(trunc_to_full)} truncated→full biography pairs to process")
     
     # Initialize datasets
     pretraining_full_bio_dataset = {"tokenized_data": {}, "metadata": {}}
@@ -117,18 +136,19 @@ def encode_pretraining_dataset(pretraining_full_bio_file: str = None, pretrainin
     
     logger.info(f"📚 Loaded metadata for {len(justices_metadata)} justices")
     
-    logger.info(f"🧠 Starting tokenization and temporal extraction for {len(common_justices)} justice biographies")
+    logger.info(f"🧠 Starting tokenization and temporal extraction for {len(trunc_to_full)} truncated biographies")
     successful_encodings = 0
     successful_extractions = 0
     failed_encodings = 0
     failed_extractions = 0
     
-    for justice in tqdm(common_justices, desc="Processing biographies"):
+    for trunc_name in tqdm(sorted(trunc_to_full.keys()), desc="Processing biographies"):
         try:
-            trunc_bio_path = os.path.join(trunc_bios_dir, justice)
-            full_bio_path = os.path.join(full_bios_dir, justice)
+            trunc_bio_path = os.path.join(trunc_bios_dir, trunc_name)
+            full_bio_filename = trunc_to_full[trunc_name]
+            full_bio_path = os.path.join(full_bios_dir, full_bio_filename)
             
-            logger.debug(f"Processing justice: {justice}")
+            logger.debug(f"Processing truncated bio: {trunc_name} → full bio: {full_bio_filename}")
             
             # Read biography texts
             with open(trunc_bio_path, 'r', encoding='utf-8') as f:
@@ -157,11 +177,11 @@ def encode_pretraining_dataset(pretraining_full_bio_file: str = None, pretrainin
                                           return_attention_mask=True)
             
             # Store tokenized data
-            pretraining_full_bio_dataset["tokenized_data"][justice] = {
+            pretraining_full_bio_dataset["tokenized_data"][trunc_name] = {
                 "input_ids": full_bio_encoded["input_ids"].squeeze(0),
                 "attention_mask": full_bio_encoded["attention_mask"].squeeze(0)
             }
-            pretraining_trunc_bio_dataset["tokenized_data"][justice] = {
+            pretraining_trunc_bio_dataset["tokenized_data"][trunc_name] = {
                 "input_ids": trunc_bio_encoded["input_ids"].squeeze(0),
                 "attention_mask": trunc_bio_encoded["attention_mask"].squeeze(0)
             }
@@ -170,8 +190,9 @@ def encode_pretraining_dataset(pretraining_full_bio_file: str = None, pretrainin
             
             # Extract temporal information from justices metadata
             try:
-                # Convert filename to justice name (remove .txt extension and replace underscores with spaces)
-                justice_name = justice.replace('.txt', '').replace('_', ' ')
+                # Derive canonical justice name for metadata lookup (strip version suffix, replace underscores)
+                canonical_base = canonicalize_base_name(trunc_name)
+                justice_name = canonical_base.replace('_', ' ')
                 
                 # Look up justice in metadata
                 if justice_name in justices_metadata:
@@ -190,7 +211,7 @@ def encode_pretraining_dataset(pretraining_full_bio_file: str = None, pretrainin
                     nominating_president = justice_info.get('nominated_by', '')
                     
                     # Store extracted information in pretraining dataset
-                    pretraining_dataset[justice] = [appointment_year, nominating_president]
+                    pretraining_dataset[trunc_name] = [appointment_year, nominating_president]
                     
                     # Log extraction results
                     if appointment_year:
@@ -206,16 +227,16 @@ def encode_pretraining_dataset(pretraining_full_bio_file: str = None, pretrainin
                 else:
                     failed_extractions += 1
                     logger.warning(f"Justice {justice_name} not found in metadata")
-                    pretraining_dataset[justice] = [None, None]
+                    pretraining_dataset[trunc_name] = [None, None]
                     
             except Exception as e:
                 failed_extractions += 1
-                logger.error(f"Error extracting temporal information for {justice}: {e}")
+                logger.error(f"Error extracting temporal information for {trunc_name}: {e}")
                 # Store None values for failed extractions
-                pretraining_dataset[justice] = [None, None]
+                pretraining_dataset[trunc_name] = [None, None]
             
         except Exception as e:
-            logger.error(f"❌ Error processing {justice}: {e}")
+            logger.error(f"❌ Error processing {trunc_name}: {e}")
             failed_encodings += 1
             continue
     
@@ -265,11 +286,11 @@ def encode_pretraining_dataset(pretraining_full_bio_file: str = None, pretrainin
     
     logger.info("🎉 Pretraining dataset encoding and temporal extraction completed successfully!")
     logger.info(f"📊 Final Summary:")
-    logger.info(f"   - Total justices processed: {len(common_justices)}")
+    logger.info(f"   - Total truncated biographies processed: {len(trunc_to_full)}")
     logger.info(f"   - Successful tokenizations: {successful_encodings}")
     logger.info(f"   - Successful temporal extractions: {successful_extractions}")
-    logger.info(f"   - Tokenization success rate: {successful_encodings/len(common_justices)*100:.1f}%")
-    logger.info(f"   - Temporal extraction success rate: {successful_extractions/len(common_justices)*100:.1f}%")
+    logger.info(f"   - Tokenization success rate: {successful_encodings/len(trunc_to_full)*100:.1f}%")
+    logger.info(f"   - Temporal extraction success rate: {successful_extractions/len(trunc_to_full)*100:.1f}%")
 
 
 if __name__ == "__main__":
