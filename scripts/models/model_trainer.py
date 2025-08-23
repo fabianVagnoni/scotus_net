@@ -40,6 +40,7 @@ try:
     from scripts.utils.holdout_test_set import HoldoutTestSetManager
     from scripts.utils.progress import get_progress_bar
     from scripts.models.config import ModelConfig
+    from scripts.utils.metrics import calculate_f1_macro
 except ImportError:
     # Fallback for when running as module from root
     from .scotus_voting_model import SCOTUSVotingModel, SCOTUSDataset, collate_fn
@@ -48,6 +49,7 @@ except ImportError:
     from ..utils.holdout_test_set import HoldoutTestSetManager
     from ..utils.progress import get_progress_bar
     from .config import ModelConfig
+    from ..utils.metrics import calculate_f1_macro
 
 # Log year ranges for train/val/test
 def _range_str(case_ids, holdout_manager):
@@ -505,18 +507,46 @@ class SCOTUSModelTrainer:
             prefetch_factor=2  # Prefetch batches
         )
         
-        # Evaluate
+        # Evaluate: compute loss and F1 Macro
         criterion = create_scotus_loss_function(self.config)
-        test_loss = self.evaluate_model(model, test_loader, criterion)
+        total_loss = 0.0
+        num_batches = 0
+        all_preds = []
+        all_trues = []
+        
+        model.eval()
+        with torch.no_grad():
+            for batch in test_loader:
+                case_input_ids = batch['case_input_ids'].to(self.device)
+                case_attention_mask = batch['case_attention_mask'].to(self.device)
+                justice_input_ids = batch['justice_input_ids'].to(self.device)
+                justice_attention_mask = batch['justice_attention_mask'].to(self.device)
+                justice_counts = batch['justice_counts']
+                targets = batch['targets'].to(self.device)
+                
+                logits = model(case_input_ids, case_attention_mask, justice_input_ids, justice_attention_mask, justice_counts)
+                loss = criterion(logits, targets)
+                total_loss += loss.item()
+                num_batches += 1
+                
+                preds = torch.argmax(logits, dim=-1).detach().cpu().tolist()
+                trues = torch.argmax(targets, dim=-1).detach().cpu().tolist()
+                all_preds.extend(preds)
+                all_trues.extend(trues)
+        
+        test_loss = total_loss / num_batches if num_batches > 0 else float('inf')
+        f1_macro = float(calculate_f1_macro(all_preds, all_trues, num_classes=3)) if all_preds else 0.0
         
         results = {
             'test_loss': test_loss,
+            'f1_macro': f1_macro,
             'num_test_cases': len(test_processed),
             'model_path': model_path
         }
         
         self.logger.info(f"🧪 Holdout test evaluation:")
         self.logger.info(f"   Test loss: {test_loss:.4f}")
+        self.logger.info(f"   F1-Score Macro: {f1_macro:.4f}")
         self.logger.info(f"   Test cases: {len(test_processed)}")
         
         return results

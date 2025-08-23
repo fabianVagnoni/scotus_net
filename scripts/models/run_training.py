@@ -65,6 +65,7 @@ def main():
     parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility")
     parser.add_argument("--device", type=str, choices=['cpu', 'cuda', 'auto'], default='auto', help="Device to use for training")
     parser.add_argument("--eval-holdout", action='store_true', help="Evaluate on holdout test set after training")
+    parser.add_argument("--eval-test", action='store_true', help="Alias: evaluate on holdout test set after training")
     
     args = parser.parse_args()
     
@@ -122,7 +123,7 @@ def main():
         logger.info("✅ Training completed successfully!")
         
         # Evaluate on holdout test set if requested
-        if args.eval_holdout:
+        if args.eval_holdout or args.eval_test:
             logger.info("🧪 Evaluating on holdout test set...")
             try:
                 results = trainer.evaluate_on_holdout_test_set()
