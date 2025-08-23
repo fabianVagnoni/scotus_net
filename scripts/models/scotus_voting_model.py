@@ -126,6 +126,10 @@ class SCOTUSVotingModel(nn.Module):
             self.bio_model = SentenceTransformer(str(resolved_path), device=device_arg)
         self.description_model = SentenceTransformer(description_model_name, device=device_arg)
         
+        # Register lightweight NEFTune-style noise at embedding layer (train-only)
+        self._register_embedding_noise(self.bio_model)
+        self._register_embedding_noise(self.description_model)
+
         # Initially freeze sentence transformers (will be unfrozen during training if configured)
         self.freeze_sentence_transformers()
         
@@ -176,119 +180,33 @@ class SCOTUSVotingModel(nn.Module):
             nn.Linear(hidden_dim // 2, 3)  # 3 output neurons for voting percentages
         )
     
-    def encode_case_descriptions(self, input_ids: torch.Tensor, attention_mask: torch.Tensor) -> torch.Tensor:
+    def _register_embedding_noise(self, sbert_model: SentenceTransformer) -> None:
+        """Attach a forward hook on the underlying HF embedding layer to add noise during training.
+        Mirrors the approach used in scripts/pretraining/constrastive_justice.py.
         """
-        Encode case descriptions using input_ids and attention_mask.
-        
-        Args:
-            input_ids: Tensor of shape (batch_size, seq_len)
-            attention_mask: Tensor of shape (batch_size, seq_len)
-            
-        Returns:
-            Tensor of shape (batch_size, embedding_dim) representing the cases
-        """
-        # Prepare features for sentence transformer
-        features = {
-            'input_ids': input_ids,
-            'attention_mask': attention_mask
-        }
-        
-        # Use the sentence transformer's encoding
-        with torch.no_grad() if not self.training or self.frozen_description_model else torch.enable_grad():
-            embeddings = self.description_model(features)['sentence_embedding']
-            
-            if self.use_noise_reg and self.training:
-                embeddings = self.noise_reg(embeddings)
-                
-            if self.description_projection_layer:
-                embeddings = self.description_projection_layer(embeddings)
-        
-        return embeddings
-    
-    def encode_justice_bios(self, input_ids: torch.Tensor, attention_mask: torch.Tensor) -> torch.Tensor:
-        """
-        Encode justice biographies using input_ids and attention_mask.
-        
-        Args:
-            input_ids: Tensor of shape (total_justices, seq_len)
-            attention_mask: Tensor of shape (total_justices, seq_len)
-            
-        Returns:
-            Tensor of shape (total_justices, embedding_dim) representing the justices
-        """
-        # Prepare features for sentence transformer
-        features = {
-            'input_ids': input_ids,
-            'attention_mask': attention_mask
-        }
-        
-        # Use the sentence transformer's encoding
-        with torch.no_grad() if not self.training or self.frozen_bio_model else torch.enable_grad():
-            embeddings = self.bio_model(features)['sentence_embedding']
-            
-            if self.use_noise_reg and self.training:
-                embeddings = self.noise_reg(embeddings)
-                
-            if self.bio_projection_layer:
-                embeddings = self.bio_projection_layer(embeddings)
-        
-        return embeddings
-    
-    def encode_justice_bios_batch(self, input_ids: torch.Tensor, attention_mask: torch.Tensor, justice_counts: List[int]) -> torch.Tensor:
-        """
-        Encode justice biographies efficiently using batch processing.
-        
-        Args:
-            input_ids: Tensor of shape (batch_size, max_justices, seq_len)
-            attention_mask: Tensor of shape (batch_size, max_justices, seq_len)
-            justice_counts: List of actual justice counts per batch item
-            
-        Returns:
-            Tensor of shape (batch_size, max_justices, embedding_dim)
-        """
-        if isinstance(input_ids, list):
-            input_ids = torch.stack(input_ids)
-        if isinstance(attention_mask, list):
-            attention_mask = torch.stack(attention_mask)
-        batch_size, max_justices, seq_len = input_ids.shape
-        
-        # Create mask for valid justices to avoid processing padding
-        valid_mask = torch.zeros(batch_size, max_justices, dtype=torch.bool, device=input_ids.device)
-        for i, count in enumerate(justice_counts):
-            valid_mask[i, :count] = True
-        
-        # Only process valid (non-padded) justices
-        valid_indices = valid_mask.nonzero(as_tuple=False)  # (num_valid_justices, 2)
-        
-        if len(valid_indices) == 0:
-            # Return zero embeddings if no valid justices
-            return torch.zeros(batch_size, max_justices, self.embedding_dim, device=input_ids.device)
-        
-        # Extract valid justice tokens
-        valid_input_ids = input_ids[valid_indices[:, 0], valid_indices[:, 1]]  # (num_valid_justices, seq_len)
-        valid_attention_mask = attention_mask[valid_indices[:, 0], valid_indices[:, 1]]  # (num_valid_justices, seq_len)
-        
-        # Encode only valid justices
-        features = {
-            'input_ids': valid_input_ids,
-            'attention_mask': valid_attention_mask
-        }
-        
-        with torch.no_grad() if not self.training or self.frozen_bio_model else torch.enable_grad():
-            valid_embeddings = self.bio_model(features)['sentence_embedding']
-            
-            if self.use_noise_reg and self.training:
-                valid_embeddings = self.noise_reg(valid_embeddings)
-                
-            if self.bio_projection_layer:
-                valid_embeddings = self.bio_projection_layer(valid_embeddings)
-        
-        # Scatter embeddings back to batch format
-        justice_embeddings = torch.zeros(batch_size, max_justices, self.embedding_dim, 
-                                    device=input_ids.device, dtype=valid_embeddings.dtype)
-        justice_embeddings[valid_indices[:, 0], valid_indices[:, 1]] = valid_embeddings
-        
-        return justice_embeddings
+        try:
+            transformer_module = sbert_model._first_module()
+            hf_model = getattr(transformer_module, 'auto_model', None)
+            if hf_model is None:
+                return
+            embeddings_layer = getattr(hf_model, 'embeddings', None)
+            if embeddings_layer is None:
+                return
+
+            def _noise_hook(module, inputs, output):
+                if self.training and self.use_noise_reg:
+                    d = output.size(-1)
+                    if d == 0:
+                        return output
+                    scale = self.noise_reg_alpha / (d ** 0.5)
+                    noise = torch.empty_like(output).uniform_(-1, 1) * scale
+                    output = output + noise
+                return output
+
+            embeddings_layer.register_forward_hook(_noise_hook)
+        except Exception:
+            # Fail silently if internals differ
+            pass
     
     def forward(self, 
                 case_input_ids: torch.Tensor, 
@@ -311,20 +229,38 @@ class SCOTUSVotingModel(nn.Module):
         """
         batch_size = case_input_ids.size(0)
         
-        # Encode case descriptions
-        case_embeddings = self.encode_case_descriptions(case_input_ids, case_attention_mask)  # (batch_size, embedding_dim)
-        justice_embeddings = self.encode_justice_bios_batch(justice_input_ids, justice_attention_mask, justice_counts)
-        # Encode all justice biographies in parallel
-        # Reshape to process all justices at once: (batch_size * max_justices, justice_seq_len)
-        #justice_input_ids_flat = justice_input_ids.view(-1, justice_input_ids.size(-1))
-        #justice_attention_mask_flat = justice_attention_mask.view(-1, justice_attention_mask.size(-1))
-        
-        # Get embeddings for all justices: (batch_size * max_justices, embedding_dim)
-        #all_justice_embeddings = self.encode_justice_bios(justice_input_ids_flat, justice_attention_mask_flat)
+        # Case embeddings via direct SentenceTransformer call
+        case_features = {
+            'input_ids': case_input_ids,
+            'attention_mask': case_attention_mask
+        }
+        with torch.no_grad() if not self.training or self.frozen_description_model else torch.enable_grad():
+            case_embeddings = self.description_model(case_features)['sentence_embedding']
+            if self.description_projection_layer:
+                case_embeddings = self.description_projection_layer(case_embeddings)
 
-        # Reshape back to batch format: (batch_size, max_justices, embedding_dim)
-        #justice_embeddings = all_justice_embeddings.view(batch_size, MAX_JUSTICES, self.embedding_dim)
-        
+        # Justice embeddings: select only valid justices, encode, then scatter back
+        max_justices = justice_input_ids.size(1)
+        valid_mask = torch.zeros(batch_size, max_justices, dtype=torch.bool, device=justice_input_ids.device)
+        for i, count in enumerate(justice_counts):
+            valid_mask[i, :count] = True
+        valid_indices = valid_mask.nonzero(as_tuple=False)
+        if len(valid_indices) == 0:
+            justice_embeddings = torch.zeros(batch_size, max_justices, self.embedding_dim, device=justice_input_ids.device)
+        else:
+            valid_input_ids = justice_input_ids[valid_indices[:, 0], valid_indices[:, 1]]
+            valid_attention_mask = justice_attention_mask[valid_indices[:, 0], valid_indices[:, 1]]
+            bio_features = {
+                'input_ids': valid_input_ids,
+                'attention_mask': valid_attention_mask
+            }
+            with torch.no_grad() if not self.training or self.frozen_bio_model else torch.enable_grad():
+                valid_embeddings = self.bio_model(bio_features)['sentence_embedding']
+                if self.bio_projection_layer:
+                    valid_embeddings = self.bio_projection_layer(valid_embeddings)
+            justice_embeddings = torch.zeros(batch_size, max_justices, self.embedding_dim, 
+                                             device=justice_input_ids.device, dtype=valid_embeddings.dtype)
+            justice_embeddings[valid_indices[:, 0], valid_indices[:, 1]] = valid_embeddings
 
         if self.use_justice_attention:
             # Create batch masks for real vs padded justices
@@ -332,10 +268,8 @@ class SCOTUSVotingModel(nn.Module):
             for i, count in enumerate(justice_counts):
                 justice_masks[i, :count] = True
             
-            # Apply dropout and noise regularization to justice embeddings
+            # Apply dropout to justice embeddings
             justice_embeddings = self.justice_dropout(justice_embeddings)
-            if self.use_noise_reg and self.training:
-                justice_embeddings = self.noise_reg(justice_embeddings)
             
             # BATCHED PROCESSING - modify JusticeCrossAttention to accept batched inputs
             court_embeddings = self.justice_attention(
@@ -351,10 +285,8 @@ class SCOTUSVotingModel(nn.Module):
             return self.fc_layers(combined_embeddings)  # (batch_size, 3)
         else:
             # Original concatenation approach - process in parallel
-            # Apply dropout and noise regularization
+            # Apply dropout
             justice_embeddings = self.justice_dropout(justice_embeddings)
-            if self.use_noise_reg and self.training:
-                justice_embeddings = self.noise_reg(justice_embeddings)
             
             # Flatten justice embeddings: (batch_size, max_justices * embedding_dim)
             justice_embeddings_flat = justice_embeddings.view(batch_size, -1)
@@ -426,14 +358,7 @@ class SCOTUSVotingModel(nn.Module):
         
         return model
     
-    def noise_reg(self, embedding: torch.Tensor) -> torch.Tensor:
-        """Apply noise regularization to an embedding following NEFTune (arXiv:2310.05914)."""
-        alpha = self.noise_reg_alpha
-        d = embedding.size(-1)
-        U = torch.empty_like(embedding).uniform_(-1, 1)
-        scale = alpha / d**0.5
-        noise = U * scale
-        return embedding + noise
+    # The explicit noise_reg method is no longer used since noise is injected via embedding hooks
 
     def freeze_sentence_transformers(self):
         """Freeze all sentence transformers."""
