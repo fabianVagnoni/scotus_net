@@ -138,6 +138,8 @@ class ContrastiveJusticeTrainer:
             noise_reg_alpha=noise_reg_alpha
         )
         model.to(self.device)
+        # Ensure teacher is always in eval mode
+        model.full_bio_model.eval()
 
         # Prepare datasets
         training_dataset = ContrastiveJusticeDataset(train_justices, self.config.trunc_bio_tokenized_file, self.config.full_bio_tokenized_file)
@@ -176,9 +178,10 @@ class ContrastiveJusticeTrainer:
         alpha = self.config.alpha
 
         optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
-        loss_fn = ContrastiveLoss(temperature=temperature, alpha=alpha)
+        rho = getattr(self.config, 'rho', 0.0)
+        loss_fn = ContrastiveLoss(temperature=temperature, alpha=alpha, rho=rho)
         loss_fn.to(self.device)
-        self.logger.info(f"Created contrastive loss function with temperature {self.config.temperature} and alpha {self.config.alpha}")
+        self.logger.info(f"Created contrastive loss with T={self.config.temperature}, alpha={self.config.alpha}, rho={rho}")
 
         # Learning rate scheduler
         lr_scheduler_factor = self.config.lr_scheduler_factor

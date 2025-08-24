@@ -378,10 +378,18 @@ class HyperparameterTuner:
         else:
             noise_reg_alpha = getattr(self.base_config, 'noise_reg_alpha', 5.0)
         
+        # Rho tuning / value
+        if getattr(self.base_config, 'tune_rho', False):
+            rho_min, rho_max, rho_log = getattr(self.base_config, 'optuna_rho_range', (0.0, 1.0, False))
+            rho_kwargs = {'log': bool(rho_log)} if rho_log else {}
+            rho = trial.suggest_float('rho', float(rho_min), float(rho_max), **rho_kwargs)
+        else:
+            rho = getattr(self.base_config, 'rho', 0.0)
+
         self.logger.info(
             f"Trial {trial.number}: batch_size={batch_size}, weight_decay={weight_decay:.2e}, "
             f"dropout_rate={dropout_rate:.3f}, learning_rate={learning_rate:.2e}, "
-            f"temperature={temperature:.3f}, alpha={alpha:.3f}, "
+            f"temperature={temperature:.3f}, alpha={alpha:.3f}, rho={rho:.3f}, "
             f"noise_reg_alpha={noise_reg_alpha:.3f}, embedding_dropout_rate={embedding_dropout_rate:.3f}"
         )
         
@@ -431,7 +439,7 @@ class HyperparameterTuner:
                 )
 
                 optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
-                loss_fn = ContrastiveLoss(temperature=temperature, alpha=alpha)
+                loss_fn = ContrastiveLoss(temperature=temperature, alpha=alpha, rho=rho)
                 loss_fn.to(self.device)
 
                 # Train for this fold

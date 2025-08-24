@@ -58,6 +58,7 @@ class ContrastiveJusticeConfig:
                         'NUM_WORKERS': 'num_workers',
                         'TEMPERATURE': 'temperature',
                         'ALPHA': 'alpha',
+                        'RHO': 'rho',
                         'LR_SCHEDULER_FACTOR': 'lr_scheduler_factor',
                         'LR_SCHEDULER_PATIENCE': 'lr_scheduler_patience',
                         'MAX_PATIENCE': 'max_patience',
@@ -85,6 +86,7 @@ class ContrastiveJusticeConfig:
                         'TUNE_EMBEDDING_DROPOUT_RATE': 'tune_embedding_dropout_rate',
                         'TUNE_TEMPERATURE': 'tune_temperature',
                         'TUNE_ALPHA': 'tune_alpha',
+                        'TUNE_RHO': 'tune_rho',
                         'TUNE_NOISE_REG_ALPHA': 'tune_noise_reg_alpha',
                         # Search spaces
                         'OPTUNA_BATCH_SIZE_OPTIONS': 'optuna_batch_size_options',
@@ -95,6 +97,7 @@ class ContrastiveJusticeConfig:
                         'OPTUNA_TEMPERATURE_RANGE': 'optuna_temperature_range',
                         'OPTUNA_ALPHA_RANGE': 'optuna_alpha_range',
                         'OPTUNA_NOISE_REG_ALPHA_RANGE': 'optuna_noise_reg_alpha_range',
+                        'OPTUNA_RHO_RANGE': 'optuna_rho_range',
                         # Time-based cross-validation
                         'USE_TIME_BASED_CV': 'use_time_based_cv',
                         'TIME_BASED_CV_FOLDS': 'time_based_cv_folds',
@@ -125,12 +128,12 @@ class ContrastiveJusticeConfig:
         }
         float_keys = {
             'DROPOUT_RATE', 'EMBEDDING_DROPOUT_RATE', 'LEARNING_RATE', 'WEIGHT_DECAY', 'TEMPERATURE', 
-            'ALPHA', 'LR_SCHEDULER_FACTOR', 'VAL_SPLIT', 'NOISE_REG_ALPHA'
+            'ALPHA', 'RHO', 'LR_SCHEDULER_FACTOR', 'VAL_SPLIT', 'NOISE_REG_ALPHA'
         }
         bool_keys = {
             'TUNE_BATCH_SIZE', 'TUNE_LEARNING_RATE', 'TUNE_WEIGHT_DECAY',
             'TUNE_DROPOUT_RATE', 'TUNE_EMBEDDING_DROPOUT_RATE', 'TUNE_TEMPERATURE', 'TUNE_ALPHA',
-            'USE_TIME_BASED_CV', 'USE_NOISE_REG', 'TUNE_NOISE_REG_ALPHA'
+            'TUNE_RHO', 'USE_TIME_BASED_CV', 'USE_NOISE_REG', 'TUNE_NOISE_REG_ALPHA'
         }
         
         if key in int_keys:
@@ -172,6 +175,7 @@ class ContrastiveJusticeConfig:
             # Loss configuration
             'TEMPERATURE': 0.1,
             'ALPHA': 0.5,
+            'RHO': 0.0,
             
             # Learning rate scheduler
             'LR_SCHEDULER_FACTOR': 0.5,
@@ -265,6 +269,7 @@ class ContrastiveJusticeConfig:
         self.tune_embedding_dropout_rate = True
         self.tune_temperature = True
         self.tune_alpha = True
+        self.tune_rho = True
         self.tune_noise_reg_alpha = True
         
         # Search space defaults
@@ -276,6 +281,7 @@ class ContrastiveJusticeConfig:
         self.optuna_temperature_range = (0.01, 1.0, True)
         self.optuna_alpha_range = (0.0, 1.0, 0.1)
         self.optuna_noise_reg_alpha_range = (0.1, 10.0, True)
+        self.optuna_rho_range = (0.0, 1.0, False)
         
         # Time-based cross-validation defaults
         self.use_time_based_cv = True

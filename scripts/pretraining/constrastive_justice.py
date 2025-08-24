@@ -26,6 +26,8 @@ class ContrastiveJustice(nn.Module):
             param.requires_grad = True
         for param in self.full_bio_model.parameters():
             param.requires_grad = False
+        # Keep teacher model deterministic (no dropout) and not trainable
+        self.full_bio_model.eval()
         self.dropout = nn.Dropout(dropout_rate)
         self.use_noise_reg = use_noise_reg
         self.noise_reg_alpha = float(noise_reg_alpha)
@@ -44,9 +46,8 @@ class ContrastiveJustice(nn.Module):
             pass
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
 
-        # Register lightweight embedding hooks to inject NEFTune-style noise at token embedding level (train-only)
+        # Register lightweight embedding hooks ONLY on the student (trainable) model
         self._register_embedding_noise(self.truncated_bio_model)
-        self._register_embedding_noise(self.full_bio_model)
         
     def to(self, device):
         """Override to method to ensure all submodules are moved to device."""
@@ -54,6 +55,13 @@ class ContrastiveJustice(nn.Module):
         self.device = device
         self.truncated_bio_model = self.truncated_bio_model.to(device)
         self.full_bio_model = self.full_bio_model.to(device)
+        return self
+
+    def train(self, mode: bool = True):
+        """Ensure teacher stays in eval mode even when the module is set to train."""
+        super().train(mode)
+        # Force teacher (full_bio_model) to eval regardless of mode
+        self.full_bio_model.eval()
         return self
 
     def _register_embedding_noise(self, sbert_model: SentenceTransformer) -> None:
@@ -158,14 +166,12 @@ class ContrastiveJustice(nn.Module):
         out_t = trunc_bio_outputs['sentence_embedding']
         out_f = full_bio_outputs['sentence_embedding']
 
-        # Apply NEFTune-style noise regularization only during training
+        # Apply NEFTune-style noise regularization only to the student during training
         if self.use_noise_reg and self.training:
             out_t = self.noise_reg(out_t)
-            out_f = self.noise_reg(out_f)
 
-        # Apply dropout to embeddings (nn.Dropout is a no-op during eval)
+        # Apply dropout only to student embeddings
         out_t = self.dropout(out_t)
-        out_f = self.dropout(out_f)
         
         return out_t, out_f
 
