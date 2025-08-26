@@ -153,7 +153,7 @@ class ContrastiveJusticeConfig:
         else:
             # Handle special parsing for search spaces
             if key.startswith('OPTUNA_') and ('_OPTIONS' in key or '_RANGE' in key):
-                return self._parse_search_space(value)
+                return self._parse_search_space(key, value)
             return value
     
     def _get_default_value(self, key: str) -> Any:
@@ -196,23 +196,50 @@ class ContrastiveJusticeConfig:
         }
         return defaults.get(key, None)
     
-    def _parse_search_space(self, value: str):
-        """Parse search space values (options or ranges)."""
-        if '_OPTIONS' in value or ',' in value:
-            # Parse comma-separated options
-            return [x.strip() for x in value.split(',')]
-        elif '_RANGE' in value:
-            # Parse range values (min,max,log_scale or min,max,step)
-            parts = value.split(',')
-            if len(parts) == 3:
+    def _parse_search_space(self, key: str, value: str):
+        """Parse search space values (options or ranges) based on key suffix.
+
+        - *_OPTIONS: returns a list of typed values (int/float/bool/str)
+        - *_RANGE: returns a tuple (min: float, max: float, third: bool|float|None)
+                   where the third element is either a boolean 'log' flag or a numeric step
+        """
+        parts = [p.strip() for p in value.split(',')]
+
+        def _coerce_scalar(text: str):
+            lower = text.lower()
+            if lower in ("true", "false"):
+                return lower == "true"
+            try:
+                # Prefer int when it is integral
+                as_float = float(text)
+                if as_float.is_integer():
+                    return int(as_float)
+                return as_float
+            except ValueError:
+                return text
+
+        if key.endswith('_OPTIONS'):
+            return [_coerce_scalar(p) for p in parts]
+
+        if key.endswith('_RANGE'):
+            if len(parts) >= 2:
                 try:
-                    # Try to parse as float range with log scale
-                    return (float(parts[0]), float(parts[1]), parts[2].lower() == 'true')
+                    min_val = float(parts[0])
+                    max_val = float(parts[1])
                 except ValueError:
-                    # Try to parse as float range with step
-                    return (float(parts[0]), float(parts[1]), float(parts[2]))
-            elif len(parts) == 2:
-                return (float(parts[0]), float(parts[1]), None)
+                    return value
+                third = None
+                if len(parts) >= 3:
+                    # Third can be a boolean (log) or a numeric step
+                    third_part = parts[2].lower()
+                    if third_part in ("true", "false"):
+                        third = (third_part == "true")
+                    else:
+                        try:
+                            third = float(parts[2])
+                        except ValueError:
+                            third = None
+                return (min_val, max_val, third)
         return value
     
     def _set_defaults(self):
