@@ -261,6 +261,7 @@ class ContrastiveJusticeConfig:
         # Loss configuration
         self.temperature = self._get_default_value('TEMPERATURE')
         self.alpha = self._get_default_value('ALPHA')
+        self.rho = self._get_default_value('RHO')
         
         # Learning rate scheduler
         self.lr_scheduler_factor = self._get_default_value('LR_SCHEDULER_FACTOR')

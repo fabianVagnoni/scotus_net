@@ -178,7 +178,7 @@ class ContrastiveJusticeTrainer:
         alpha = self.config.alpha
 
         optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
-        rho = getattr(self.config, 'rho', 0.0)
+        rho = self.config.rho
         loss_fn = ContrastiveLoss(temperature=temperature, alpha=alpha, rho=rho)
         loss_fn.to(self.device)
         self.logger.info(f"Created contrastive loss with T={self.config.temperature}, alpha={self.config.alpha}, rho={rho}")
