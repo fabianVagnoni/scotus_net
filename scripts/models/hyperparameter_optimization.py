@@ -345,8 +345,9 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
                 # Move batch to device
                 case_input_ids = batch['case_input_ids'].to(self.device)
                 case_attention_mask = batch['case_attention_mask'].to(self.device)
-                justice_input_ids = [j.to(self.device) for j in batch['justice_input_ids']]
-                justice_attention_mask = [j.to(self.device) for j in batch['justice_attention_mask']]
+                # These are already tensors from collate_fn; move directly, do not convert to lists
+                justice_input_ids = batch['justice_input_ids'].to(self.device)
+                justice_attention_mask = batch['justice_attention_mask'].to(self.device)
                 justice_counts = batch['justice_counts']
                 targets = batch['targets'].to(self.device)
                 
@@ -590,8 +591,9 @@ class OptunaModelTrainer(SCOTUSModelTrainer):
                 # Move batch to device
                 case_input_ids = batch['case_input_ids'].to(self.device)
                 case_attention_mask = batch['case_attention_mask'].to(self.device)
-                justice_input_ids = [j.to(self.device) for j in batch['justice_input_ids']]
-                justice_attention_mask = [j.to(self.device) for j in batch['justice_attention_mask']]
+                # These are tensors; keep as tensors
+                justice_input_ids = batch['justice_input_ids'].to(self.device)
+                justice_attention_mask = batch['justice_attention_mask'].to(self.device)
                 justice_counts = batch['justice_counts']
                 targets = batch['targets'].to(self.device)
                 
