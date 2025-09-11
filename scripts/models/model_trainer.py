@@ -520,9 +520,9 @@ class SCOTUSModelTrainer:
         test_processed = self.prepare_processed_data(test_dataset, bio_data, description_data, verbose=False)
         
         # Create test dataset and loader
-        test_dataset = SCOTUSDataset(test_processed)
+        test_dataset_obj = SCOTUSDataset(test_processed)
         test_loader = DataLoader(
-            test_dataset,
+            test_dataset_obj,
             batch_size=self.config.batch_size,
             shuffle=False,
             collate_fn=collate_fn,
@@ -534,8 +534,12 @@ class SCOTUSModelTrainer:
         
         # Evaluate: compute loss and F1 Macro
         criterion = create_scotus_loss_function(self.config)
-        total_loss = 0.0
-        num_batches = 0
+        
+        # Use existing evaluate_model method for loss calculation
+        self.logger.info("�� Evaluating on holdout test set...")
+        test_loss = self.evaluate_model(model, test_loader, criterion)
+        
+        # Calculate F1 score separately
         all_preds = []
         all_trues = []
         
