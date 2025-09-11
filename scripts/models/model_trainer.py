@@ -20,6 +20,7 @@ from typing import Dict, List, Tuple, Any
 import sys
 from torch.nn.utils.rnn import pad_sequence
 import torch.nn.functional as F
+import os
 
 # (deprecated):
 # from torch.cuda.amp import autocast, GradScaler
@@ -67,7 +68,9 @@ class SCOTUSModelTrainer:
     """
     
     def __init__(self):
-        self.logger = get_logger(__name__)
+        # Get log file from environment (set by run_training.py)
+        log_file = os.environ.get("LOG_FILE", "logs/scotus_ai.log")
+        self.logger = get_logger(__name__, log_file=log_file)
         self.config = ModelConfig()
         self.scaler = GradScaler()
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')

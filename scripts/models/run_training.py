@@ -43,16 +43,22 @@ def setup_logging(experiment_name: str):
     logs_dir = Path("logs")
     logs_dir.mkdir(exist_ok=True)
     
-    # Set up file logging
+    # Set up file logging path for both standard logging and loguru
     log_file = logs_dir / f"training_{experiment_name}.log"
     
+    # Set environment variable so loguru loggers use the same file
+    import os
+    os.environ["LOG_FILE"] = str(log_file)
+    
+    # Set up standard logging (for this module)
     logging.basicConfig(
         level=logging.INFO,
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
         handlers=[
-            logging.FileHandler(log_file),
+            logging.FileHandler(log_file, mode='a'),  # Append mode
             logging.StreamHandler()
-        ]
+        ],
+        force=True  # Override any existing configuration
     )
 
 
