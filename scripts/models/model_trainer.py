@@ -446,7 +446,8 @@ class SCOTUSModelTrainer:
         num_batches = 0
         
         with torch.no_grad():
-            for batch in data_loader:
+            progress_bar = get_progress_bar(data_loader, desc="Validation")
+            for batch in progress_bar:
                 # Move batch to device
                 case_input_ids = batch['case_input_ids'].to(self.device)
                 case_attention_mask = batch['case_attention_mask'].to(self.device)
@@ -455,14 +456,16 @@ class SCOTUSModelTrainer:
                 justice_counts = batch['justice_counts']
                 targets = batch['targets'].to(self.device)
                 
-                # Forward pass
-                predictions = model(case_input_ids, case_attention_mask, justice_input_ids, justice_attention_mask, justice_counts)
-                
-                # Compute loss
-                loss = criterion(predictions, targets)
+                # Forward pass with autocast for speed
+                with autocast(device_type=self.device_string):
+                    predictions = model(case_input_ids, case_attention_mask, justice_input_ids, justice_attention_mask, justice_counts)
+                    loss = criterion(predictions, targets)
                 
                 total_loss += loss.item()
                 num_batches += 1
+                
+                # Update progress bar with current loss
+                progress_bar.set_postfix({'loss': f'{loss.item():.4f}'})
         
         return total_loss / num_batches if num_batches > 0 else float('inf')
 
