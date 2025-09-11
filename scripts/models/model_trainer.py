@@ -445,8 +445,20 @@ class SCOTUSModelTrainer:
         total_loss = 0.0
         num_batches = 0
         
+        # Log start of validation
+        self.logger.info("🔍 Starting validation...")
+        
         with torch.no_grad():
-            progress_bar = get_progress_bar(data_loader, desc="Validation")
+            # Force tqdm to work in Docker with explicit file output
+            progress_bar = get_progress_bar(
+                data_loader, 
+                desc="Validation",
+                file=sys.stdout,
+                ncols=80,
+                miniters=1,
+                mininterval=0.5
+            )
+            
             for batch in progress_bar:
                 # Move batch to device
                 case_input_ids = batch['case_input_ids'].to(self.device)
@@ -466,8 +478,15 @@ class SCOTUSModelTrainer:
                 
                 # Update progress bar with current loss
                 progress_bar.set_postfix({'loss': f'{loss.item():.4f}'})
+                
+                # Force flush every 10 batches for Docker visibility
+                if num_batches % 10 == 0:
+                    sys.stdout.flush()
         
-        return total_loss / num_batches if num_batches > 0 else float('inf')
+        avg_loss = total_loss / num_batches if num_batches > 0 else float('inf')
+        self.logger.info(f"✅ Validation completed - Average loss: {avg_loss:.4f}")
+        
+        return avg_loss
 
     def evaluate_on_holdout_test_set(self, model_path: str = None) -> Dict:
         """Evaluate model on holdout test set."""
