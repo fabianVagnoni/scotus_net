@@ -538,7 +538,8 @@ class SCOTUSModelTrainer:
         
         model.eval()
         with torch.no_grad():
-            for batch in test_loader:
+            progress_bar = get_progress_bar(test_loader, desc="Computing F1 Score")
+            for batch in progress_bar:
                 case_input_ids = batch['case_input_ids'].to(self.device)
                 case_attention_mask = batch['case_attention_mask'].to(self.device)
                 justice_input_ids = batch['justice_input_ids'].to(self.device)
@@ -546,17 +547,14 @@ class SCOTUSModelTrainer:
                 justice_counts = batch['justice_counts']
                 targets = batch['targets'].to(self.device)
                 
-                logits = model(case_input_ids, case_attention_mask, justice_input_ids, justice_attention_mask, justice_counts)
-                loss = criterion(logits, targets)
-                total_loss += loss.item()
-                num_batches += 1
+                with autocast(device_type=self.device_string):
+                    logits = model(case_input_ids, case_attention_mask, justice_input_ids, justice_attention_mask, justice_counts)
                 
                 preds = torch.argmax(logits, dim=-1).detach().cpu().tolist()
                 trues = torch.argmax(targets, dim=-1).detach().cpu().tolist()
                 all_preds.extend(preds)
                 all_trues.extend(trues)
         
-        test_loss = total_loss / num_batches if num_batches > 0 else float('inf')
         f1_macro = float(calculate_f1_macro(all_preds, all_trues, num_classes=3)) if all_preds else 0.0
         
         results = {
@@ -566,7 +564,7 @@ class SCOTUSModelTrainer:
             'model_path': model_path
         }
         
-        self.logger.info(f"🧪 Holdout test evaluation:")
+        self.logger.info(f"🧪 Holdout test evaluation results:")
         self.logger.info(f"   Test loss: {test_loss:.4f}")
         self.logger.info(f"   F1-Score Macro: {f1_macro:.4f}")
         self.logger.info(f"   Test cases: {len(test_processed)}")
