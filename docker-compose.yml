@@ -42,6 +42,34 @@ services:
     # Default command
     command: ["bash"]
 
+  baseline-train:
+    image: scotus-ai:latest
+    depends_on:
+      - scotus-ai
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./models_output:/app/models_output
+      - ./cache:/app/.cache
+      - ./.env:/app/.env:ro
+    stdin_open: true
+    tty: true
+    command: ["/app/entrypoint.sh", "baseline-train"]
+
+  baseline-tune:
+    image: scotus-ai:latest
+    depends_on:
+      - scotus-ai
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./models_output:/app/models_output
+      - ./cache:/app/.cache
+      - ./.env:/app/.env:ro
+    stdin_open: true
+    tty: true
+    command: ["/app/entrypoint.sh", "baseline-tune"]
+
   # Optional: Database service for future use
   postgres:
     image: postgres:13

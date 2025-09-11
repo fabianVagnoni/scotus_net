@@ -32,11 +32,6 @@ class ContrastiveLoss(nn.Module):
     
     def nx_loss(self, e_t, e_f):
         """NT-Xent Loss."""
-#        sim = (e_t @ e_f.T) / self.temperature # (B,D) @ (D,B) => (B,B)
-#        labels = torch.arange(sim.size(0), device=self.device)
-#        c1 = self.cross_entropy_loss(sim, labels)
-#        c2 = self.cross_entropy_loss(sim.T, labels)
-#        return (c1 + c2) * .5
         pos = (e_t * e_f).sum(dim=-1, keepdim=True) / self.temperature            # (B,1)
 
         neg = e_t @ e_f.T / self.temperature                                      # (B,B)

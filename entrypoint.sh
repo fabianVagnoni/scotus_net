@@ -47,6 +47,8 @@ echo "  encoding           - Run the encoding pipeline"
 echo "  augmentation       - Run the augmentation pipeline"
 echo "  train              - Train the model with optimized hyperparameters"
 echo "  hyperparameter-tuning - Run hyperparameter optimization"
+echo "  baseline-train     - Train the baseline model"
+echo "  baseline-tune      - Run baseline hyperparameter optimization"
 echo "  pretrain           - Run contrastive justice pretraining"
 echo "  pretrain-tune      - Run pretraining hyperparameter optimization"
 echo "  check              - Check data status"
@@ -97,6 +99,14 @@ case "$1" in
     hyperparameter-tuning)
         shift
         exec python3 -m scripts.models.hyperparameter_optimization "$@"
+        ;;
+    baseline-train)
+        shift
+        exec python3 -m scripts.baseline.baseline_trainer "$@"
+        ;;
+    baseline-tune)
+        shift
+        exec python3 -m scripts.baseline.hyperparameter_optimization_baseline "$@"
         ;;
     pretrain)
         shift

@@ -228,8 +228,10 @@ show_usage() {
     echo "  data-pipeline-step STEP  Run a specific pipeline step"
     echo "  encoding                 Run the encoding pipeline"
     echo "  train                    Train the model with optimized hyperparameters"
-echo "  hyperparameter-tuning    Run hyperparameter optimization"
-echo "  tune                     Alias for hyperparameter-tuning"
+    echo "  hyperparameter-tuning    Run hyperparameter optimization"
+    echo "  tune                     Alias for hyperparameter-tuning"
+    echo "  baseline-train           Train the baseline model"
+    echo "  baseline-tune            Run baseline hyperparameter optimization"
     echo "  pretrain                 Run contrastive justice pretraining"
     echo "  pretrain-tune            Run pretraining hyperparameter optimization"
     echo "  augmentation            Run the augmentation pipeline"
@@ -341,6 +343,14 @@ case "${1:-}" in
         fi
         shift
         run_container "hyperparameter-tuning" "$@"
+        ;;
+    baseline-train)
+        shift
+        run_container "baseline-train" "$@"
+        ;;
+    baseline-tune)
+        shift
+        run_container "baseline-tune" "$@"
         ;;
     pretrain)
         if [ "$2" = "--help" ] || [ "$2" = "-h" ]; then

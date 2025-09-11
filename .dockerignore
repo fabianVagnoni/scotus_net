@@ -83,7 +83,8 @@ Thumbs.db
 
 # Documentation (keep essential docs)
 docs/
-*.md
+# Allow baseline env/config to be copied if desired
+!scripts/baseline/config.env
 
 # Docker files (avoid recursive copying)
 Dockerfile*
