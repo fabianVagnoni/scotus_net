@@ -344,7 +344,24 @@ class SCOTUSModelTrainer:
         
         # Set up model output directory
         model_output_dir = Path(self.config.model_output_dir)
-        model_output_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Create the directory structure if it doesn't exist
+        try:
+            model_output_dir.mkdir(parents=True, exist_ok=True)
+            if not os.access(model_output_dir, os.W_OK):
+                self.logger.error(f"Cannot write to {model_output_dir}")
+                # Try alternative path in Docker environment
+                model_output_dir = Path('/app/models_fallback')
+                model_output_dir.mkdir(parents=True, exist_ok=True)
+                self.logger.warning(f"Using fallback directory: {model_output_dir.absolute()}")
+                
+            self.logger.info(f"Model will be saved to: {model_output_dir.absolute()}")
+            
+        except Exception as e:
+            self.logger.error(f"Failed to create model output directory: {str(e)}")
+            # Last resort: use current directory
+            model_output_dir = Path.cwd()
+            self.logger.warning(f"Using current directory as fallback: {model_output_dir.absolute()}")
         
         self.logger.info("🚀 Starting training...")
         self.logger.info(f"   Model output directory: {model_output_dir}")
@@ -471,8 +488,38 @@ class SCOTUSModelTrainer:
                 best_val_loss = val_loss
                 patience_counter = 0
                 
-                model.save_model(str(model_output_dir / 'best_model.pth'))
-                self.logger.info(f"💾 New best model saved with val loss: {val_loss:.4f}")
+                # Primary save location
+                try:
+                    model_output_dir.mkdir(parents=True, exist_ok=True)
+                    if not os.access(model_output_dir, os.W_OK):
+                        self.logger.error(f"Cannot write to {model_output_dir}")
+                        raise PermissionError(f"Cannot write to {model_output_dir}")
+                    
+                    save_path = model_output_dir / 'best_model.pth'
+                    model.save_model(str(save_path))
+                    self.logger.info(f"💾 New best model saved with val loss: {val_loss:.4f} in location {save_path.absolute()}")
+                    
+                except Exception as e:
+                    self.logger.error(f"Failed to save model to primary location: {str(e)}")
+                
+                # Backup save to base directory for reliability
+                try:
+                    base_save_path = Path('/app/best_model_backup.pth')
+                    model.save_model(str(base_save_path))
+                    self.logger.info(f"💾 Backup model saved to: {base_save_path.absolute()}")
+                    
+                except Exception as e:
+                    self.logger.error(f"Failed to save backup model: {str(e)}")
+                
+                # Additional backup to current working directory
+                try:
+                    cwd_save_path = Path.cwd() / 'best_model_current.pth'
+                    model.save_model(str(cwd_save_path))
+                    self.logger.info(f"💾 Current directory backup saved to: {cwd_save_path.absolute()}")
+                    
+                except Exception as e:
+                    self.logger.error(f"Failed to save current directory backup: {str(e)}")
+                    
             else:
                 patience_counter += 1
                 if patience_counter >= max_patience:
