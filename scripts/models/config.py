@@ -139,6 +139,10 @@ class ModelConfig:
         self.time_based_cv_train_size = int(os.getenv('TIME_BASED_CV_TRAIN_SIZE', '1000'))
         self.time_based_cv_val_size = int(os.getenv('TIME_BASED_CV_VAL_SIZE', '100'))
 
+        # Learning Rate Scheduler
+        self.lr_scheduler_factor = float(os.getenv('LR_SCHEDULER_FACTOR', '0.5'))
+        self.lr_scheduler_patience = int(os.getenv('LR_SCHEDULER_PATIENCE', '3'))
+
     def _parse_list_option(self, value: str, convert_type: type = str) -> list:
         """Parse comma-separated list option."""
         try:

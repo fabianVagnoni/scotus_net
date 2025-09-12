@@ -76,6 +76,10 @@ class SCOTUSModelTrainer:
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.device_string = "cuda" if torch.cuda.is_available() else "cpu"
 
+        # Learning Rate Scheduler
+        self.lr_scheduler_factor = float(os.getenv('LR_SCHEDULER_FACTOR', '0.5'))
+        self.lr_scheduler_patience = int(os.getenv('LR_SCHEDULER_PATIENCE', '3'))
+
     def load_case_dataset(self, dataset_file: str = None) -> Dict:
         """Load the case dataset."""
         if dataset_file is None:
@@ -326,8 +330,17 @@ class SCOTUSModelTrainer:
             weight_decay=self.config.weight_decay
         )
         
+        # Learning rate scheduler
+        lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            main_optimizer, 
+            mode='min', 
+            factor=self.config.lr_scheduler_factor, 
+            patience=self.config.lr_scheduler_patience
+        )
+        
         # Initialize sentence transformer optimizer (will be used if models are unfrozen)
         sentence_transformer_optimizer = None
+        sentence_transformer_scheduler = None
         
         # Set up model output directory
         model_output_dir = Path(self.config.model_output_dir)
@@ -401,6 +414,23 @@ class SCOTUSModelTrainer:
             
             self.logger.info(f"Epoch {epoch+1}/{num_epochs} - Train Loss: {avg_train_loss:.4f}, Val Loss: {val_loss:.4f}")
             
+            # Learning rate scheduling
+            current_lr = main_optimizer.param_groups[0]['lr']
+            lr_scheduler.step(val_loss)
+            
+            # Check if learning rate was reduced and log it
+            new_lr = main_optimizer.param_groups[0]['lr']
+            if new_lr != current_lr:
+                self.logger.info(f"📉 Learning rate reduced from {current_lr:.6f} to {new_lr:.6f}")
+            
+            # Also step sentence transformer scheduler if it exists
+            if sentence_transformer_scheduler is not None:
+                current_st_lr = sentence_transformer_optimizer.param_groups[0]['lr']
+                sentence_transformer_scheduler.step(val_loss)
+                new_st_lr = sentence_transformer_optimizer.param_groups[0]['lr']
+                if new_st_lr != current_st_lr:
+                    self.logger.info(f"📉 Sentence transformer LR reduced from {current_st_lr:.6f} to {new_st_lr:.6f}")
+            
             # Handle unfreezing at specified epochs
             if epoch + 1 == self.config.unfreeze_at_epoch and self.config.unfreeze_transformers:
                 self.logger.info("🔓 Unfreezing sentence transformers...")
@@ -424,7 +454,17 @@ class SCOTUSModelTrainer:
                         lr=self.config.sentence_transformer_learning_rate,
                         weight_decay=self.config.weight_decay
                     )
+                    
+                    # Create scheduler for sentence transformer optimizer
+                    sentence_transformer_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+                        sentence_transformer_optimizer,
+                        mode='min',
+                        factor=self.config.lr_scheduler_factor,
+                        patience=self.config.lr_scheduler_patience
+                    )
+                    
                     self.logger.info(f"   - Sentence transformer optimizer created with LR: {self.config.sentence_transformer_learning_rate}")
+                    self.logger.info(f"   - Sentence transformer scheduler created with factor: {self.config.lr_scheduler_factor}, patience: {self.config.lr_scheduler_patience}")
             
             # Save best model
             if val_loss < best_val_loss:
