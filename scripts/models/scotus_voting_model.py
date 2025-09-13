@@ -132,7 +132,31 @@ class SCOTUSVotingModel(nn.Module):
 
         # Initially freeze sentence transformers (will be unfrozen during training if configured)
         self.freeze_sentence_transformers()
-        
+
+        # Gradient checkpointing for reducing memory usage
+        try:
+            t = self.bio_model._first_module()
+            if hasattr(t, "auto_model"):
+                t.auto_model.gradient_checkpointing_enable()
+                print("Enabled gradient checkpointing for bio model")
+                if hasattr(t.auto_model, "config"):
+                    t.auto_model.config.use_cache = False
+                    print("Disabled use cache for bio model")
+            else:
+                print("No auto model found for bio model")
+            t = self.description_model._first_module()
+            if hasattr(t, "auto_model"):
+                t.auto_model.gradient_checkpointing_enable()
+                print("Enabled gradient checkpointing for description model")
+                if hasattr(t.auto_model, "config"):
+                    t.auto_model.config.use_cache = False
+                    print("Disabled use cache for description model")
+            else:
+                print("No auto model found for description model")
+        except Exception:
+            print("Failed to enable gradient checkpointing for sentence transformers")
+            pass
+
         # Verify embedding dimensions match and create projection layers if needed
         bio_actual_dim = self.bio_model.get_sentence_embedding_dimension()
         desc_actual_dim = self.description_model.get_sentence_embedding_dimension()
