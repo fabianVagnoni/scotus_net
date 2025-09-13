@@ -57,6 +57,7 @@ class ModelConfig:
         self.num_epochs = int(os.getenv('NUM_EPOCHS', '10'))
         self.batch_size = int(os.getenv('BATCH_SIZE', '16'))
         self.num_workers = int(os.getenv('NUM_WORKERS', '4'))
+        self.loss_type = os.getenv('LOSS', 'KL').upper()
         
         # Early Stopping and Scheduling
         self.patience = int(os.getenv('PATIENCE', '5'))
@@ -114,6 +115,7 @@ class ModelConfig:
         self.tune_weight_decay = os.getenv('TUNE_WEIGHT_DECAY', 'true').lower() == 'true'
         self.tune_dropout_rate = os.getenv('TUNE_DROPOUT_RATE', 'true').lower() == 'true'
         self.tune_use_noise_reg = os.getenv('TUNE_USE_NOISE_REG', 'true').lower() == 'true'
+        self.tune_loss_type = os.getenv('TUNE_LOSS_TYPE', 'false').lower() == 'true'
         self.tune_unfreezing = os.getenv('TUNE_UNFREEZING', 'true').lower() == 'true'
         self.tune_max_grad_norm = os.getenv('TUNE_MAX_GRAD_NORM', 'true').lower() == 'true'
         self.tune_pretrained_bio_model = os.getenv('TUNE_PRETRAINED_BIO_MODEL', 'true').lower() == 'true'
@@ -128,6 +130,7 @@ class ModelConfig:
         self.optuna_dropout_rate_range = self._parse_range_option(os.getenv('OPTUNA_DROPOUT_RATE_RANGE', '0.0,0.5,0.1'))
         self.optuna_use_noise_reg_options = self._parse_bool_list_option(os.getenv('OPTUNA_USE_NOISE_REG_OPTIONS', 'true,false'))
         self.optuna_noise_reg_alpha_range = self._parse_range_option(os.getenv('OPTUNA_NOISE_REG_ALPHA_RANGE', '1.0,10.0,false'))
+        self.optuna_loss_type_options = self._parse_list_option(os.getenv('OPTUNA_LOSS_TYPE_OPTIONS', 'KL,MSE'), str)
         self.optuna_unfreeze_at_epoch_options = self._parse_list_option(os.getenv('OPTUNA_UNFREEZE_AT_EPOCH_OPTIONS', '2,3,4,5'), int)
         self.optuna_sentence_transformer_lr_range = self._parse_range_option(os.getenv('OPTUNA_SENTENCE_TRANSFORMER_LR_RANGE', '1e-6,1e-4,true'))
         self.optuna_max_grad_norm_range = self._parse_range_option(os.getenv('OPTUNA_MAX_GRAD_NORM_RANGE', '1.0,10.0,true'))
@@ -247,6 +250,7 @@ class ModelConfig:
             'num_epochs': self.num_epochs,
             'batch_size': self.batch_size,
             'num_workers': self.num_workers,
+            'loss_type': self.loss_type,
             
             # Early Stopping and Scheduling
             'patience': self.patience,

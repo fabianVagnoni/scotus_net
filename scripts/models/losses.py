@@ -45,6 +45,37 @@ class KLDivLoss(nn.Module):
             'reduction': self.reduction
         }
 
+class MSELoss(nn.Module):
+    """
+    Mean Squared Error Loss for probability distributions.
+    """
+    
+    def __init__(self, reduction: str = 'batchmean', **kwargs):
+        super(MSELoss, self).__init__()
+        self.reduction = reduction
+        self.loss_fn = nn.MSELoss(reduction=reduction)
+    
+    def forward(self, predictions: torch.Tensor, targets: torch.Tensor, **kwargs) -> torch.Tensor:
+        """
+        Compute Mean Squared Error Loss.
+        
+        Args:
+            predictions: Raw logits from model, shape (batch_size, 3)
+            targets: Target probability distributions, shape (batch_size, 3)
+            
+        Returns:
+            Mean Squared Error Loss
+        """
+        predictions = F.softmax(predictions, dim=-1)
+        return self.loss_fn(predictions, targets)
+    
+    def get_config(self) -> Dict[str, Any]:
+        """Get loss configuration."""
+        return {
+            'loss_type': 'MSELoss',
+            'reduction': self.reduction
+        }
+
 
 def create_loss_function(**kwargs) -> KLDivLoss:
     """
@@ -59,16 +90,16 @@ def create_loss_function(**kwargs) -> KLDivLoss:
     return KLDivLoss(**kwargs)
 
 
-def create_scotus_loss_function(config=None, **kwargs) -> KLDivLoss:
+def create_scotus_loss_function(config=None, **kwargs):
     """
-    Create SCOTUS-specific loss function (simplified to only KL divergence).
+    Create SCOTUS-specific loss function (KL divergence or MSE based on config).
     
     Args:
-        config: Configuration object (for compatibility)
+        config: Configuration object with loss_type attribute
         **kwargs: Additional arguments
         
     Returns:
-        KLDivLoss instance
+        KLDivLoss or MSELoss instance
     """
     # Extract relevant parameters from config if provided
     loss_kwargs = {}
@@ -78,4 +109,12 @@ def create_scotus_loss_function(config=None, **kwargs) -> KLDivLoss:
     # Override with any explicit kwargs
     loss_kwargs.update(kwargs)
     
-    return KLDivLoss(**loss_kwargs)
+    # Determine loss type from config
+    loss_type = 'KL'  # Default to KL
+    if config and hasattr(config, 'loss_type'):
+        loss_type = config.loss_type.upper()
+    
+    if loss_type == 'MSE':
+        return MSELoss(**loss_kwargs)
+    else:  # Default to KL
+        return KLDivLoss(**loss_kwargs)

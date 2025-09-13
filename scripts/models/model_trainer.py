@@ -322,6 +322,7 @@ class SCOTUSModelTrainer:
         
         # Create loss function
         criterion = create_scotus_loss_function(self.config)
+        self.logger.info(f"📊 Using loss function: {criterion.__class__.__name__} (type: {self.config.loss_type})")
         
         # Create optimizer for non-transformer parameters
         main_optimizer = torch.optim.Adam(
@@ -342,29 +343,8 @@ class SCOTUSModelTrainer:
         sentence_transformer_optimizer = None
         sentence_transformer_scheduler = None
         
-        # Set up model output directory
-        model_output_dir = Path(self.config.model_output_dir)
-        
-        # Create the directory structure if it doesn't exist
-        try:
-            model_output_dir.mkdir(parents=True, exist_ok=True)
-            if not os.access(model_output_dir, os.W_OK):
-                self.logger.error(f"Cannot write to {model_output_dir}")
-                # Try alternative path in Docker environment
-                model_output_dir = Path('/app/models_fallback')
-                model_output_dir.mkdir(parents=True, exist_ok=True)
-                self.logger.warning(f"Using fallback directory: {model_output_dir.absolute()}")
-                
-            self.logger.info(f"Model will be saved to: {model_output_dir.absolute()}")
-            
-        except Exception as e:
-            self.logger.error(f"Failed to create model output directory: {str(e)}")
-            # Last resort: use current directory
-            model_output_dir = Path.cwd()
-            self.logger.warning(f"Using current directory as fallback: {model_output_dir.absolute()}")
-        
         self.logger.info("🚀 Starting training...")
-        self.logger.info(f"   Model output directory: {model_output_dir}")
+        self.logger.info(f"   Model output directory: {self.config.model_output_dir}")
         self.logger.info(f"   Training samples: {len(train_processed)}")
         self.logger.info(f"   Validation samples: {len(val_processed)}")
         self.logger.info(f"   Batch size: {self.config.batch_size}")
@@ -488,38 +468,12 @@ class SCOTUSModelTrainer:
                 best_val_loss = val_loss
                 patience_counter = 0
                 
-                # Primary save location
-                try:
-                    model_output_dir.mkdir(parents=True, exist_ok=True)
-                    if not os.access(model_output_dir, os.W_OK):
-                        self.logger.error(f"Cannot write to {model_output_dir}")
-                        raise PermissionError(f"Cannot write to {model_output_dir}")
-                    
-                    save_path = model_output_dir / 'best_model.pth'
-                    model.save_model(str(save_path))
-                    self.logger.info(f"💾 New best model saved with val loss: {val_loss:.4f} in location {save_path.absolute()}")
-                    
-                except Exception as e:
-                    self.logger.error(f"Failed to save model to primary location: {str(e)}")
+                # Use Docker-aware path resolution from SCOTUSVotingModel.save_model()
+                # This will handle directory creation, writability, and Docker mount mapping
+                save_path = self.config.model_output_dir  # Let save_model() resolve the full path
+                model.save_model(save_path)
+                self.logger.info(f"💾 New best model saved with val loss: {val_loss:.4f}")
                 
-                # Backup save to base directory for reliability
-                try:
-                    base_save_path = Path('/app/best_model_backup.pth')
-                    model.save_model(str(base_save_path))
-                    self.logger.info(f"💾 Backup model saved to: {base_save_path.absolute()}")
-                    
-                except Exception as e:
-                    self.logger.error(f"Failed to save backup model: {str(e)}")
-                
-                # Additional backup to current working directory
-                try:
-                    cwd_save_path = Path.cwd() / 'best_model_current.pth'
-                    model.save_model(str(cwd_save_path))
-                    self.logger.info(f"💾 Current directory backup saved to: {cwd_save_path.absolute()}")
-                    
-                except Exception as e:
-                    self.logger.error(f"Failed to save current directory backup: {str(e)}")
-                    
             else:
                 patience_counter += 1
                 if patience_counter >= max_patience:
@@ -621,6 +575,7 @@ class SCOTUSModelTrainer:
         
         # Evaluate: compute loss and F1 Macro
         criterion = create_scotus_loss_function(self.config)
+        self.logger.info(f"📊 Using loss function for evaluation: {criterion.__class__.__name__} (type: {self.config.loss_type})")
         
         # Use existing evaluate_model method for loss calculation
         self.logger.info("�� Evaluating on holdout test set...")
