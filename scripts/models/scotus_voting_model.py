@@ -204,6 +204,75 @@ class SCOTUSVotingModel(nn.Module):
             nn.Linear(hidden_dim // 2, 3)  # 3 output neurons for voting percentages
         )
     
+    @staticmethod
+    def _is_container_environment() -> bool:
+        """Return True if running inside the expected Docker container layout (/app exists)."""
+        try:
+            return Path('/app').exists()
+        except Exception:
+            return False
+
+    @staticmethod
+    def _resolve_output_dir(preferred_dir: Optional[str]) -> Path:
+        """Resolve a writable output directory across host vs Docker mounts.
+
+        Order of precedence:
+        1) preferred_dir (argument) if provided
+        2) $MODEL_OUTPUT_DIR environment variable
+        3) Known mounts inside container: /app/models, /app/models_output
+        4) Repository-local fallback: ./models_output
+        5) Current working directory
+        """
+        candidates: List[Path] = []
+
+        def normalize_dir_path(dir_str: str) -> Path:
+            expanded = os.path.expandvars(os.path.expanduser(dir_str))
+            p = Path(expanded)
+            if p.is_absolute():
+                return p
+            base = Path('/app') if SCOTUSVotingModel._is_container_environment() else Path.cwd()
+            return (base / p).resolve()
+
+        if preferred_dir:
+            candidates.append(normalize_dir_path(preferred_dir))
+
+        env_dir = os.environ.get('MODEL_OUTPUT_DIR')
+        if env_dir:
+            candidates.append(normalize_dir_path(env_dir))
+
+        # Known container mounts (docker-run.sh maps host models_output -> /app/models)
+        if SCOTUSVotingModel._is_container_environment():
+            candidates.extend([
+                Path('/app/models'),
+                Path('/app/models_output')
+            ])
+        else:
+            candidates.append((Path.cwd() / 'models_output').resolve())
+
+        # Final fallback: CWD
+        candidates.append(Path.cwd())
+
+        # Deduplicate while preserving order
+        seen: set = set()
+        unique_candidates: List[Path] = []
+        for c in candidates:
+            key = str(c)
+            if key not in seen:
+                seen.add(key)
+                unique_candidates.append(c)
+
+        # Return the first directory we can create and write into
+        for directory in unique_candidates:
+            try:
+                directory.mkdir(parents=True, exist_ok=True)
+                if os.access(directory, os.W_OK):
+                    return directory
+            except Exception:
+                continue
+
+        # As a last resort, use current working directory
+        return Path.cwd()
+
     def _register_embedding_noise(self, sbert_model: SentenceTransformer) -> None:
         """Attach a forward hook on the underlying HF embedding layer to add noise during training.
         Mirrors the approach used in scripts/pretraining/constrastive_justice.py.
@@ -346,7 +415,28 @@ class SCOTUSVotingModel(nn.Module):
         return probabilities
     
     def save_model(self, filepath: str):
-        """Save the model state dict."""
+        """Save the model state dict with Docker-aware path resolution.
+
+        If ``filepath`` looks like a directory (no ``.pth`` suffix), a filename is
+        chosen from $BEST_MODEL_NAME (default: 'best_model.pth').
+        The directory is resolved to a writable location whether on host or in Docker.
+        """
+        filename_default = os.environ.get('BEST_MODEL_NAME', 'best_model.pth')
+
+        expanded = os.path.expandvars(os.path.expanduser(str(filepath)))
+        path_obj = Path(expanded)
+        is_file_path = path_obj.suffix != ''  # treat paths with a suffix as explicit files
+
+        if is_file_path:
+            # Resolve directory of the file, then use the same filename
+            output_dir = self._resolve_output_dir(str(path_obj.parent))
+            final_path = output_dir / path_obj.name
+        else:
+            # Treat as directory, pick filename from env or default
+            output_dir = self._resolve_output_dir(str(path_obj))
+            final_path = output_dir / filename_default
+
+        # Save checkpoint
         torch.save({
             'model_state_dict': self.state_dict(),
             'embedding_dim': self.embedding_dim,
@@ -355,12 +445,40 @@ class SCOTUSVotingModel(nn.Module):
             'num_attention_heads': self.num_attention_heads,
             'use_justice_attention': self.use_justice_attention,
             'device': self.device
-        }, filepath)
+        }, str(final_path))
+
+        # Provide a hint where it was saved (use print to avoid import dependencies)
+        try:
+            print(f"Saved SCOTUSVotingModel to: {final_path}")
+        except Exception:
+            pass
     
     @classmethod
     def load_model(cls, filepath: str, bio_model_name: str, description_model_name: str, device: str = None):
         """Load a saved model."""
-        checkpoint = torch.load(filepath, map_location='cpu')  # Load to CPU first
+        expanded = os.path.expandvars(os.path.expanduser(str(filepath)))
+        path_obj = Path(expanded)
+        if not path_obj.is_absolute():
+            base = Path('/app') if SCOTUSVotingModel._is_container_environment() else Path.cwd()
+            path_obj = (base / path_obj).resolve()
+
+        # Attempt to remap across common Docker host <-> container paths
+        resolved_path = first_existing_candidate(path_obj)
+        if not resolved_path.exists():
+            # Try a few direct fallbacks if first_existing_candidate couldn't find it
+            candidates: List[Path] = []
+            if SCOTUSVotingModel._is_container_environment():
+                candidates.extend([
+                    Path('/app/models') / path_obj.name,
+                    Path('/app/models_output') / path_obj.name
+                ])
+            candidates.append(Path.cwd() / path_obj.name)
+            for c in candidates:
+                if c.exists():
+                    resolved_path = c
+                    break
+
+        checkpoint = torch.load(str(resolved_path), map_location='cpu')  # Load to CPU first
         
         # Use device from checkpoint if not specified
         if device is None:

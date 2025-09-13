@@ -21,3 +21,6 @@ results/*
 scripts/pretraining/results/*
 scripts/pretraining/logs/*
 test_justice_encoder.ipynb
+pretraining/cluster_study_outputs/*
+pretraining/logs/*
+pretraining/results/*
