@@ -589,6 +589,7 @@ class SCOTUSModelTrainer:
         with torch.no_grad():
             progress_bar = get_progress_bar(test_loader, desc="Computing F1 Score")
             for batch in progress_bar:
+                self.logger.info("batch", batch)
                 case_input_ids = batch['case_input_ids'].to(self.device)
                 case_attention_mask = batch['case_attention_mask'].to(self.device)
                 justice_input_ids = batch['justice_input_ids'].to(self.device)

@@ -24,3 +24,7 @@ test_justice_encoder.ipynb
 pretraining/cluster_study_outputs/*
 pretraining/logs/*
 pretraining/results/*
+test_model.ipynb
+test_model.py
+test_model_simple_runner.py
+test_model_runner.py
